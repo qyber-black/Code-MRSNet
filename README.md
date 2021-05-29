@@ -39,9 +39,8 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 2. Navigate to the directory: `cd mrsnet`
 3. Update submodules: `git submodule init && git submodule update`
 6. Install the requirements (CPU or GPU):
-    1. CPU version: `pip3 install -r requirements-cpu.txt`
-    2. GPU version (requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu)) : `pip3 install -r requirements-gpu.txt`
-    3. Optionally, for PyGamma support `pip2 install -r requirements-pygamma.txt`
+    1. MRSNet python3 requirements: `pip3 install -r requirements.txt` (GPU support requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu))
+    2. Optionally, for PyGamma support `pip3 install -r requirements-pygamma.txt`
 7. Download the additional required data: `python3 setup.py`
 
 Call `mrsnet.py --help` to get further information about all its sub-commands and `mrsnet.py COMMAND --help` for details for each sub-command.
