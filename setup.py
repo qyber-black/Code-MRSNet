@@ -1,16 +1,24 @@
-#!/usr/bin/env python2.7
-import urllib2
+#!/usr/bin/env python3
+#
+# setup.py - MRSNet - setup MRSNet code
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
+# Copyright (C) 2020, Frank C Langbein <frank@langbein.org>, Cardiff University
+
 import os
 import zipfile
-from tqdm import tqdm
 import requests
+from tqdm import tqdm
+from urllib.request import urlopen
+import compileall
 
 def main():
     # Download LCModel basis sets from http://purcell.healthsciences.purdue.edu/mrslab/basis_sets.html
-    save_directory = './Basis/simulated/LCModel/'
-    if not os.path.exists(save_directory):
-        os.makedirs(save_directory)
-
+    print('Downloading LCModel MEGA-PRESS basis sets from Purdue for Siemens, Phillips & GE.')
+    save_directory = os.path.join('data', 'basis', 'lcmodel')
+    os.makedirs(save_directory, exist_ok=True)
     urls = ["http://purcell.healthsciences.purdue.edu/mrslab/files/3t_IU_MP_te68_748_ppm_inv.basis",
             "http://purcell.healthsciences.purdue.edu/mrslab/files/3t_IU_MP_te68_diff_yesNAAG_noLac_Kaiser.basis",
             "http://purcell.healthsciences.purdue.edu/mrslab/files/3t_IU_MP_te68_diff_yesNAAG_noLac_c.basis",
@@ -20,7 +28,6 @@ def main():
             "http://purcell.healthsciences.purdue.edu/mrslab/files/3t_philips_MEGAPRESS_Kaiser_oct2011_75_ppm_inv.basis",
             "http://purcell.healthsciences.purdue.edu/mrslab/files/3t_philips_MEGAPRESS_Kaiser_oct2011_1975_diff.basis",
             "http://purcell.healthsciences.purdue.edu/mrslab/files/3t_philips_MEGAPRESS_may2010_diff.basis"]
-
     filenames = ["MEGAPRESS_edit_off_Siemens_3T.basis",
                  "MEGAPRESS_difference_Siemens_3T_kasier.basis",
                  "MEGAPRESS_difference_Siemens_3T_govindaraju.basis",
@@ -30,29 +37,46 @@ def main():
                  "MEGAPRESS_edit_off_Phillips_3T.basis",
                  "MEGAPRESS_difference_Phillips_3T_kasier.basis",
                  "MEGAPRESS_difference_Phillips_3T_govindaraju.basis"]
-
     for url, filename in tqdm(zip(urls, filenames), total=len(urls), desc='Downloading LCModel basis sets'):
-        response = urllib2.urlopen(url)
-        with open(save_directory + filename, 'wb') as output:
+        response = urlopen(url)
+        with open(os.path.join(save_directory, filename), 'wb') as output:
             output.write(response.read())
 
-    print('Finished downloading LCModel MEGA-PRESS basis sets from Purdue for Siemens, Phillips & GE.')
-
-    # from here we assume the .zip file is in the directory
-    if not os.path.exists('./Datasets/Benchmark/'):
-        os.makedirs('./Datasets/Benchmark/')
-
-    print('Downloading experimental benchmark datasets. Warning, this file is large < 3GB.')
-    zip_filename = download_large_file('https://qyber.black/data/MRIS/phantoms/GABAPhantoms_20190815.zip')
-    print('Need to add download URL')
-
-    print('Extracting experimental benchmark datasets to ./Datasets/Benchmark/')
+    # Download fid-a basis sets
+    print('Downloading FID-A basis set')
+    dir = os.path.join('data', 'basis')
+    os.makedirs(dir, exist_ok=True)
+    zip_filename = download_large_file('https://qyber.black/data/MRIS/phantoms/fida_20200716.zip')
+    print('Extracting FIDA-basis to '+dir)
     with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
-        zip_ref.extractall('./Datasets/Benchmark/')
-
-    print('Deleting downloaded .zip file')
+        zip_ref.extractall(dir)
+    print('Deleting downloaded zip file')
     os.remove(zip_filename)
-    print('Done!')
+
+    # Download pygamma basis sets
+    print('Downloading PyGamma basis set')
+    dir = os.path.join('data', 'basis')
+    os.makedirs(dir, exist_ok=True)
+    zip_filename = download_large_file('https://qyber.black/data/MRIS/phantoms/pygamma_20200716.zip')
+    print('Extracting FIDA-basis to '+dir)
+    with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
+        zip_ref.extractall(dir)
+    print('Deleting downloaded zip file')
+    os.remove(zip_filename)
+
+    # Download benchmark dataset
+    print('Downloading benchmark dataset: WARNING, this file is large ~3.3GiB.')
+    dir = os.path.join('data', 'benchmark')
+    os.makedirs(dir, exist_ok=True)
+    zip_filename = download_large_file('https://qyber.black/data/MRIS/phantoms/GABAPhantoms_20190815.zip')
+    print('Extracting benchmark datasets to '+dir)
+    with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
+        zip_ref.extractall(dir)
+    print('Deleting downloaded zip file')
+    os.remove(zip_filename)
+
+    # Forcing to compile all python files
+    compileall.compile_dir('.', force=True)
 
 def download_large_file(url):
     # https://stackoverflow.com/questions/16694907/download-large-file-in-python-with-requests

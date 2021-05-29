@@ -1,7 +1,4 @@
 *.pyc
+/data/
 /venv/
-/Basis/
-.idea/
-models/incomplete/
-Datasets/Benchmark/
-Datasets/
+__pycache__
