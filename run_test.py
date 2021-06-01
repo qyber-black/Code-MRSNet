@@ -55,7 +55,7 @@ datasets['MRSNet-v1-Noise'] = {
     "linewidths": [1.0],
     "num": [5000],
     "norm": ["sum"],
-    "gen": ["sobol", "dirichlet"],
+    "gen": ["random", "sobol", "dirichlet"],
     "datatype": [['real', 'imaginary', 'magnitude']],
     "acquisitions": [[0,1,2]],
     "adc_noise_p": [1.0],
@@ -700,7 +700,7 @@ def scatter_plot(folder, err, std, ds, cmp_name, cmp_iters):
             mr = r
         for i in range(len(ds[cmp_iters[2]])):
             r -= 1
-            ax.plot([c], [r], 'o', markersize=(ds[cmp_iters[2]][i]+1)**2*10, markerfacecolor='green', markeredgecolor='green')
+            ax.plot([c], [r], 'o', markersize=(i+1)**2, markerfacecolor='green', markeredgecolor='green')
             ax.text(c+0.5, r, ds[cmp_iters[2]][i])
         c += 5
 

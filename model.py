@@ -148,7 +148,7 @@ def train_cnn(inp, out, labels, validate_per, model_name, model_str, epochs, bat
                dpi=300)
     plot_label_distribution(out, save_path, labels)
 
-    optimiser = keras.optimizers.Adam(lr=1e-4,
+    optimiser = keras.optimizers.Adam(learning_rate=1e-4,
                                       beta_1=0.9,
                                       beta_2=0.999,
                                       amsgrad=False)
