@@ -15,6 +15,7 @@ import subprocess
 import json
 import csv
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 
 datasets = {}
@@ -53,14 +54,14 @@ datasets['MRSNet-v1-Noise'] = {
     "scanner_manufacturer": ['Siemens'],
     "omega": [123.23],
     "linewidths": [1.0],
-    "num": [5000],
+    "num": [10000],
     "norm": ["sum"],
     "gen": ["random", "sobol", "dirichlet"],
     "datatype": [['real', 'imaginary', 'magnitude']],
     "acquisitions": [[0,1,2]],
     "adc_noise_p": [1.0],
     "adc_noise_sigma": [0.05, 0.1, 0.15, 0.2, 0.25],
-    "model": ["mrsnet_cnn_small"],
+    "model": ["mrsnet_cnn_medium"],
     "validate_per": [30],
     "epochs": [500],
     "batch_size": [32]
@@ -230,9 +231,16 @@ def main():
     # Process arguments
     parser = argparse.ArgumentParser(description='Generate MRSNet data sets for papers',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-e', '--exec', help='Command executor (to run mrsnet, e.g. to schedule as slurm job; default uses python3).',
+                        default=os.path.join('python3'))
+    parser.add_argument('-m', '--max_jobs', help='Maximum number of jobs to schedule',
+                        type=int, default=10)
+    parser.add_argument('--no_benchmark', action='store_true')
     parser.add_argument('dataset', type=str, choices=sorted(datasets.keys()), help='ID for dataset to be generated as specified in the scripts.')
     parser.add_argument('repeats', type=int, help='Repeats for each set', default=1)
     args = parser.parse_args()
+
+    jobs = 0
 
     if args.dataset in datasets:
         ds = datasets[args.dataset]
@@ -289,9 +297,13 @@ def main():
                 if rep[rep_id] == 0:
                     trained = True
                     # Execute
+                    jobs += 1
+                    if jobs > args.max_jobs:
+                      print("Maximum jobs scheduled, quitting")
+                      exit(1)
                     rep[rep_id] = 1
                     m_folder = os.path.join(folder, str(rep_id+1))
-                    cmd = ['/usr/bin/env', 'python3', os.path.join('./mrsnet.py'), "train", "--model_folder", m_folder, *cmd_args]
+                    cmd = ['/usr/bin/env', args.exec, os.path.join('./mrsnet.py'), "train", "--model_folder", m_folder, *cmd_args]
                     print("  Training, repeat %d" % (rep_id+1))
                     print(cmd)
                     try:
@@ -304,69 +316,70 @@ def main():
                 print("  Training complete")
 
             # Run Benchmark
-            for d in range(args.repeats):
-                m_folder = os.path.join(folder, str(d+1))
-                if os.path.isdir(os.path.join(m_folder, "model")):
-                    # Get data
-                    json_file = os.path.join(m_folder, 'analytics.json')
-                    if os.path.exists(json_file):
-                        try:
-                            with open(json_file) as f:
-                                data = json.load(f)
-                        except:
-                            data = {}
-                    else:
-                        data = {}
-                    # Compute benchmark, if not already there
-                    if 'E1' not in data.keys() or 'E3' not in data.keys() or 'E4a' not in data.keys() or 'E4b' not in data.keys():
-                        print("  Benchmark, repeat %d" % (d+1))
-                        cmd = ['/usr/bin/env', 'python3', os.path.join('./mrsnet.py'), "benchmark", "--model", m_folder]
-                        print(cmd)
-                        try:
-                            p = subprocess.Popen(cmd)
-                            p.wait()
-                        except OSError as e:
-                            p.wait()
-                            raise Exception('MRSNet benchmark failed!') from e
-                        # Update data with results
-                        if os.path.exists(json_file):
-                            with open(json_file) as f:
-                                data = json.load(f)
-                    # Get data
-                    print("  Data, repeat %d" % (d+1))
-                    idx = iters.copy()
-                    idx.append(d)
-                    # Errors
-                    for seq in data:
-                        if 'total_error' in data[seq]:
-                            if seq not in all_err:
-                                szs = [len(ds[k]) for k in keys]
-                                szs.append(args.repeats)
-                                all_err[seq] = np.zeros(szs)
-                                all_std[seq] = np.zeros(szs)
-                            np.put(all_err[seq], np.ravel_multi_index(idx,all_err[seq].shape), data[seq]['total_error']['abs_error_mean'])
-                            np.put(all_std[seq], np.ravel_multi_index(idx,all_std[seq].shape), data[seq]['total_error']['abs_error_std'])
-                    # Timing data
-                    h_file = os.path.join(m_folder, 'history.csv')
-                    if os.path.exists(h_file):
-                        with open (h_file, newline='') as f:
-                            reader = csv.reader(f, delimiter=',')
-                            t = 0.0
-                            n = -1.0
-                            k = -1
-                            for row in reader:
-                                if n < 0.0:
-                                    for l in range(len(row)):
-                                        if row[l][0:4] == 'time':
-                                            k = l
-                                            n = 0.0
-                                else:
-                                    v = np.float64(row[k])
-                                    if v > 0.0:
-                                      t += v
-                                      n += 1.0
-                            t = t / n
-                            np.put(all_time, np.ravel_multi_index(idx,all_time.shape), t)
+            if not args.no_benchmark:
+              for d in range(args.repeats):
+                  m_folder = os.path.join(folder, str(d+1))
+                  if os.path.isdir(os.path.join(m_folder, "model")):
+                      # Get data
+                      json_file = os.path.join(m_folder, 'analytics.json')
+                      if os.path.exists(json_file):
+                          try:
+                              with open(json_file) as f:
+                                  data = json.load(f)
+                          except:
+                              data = {}
+                      else:
+                          data = {}
+                      # Compute benchmark, if not already there
+                      if 'E1' not in data.keys() or 'E3' not in data.keys() or 'E4a' not in data.keys() or 'E4b' not in data.keys():
+                          print("  Benchmark, repeat %d" % (d+1))
+                          cmd = ['/usr/bin/env', args.exec, os.path.join('./mrsnet.py'), "benchmark", "--model", m_folder]
+                          print(cmd)
+                          try:
+                              p = subprocess.Popen(cmd)
+                              p.wait()
+                          except OSError as e:
+                              p.wait()
+                              raise Exception('MRSNet benchmark failed!') from e
+                          # Update data with results
+                          if os.path.exists(json_file):
+                              with open(json_file) as f:
+                                  data = json.load(f)
+                      # Get data
+                      print("  Data, repeat %d" % (d+1))
+                      idx = iters.copy()
+                      idx.append(d)
+                      # Errors
+                      for seq in data:
+                          if 'total_error' in data[seq]:
+                              if seq not in all_err:
+                                  szs = [len(ds[k]) for k in keys]
+                                  szs.append(args.repeats)
+                                  all_err[seq] = np.zeros(szs)
+                                  all_std[seq] = np.zeros(szs)
+                              np.put(all_err[seq], np.ravel_multi_index(idx,all_err[seq].shape), data[seq]['total_error']['abs_error_mean'])
+                              np.put(all_std[seq], np.ravel_multi_index(idx,all_std[seq].shape), data[seq]['total_error']['abs_error_std'])
+                      # Timing data
+                      h_file = os.path.join(m_folder, 'history.csv')
+                      if os.path.exists(h_file):
+                          with open (h_file, newline='') as f:
+                              reader = csv.reader(f, delimiter=',')
+                              t = 0.0
+                              n = -1.0
+                              k = -1
+                              for row in reader:
+                                  if n < 0.0:
+                                      for l in range(len(row)):
+                                          if row[l][0:4] == 'time':
+                                              k = l
+                                              n = 0.0
+                                  else:
+                                      v = np.float64(row[k])
+                                      if v > 0.0:
+                                        t += v
+                                        n += 1.0
+                              t = t / n
+                              np.put(all_time, np.ravel_multi_index(idx,all_time.shape), t)
 
             # Increase iteration index
             k = len(iters) - 1
@@ -376,12 +389,13 @@ def main():
                     iters[k] = 0
                     k -= 1
                     if k < 0:
-                        ds['Repeat'] = range(1,args.repeats+1)
-                        save_errors(os.path.join('data', 'model', args.dataset, 'errors.csv'), all_err, all_std, all_time, ds)
-                        if args.dataset in datasets_compare:
-                            for cmp_name, cmp_iters in datasets_compare[args.dataset].items():
-                                create_plots(os.path.join('data', 'model', args.dataset), all_err, all_std, all_time, ds, cmp_name, cmp_iters)
-                                scatter_plot(os.path.join('data', 'model', args.dataset), all_err, all_std, ds, cmp_name, cmp_iters)
+                        if not args.no_benchmark:
+                          ds['Repeat'] = range(1,args.repeats+1)
+                          save_errors(os.path.join('data', 'model', args.dataset, 'errors.csv'), all_err, all_std, all_time, ds)
+                          if args.dataset in datasets_compare:
+                              for cmp_name, cmp_iters in datasets_compare[args.dataset].items():
+                                  create_plots(os.path.join('data', 'model', args.dataset), all_err, all_std, all_time, ds, cmp_name, cmp_iters)
+                                  scatter_plot(os.path.join('data', 'model', args.dataset), all_err, all_std, ds, cmp_name, cmp_iters)
                         return
                 else:
                     break

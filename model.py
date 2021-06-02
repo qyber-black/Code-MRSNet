@@ -36,6 +36,11 @@ class TimeHistory(keras.callbacks.Callback):
         self.times.append((time.time() - self.tic)*1000)
 
 def train(args):
+    if tf.test.gpu_device_name():
+      print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+    else:
+      print("WARNING, we do not have a default GPU for Tensorflow!")
+
     bases = generate_bases(args.basis_source, args.scanner_manufacturer, args.omega, args.linewidths, args.metabolites, args.verbose)
     datasets = generate_datasets(bases, 'testing', args.num, args.gen, args.metabolites, args.acquisitions, args.verbose)
 
