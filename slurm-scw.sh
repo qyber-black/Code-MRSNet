@@ -18,7 +18,7 @@ cat >jobs/${name}.sh <<EOF
 ###
 #SBATCH --job-name=${name}
 #SBATCH --output=jobs/${name}.out
-#SBARCH --error=jobs/${name}.err
+#SBATCH --error=jobs/${name}.err
 #SBATCH --time=1-00:00
 #SBATCH --ntasks=1
 #SBATCH --mem-per-cpu=32768
