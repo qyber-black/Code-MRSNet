@@ -36,7 +36,7 @@ export LD_LIBRARY_PATH=~/.local/lib64:$LD_LIBRARY_PATH
 
 cd ~/code-mrsnet
 
-echo "Running on $SLUM_JOB_NODELIST"
+echo "Running on $SLURM_JOB_NODELIST"
 /usr/bin/env python3 ${cmd}
 EOF
 
