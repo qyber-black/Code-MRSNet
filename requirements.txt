@@ -9,7 +9,7 @@ requests==2.23.0
 scipy==1.6
 seaborn==0.10.1
 sobol_seq==0.1.2
-tensorflow
-tensorflow-estimator
+tensorflow==2.5.0
+tensorflow-estimator==2.5.0
 tqdm==4.47.0
 urllib3==1.25.9
