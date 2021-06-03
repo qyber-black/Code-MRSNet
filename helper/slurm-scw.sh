@@ -11,14 +11,14 @@ name="MRSNet-`date '+%Y%m%d%H%M%S-%N'`"
 
 cmd="$*"
 
-mkdir -p jobs
+mkdir -p data/jobs-scw
 
 cat >jobs/${name}.sh <<EOF
 #!/bin/bash --login
 ###
 #SBATCH --job-name=${name}
-#SBATCH --output=jobs/${name}.out
-#SBATCH --error=jobs/${name}.err
+#SBATCH --output=data/jobs-scw/${name}.out
+#SBATCH --error=data/jobs-scw/${name}.err
 #SBATCH --time=1-00:00
 #SBATCH --ntasks=1
 #SBATCH --mem-per-cpu=32768
@@ -40,4 +40,4 @@ echo "Running on $SLURM_JOB_NODELIST"
 /usr/bin/env python3 ${cmd}
 EOF
 
-sbatch -A `grep '^MRSNet ' ~/projects  | cut -d\  -f2` jobs/${name}.sh
+sbatch -A `grep '^MRSNet ' ~/projects  | cut -d\  -f2` data/jobs-scw/${name}.sh

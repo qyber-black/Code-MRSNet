@@ -1,5 +1,4 @@
 *.pyc
 /data/
 /venv/
-/jobs/
 __pycache__
