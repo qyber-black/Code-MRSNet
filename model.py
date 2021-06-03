@@ -14,6 +14,7 @@ import time
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
+
 import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.utils import plot_model
@@ -23,9 +24,6 @@ from basis import generate_bases
 from dataset import Dataset, generate_datasets
 from analyse import analyse_model
 from cnns import *
-
-# Disable annoying warnings from default TF compilation
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 class TimeHistory(keras.callbacks.Callback):
     def on_train_begin(self, logs={}):

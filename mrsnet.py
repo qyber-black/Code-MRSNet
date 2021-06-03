@@ -15,6 +15,10 @@ import argparse
 import datetime
 import matplotlib
 
+# Only print warnings and errors for tf (set before importing tf)
+if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 from utilities.utils import convert_molecule_names
 from utilities.constants import MOLECULE_NAMES
 from quantify import quantify, benchmark
