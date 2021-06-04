@@ -13,7 +13,7 @@ cmd="$*"
 
 mkdir -p data/jobs-scw
 
-cat >jobs/${name}.sh <<EOF
+cat >data/jobs-scw/${name}.sh <<EOF
 #!/bin/bash --login
 ###
 #SBATCH --job-name=${name}
@@ -40,4 +40,5 @@ echo "Running on $SLURM_JOB_NODELIST"
 /usr/bin/env python3 ${cmd}
 EOF
 
+echo "SBATCH - data/jobs-scw/${name}"
 sbatch -A `grep '^MRSNet ' ~/projects  | cut -d\  -f2` data/jobs-scw/${name}.sh
