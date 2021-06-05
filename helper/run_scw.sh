@@ -53,11 +53,11 @@ while [ -n "$1" ]; do
     shift
   elif [ "$1" = "-h" -o "$1" = "--help" ]; then
     cat <<EOD
-$0 [OPTIONS] USER TEST-DATASET
+$0 [OPTIONS] USER TEST-DATASET...
 Schedule test dataset trainig on SCW.
 
   USER              SCW user id
-  TEST-DATASET      run-test.py test dataset id
+  TEST-DATASET      run-test.py test dataset ids
 
   OPTIONS:
     -r, --repeats     number of repeats for dataset [$default_repeats]
@@ -71,11 +71,8 @@ EOD
   else
     if [ -z "$user" ]; then
       user="$1"
-    elif [ -z "$test" ]; then
-      test="$1"
     else
-      echo "$0: unknown argument $1" >&2
-      exit 1
+      test="$test $1"
     fi
     shift
   fi
@@ -99,9 +96,15 @@ while true; do
 
   if [ $d -gt 0 ]; then
     rsync -av --exclude='data/model/*' --exclude='data/benchmark/*' --exclude='*/__pycache__/*' --exclude='.git/*' . ${user}@${host}:code-mrsnet
-    ssh ${user}@${host} 'cd ~/code-mrsnet && ./run_test.py '${test}' '${repeats}' -e ./helper/slurm-scw.sh -m '${d}' --no_benchmark'
-    if [ "$?" == 0 ]; then
-      echo "All jobs scheduled"
+    all_done=1
+    for t in $test; do
+      ssh ${user}@${host} 'cd ~/code-mrsnet && ./run_test.py '${t}' '${repeats}' -e ./helper/slurm-scw.sh -m '${d}' --no_benchmark'
+      if [ "$?" != 0 ]; then
+        all_done=0
+      fi
+    done
+    if [ "$all_done" == 1 ]; then
+      echo "All tests scheduled"
       exit 0
     fi
   fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# slurm_scw - MRSNet - execute as slurm job on SCW
+# slurm_scw.sh - MRSNet - execute as slurm job on SCW
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -36,7 +36,7 @@ export LD_LIBRARY_PATH=~/.local/lib64:$LD_LIBRARY_PATH
 
 cd ~/code-mrsnet
 
-echo "Running on $SLURM_JOB_NODELIST"
+echo "Job $SLURM_JOB_NAME/$SLURM_JOB_ID on $SLURM_JOB_NODELIST"
 /usr/bin/env python3 ${cmd}
 EOF
 

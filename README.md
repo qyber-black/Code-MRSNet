@@ -5,7 +5,7 @@ MRSNet is aimed at MR spectral quantification using convolutional neural network
 
 More information can be found in the associated paper
 
-M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural Network. Submitted, 2019. [arxiv:1909.03836] https://langbein.org/mrsnet-paper/
+M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural Network. Preprint, 2019. [arxiv:1909.03836] https://langbein.org/mrsnet-paper/
 
 ## Built With
 
@@ -26,9 +26,9 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 
 ### Prerequisites
 
-* Python 3.8 for main MRSNet.
+* Python 3.9 for main MRSNet.
 * Python 2.7 for pygamma basis set simulations. Unfortunately, PyGamma still requires Python 2.7 to run. It is not essential if you do not intend to use pygamma basis sets and we do provide the basis sets used in our experiments as a download.
-* MATLAB - Only required if you plan to simulate new FID-A spectra. Similar to PyGamma, the basis sets we used are in the the basis sets download.
+* MATLAB - Only required if you plan to simulate new FID-A spectra. Similar to PyGamma, the basis sets we used are in the the basis sets downloaded.
 * Linux system packages:
     * Git-lfs for git submodule support: `git-lfs`
     * Install these using your package manager with root privileges. E.g. Debian based distributions: `sudo apt update && sudo apt install git-lfs`.
@@ -147,7 +147,7 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 1.0. _FigShare_, Softrware, 16th August 2019.
+M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 1.0. _FigShare_, Software, 16th August 2019.
 [[10.6084/m9.figshare.9824417.v1]](https://doi.org/10.6084/m9.figshare.9824417.v1)
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/MaxChandler/MRSNet)
@@ -155,7 +155,7 @@ M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 1.0. 
 ## License
 
 Copyright (C) 2019, M Chandler.
-Copyright (C) 2020-21, FC Langbein.
+Copyright (C) 2020-2021, FC Langbein.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
