@@ -280,12 +280,22 @@ def main():
             # Check number of repeats for training
             rep = [0] * args.repeats
             for d in os.listdir(folder):
-                try:
-                    num = int(d)-1
-                except ValueError:
-                    continue
+                if d[-12:] == ".in_progress":
+                  try:
+                      num = int(d[:-12])-1
+                  except ValueError:
+                      continue
+                else:
+                  try:
+                      num = int(d)-1
+                  except ValueError:
+                      continue
                 if num < args.repeats:
+                    print (folder+"-"+str(num+1))
                     if os.path.isdir(os.path.join(folder, str(num+1), "model")):
+                        rep[num] = 1
+                    elif os.path.isdir(os.path.join(folder, str(num+1)+".in_progress")):
+                        print ("  In progress "+str(num+1))
                         rep[num] = 1
                     else:
                         shutil.rmtree(os.path.join(folder, str(num+1)))
