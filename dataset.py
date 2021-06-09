@@ -249,7 +249,7 @@ class Dataset(object):
         for ii in range(len(self.spectra)):
             self.spectra[ii].update_zero_pad(self.spectra[0]._zero_pad)
 
-    def generate_dataset(self, n_samples, conc_gen_method, metabolites, overwrite=False, verbose=0):
+    def generate_dataset(self, n_samples, conc_gen_methods, metabolites, overwrite=False, verbose=0):
         # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
         # Does not add noise, but only generates clean combined ADC signal.
         if n_samples <= 0:
@@ -279,71 +279,81 @@ class Dataset(object):
                 raise Exception('Request metabolite for data set generation not in basis set: ' + m)
         n_metabolites = len(metabolites)
 
-        if conc_gen_method == 'random':
-            # Random uniform concentrations
-            concentrations = np.random.ranf((n_samples, n_metabolites))
-        elif conc_gen_method == 'dirichlet':
-            # Dirichlet sampling, equal weight for all metablites
-            concentrations = np.random.default_rng().dirichlet([1] * n_metabolites, n_samples)
-        elif conc_gen_method == 'sobol':
-            # Sobol sampling
-            skip = math.floor(math.log(n_samples*n_metabolites,2)) # Skip broken in sobol package! (silly seed assignment in some versions)
-            concentrations = sobol_seq.i4_sobol_generate(n_metabolites, n_samples+skip)[skip:,:]
-        elif conc_gen_method[-6:] == '-zeros':
-            # Select all zero concentration possibilities, equal weight for all remaining metablites according to sampling method
-            concentrations = np.zeros((n_samples, n_metabolites))
-            groups = []
-            groups_n = []
-            n_per_combs = n_samples // n_metabolites
-            n_total = 0
-            for n_excited in range(1,n_metabolites + 1):
-                combs = list(combinations(list(range(0,n_metabolites)), n_excited))
-                n_per_group = n_per_combs // len(combs)
-                if verbose > 0:
-                    print("For %d excited: %d samples per %d combinations" % (n_excited, n_per_group, len(combs)))
-                if n_per_group < 1:
-                    raise Exception('Insufficient samples for dirichlet-zeros with %d groups' % len(groups))
-                for comb in combs:
-                    groups.append(comb)
-                    groups_n.append(n_per_group)
-                    n_total += n_per_group
-            groups.reverse()
-            groups_n.reverse()
-            n_remain = n_samples - n_total
-            idx = 0
-            if conc_gen_method == 'sobol-zeros':
-                skip = math.floor(math.log(n_samples*n_metabolites,2))
-            for g, n_g in zip(groups, groups_n):
-                if n_remain > 0:
-                    n_g += 1
-                    n_remain -= 1
-                if conc_gen_method == 'random-zeros':
-                    # Random uniform concentrations
-                    concentrations[idx:idx+n_g,g] = np.random.ranf((n_g, len(g)))
-                elif conc_gen_method == 'dirichlet-zeros':
-                    # Dirichlet sampling, equal weight for all metablites
-                    concentrations[idx:idx+n_g,g] = np.random.default_rng().dirichlet([1]*len(g), n_g)
-                elif conc_gen_method == 'sobol-zeros':
-                    # Sobol sampling
-                    concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
-                    skip += n_g # Get differnt samples for the groups
-                else:
-                    raise Exception('Unknown concentration generation method: ' + self.conc_gen_method)
-                idx += n_g
-        elif conc_gen_method == 'single':
-            # Single metabolite concentration (for testing)
-            concentrations = np.zeros((n_samples, n_metabolites),dtype=np.float64)
-            nm = 0
-            for n in range(0,n_samples):
-                concentrations[n,nm] = 1.0
-                nm += 1
-                if nm >= n_metabolites:
-                    nm = 0
-        else:
-            raise Exception('Unknown concentration generation method: ' + self.conc_gen_method)
+        gen_samples = 0
+        per_gen_samples = n_samples // len(conc_gen_methods)
+        all_concentrations = np.empty((0,n_metabolites))
+        for conc_gen_method in conc_gen_methods:
+          if conc_gen_method == 'random':
+              # Random uniform concentrations
+              concentrations = np.random.ranf((per_gen_samples, n_metabolites))
+          elif conc_gen_method == 'dirichlet':
+              # Dirichlet sampling, equal weight for all metablites
+              concentrations = np.random.default_rng().dirichlet([1] * n_metabolites, per_gen_samples)
+          elif conc_gen_method == 'sobol':
+              # Sobol sampling
+              skip = math.floor(math.log(per_gen_samples*n_metabolites,2)) # Skip broken in sobol package! (silly seed assignment in some versions)
+              concentrations = sobol_seq.i4_sobol_generate(n_metabolites, per_gen_samples+skip)[skip:,:]
+          elif conc_gen_method[-6:] == '-zeros':
+              # Select all zero concentration possibilities, equal weight for all remaining metablites according to sampling method
+              concentrations = np.zeros((per_gen_samples, n_metabolites))
+              groups = []
+              groups_n = []
+              n_per_combs = per_gen_samples // n_metabolites
+              n_total = 0
+              for n_excited in range(1,n_metabolites + 1):
+                  combs = list(combinations(list(range(0,n_metabolites)), n_excited))
+                  n_per_group = n_per_combs // len(combs)
+                  if verbose > 0:
+                      print("For %d excited: %d samples per %d combinations" % (n_excited, n_per_group, len(combs)))
+                  if n_per_group < 1:
+                      raise Exception('Insufficient samples for dirichlet-zeros with %d groups' % len(groups))
+                  for comb in combs:
+                      groups.append(comb)
+                      groups_n.append(n_per_group)
+                      n_total += n_per_group
+              groups.reverse()
+              groups_n.reverse()
+              n_remain = per_gen_samples - n_total
+              idx = 0
+              if conc_gen_method == 'sobol-zeros':
+                  skip = math.floor(math.log(per_gen_samples*n_metabolites,2))
+              for g, n_g in zip(groups, groups_n):
+                  if n_remain > 0:
+                      n_g += 1
+                      n_remain -= 1
+                  if conc_gen_method == 'random-zeros':
+                      # Random uniform concentrations
+                      concentrations[idx:idx+n_g,g] = np.random.ranf((n_g, len(g)))
+                  elif conc_gen_method == 'dirichlet-zeros':
+                      # Dirichlet sampling, equal weight for all metablites
+                      concentrations[idx:idx+n_g,g] = np.random.default_rng().dirichlet([1]*len(g), n_g)
+                  elif conc_gen_method == 'sobol-zeros':
+                      # Sobol sampling
+                      concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
+                      skip += n_g # Get differnt samples for the groups
+                  else:
+                      raise Exception('Unknown concentration generation method: ' + self.conc_gen_method)
+                  idx += n_g
+          elif conc_gen_method == 'single':
+              # Single metabolite concentration (for testing)
+              concentrations = np.zeros((per_gen_samples, n_metabolites),dtype=np.float64)
+              nm = 0
+              for n in range(0,per_gen_samples):
+                  concentrations[n,nm] = 1.0
+                  nm += 1
+                  if nm >= n_metabolites:
+                      nm = 0
+          else:
+              raise Exception('Unknown concentration generation method: ' + self.conc_gen_method)
+          if len(conc_gen_methods) > 1:
+            all_concentrations = np.concatenate((all_concentrations,concentrations),axis=0)
+            if conc_gen_method == conc_gen_methods[-2]:
+              per_gen_samples = n_samples - (len(conc_gen_methods)-1) * per_gen_samples
+          else:
+            all_concentrations = concentrations
 
         for count in range(n_samples):
-            self.add_spectra(self.basis.export_combination(concentrations[count], metabolites, self.acquisitions))
+            self.add_spectra(self.basis.export_combination(all_concentrations[count], metabolites, self.acquisitions))
 
         self.check()
 

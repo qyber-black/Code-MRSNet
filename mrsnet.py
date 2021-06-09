@@ -126,7 +126,7 @@ def add_arguments_spectra(p):
     p.add_argument('-n', '--num', type=int, default=5000,
                    help='Total dataset size.')
     p.add_argument('--norm', choices=['sum', 'max'], default='sum', help='Concentration normalisation: sum or max equal to 1')
-    p.add_argument('--gen', choices=['random', 'random-zeros', 'dirichlet', 'dirichlet-zeros', 'sobol', 'sobol-zeros', 'single'],
+    p.add_argument('--gen', nargs='+', choices=['random', 'random-zeros', 'dirichlet', 'dirichlet-zeros', 'sobol', 'sobol-zeros', 'single'],
                    default='sobol', help='Concentration generation method.')
     p.add_argument('--datatype', type=lambda s : s.lower(), nargs='+', default=['magnitude'],
                    help='Datatype representation of spectrum (magnitude, real, imaginary).')
