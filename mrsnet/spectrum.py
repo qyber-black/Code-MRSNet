@@ -255,7 +255,7 @@ class Spectrum(object):
       raise Exception("Unkonw plot mode "+mode)
     axes.plot(X,Y)
 
-  def plot_spectrum(self, concentrations={}, type='fft'):
+  def plot_spectrum(self, concentrations={}, screen_dpi=96, type='fft'):
     n_cols = 1
 
     super_title = type.upper() + " "
@@ -267,7 +267,7 @@ class Spectrum(object):
     if self.adc_noise_mu != 0.0 or self.adc_noise_sigma != 0.0:
       super_title += (" - Noise mu: %f sigma: %f" % (self.adc_noise_mu,self.adc_noise_sigma))
 
-    figure, axes = plt.subplots(3, n_cols, sharex=True, sharey=True, figsize=(19.2, 19.2), dpi=100)
+    figure, axes = plt.subplots(3, n_cols, sharex=True, sharey=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
       axes = np.reshape(axes, (3, 1))
     else:

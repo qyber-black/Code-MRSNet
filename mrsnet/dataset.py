@@ -205,9 +205,6 @@ class Dataset(object):
           s[a].add_noise(mu=n_mu[count], sigma=n_sigma[count])
       self.spectra.append(s)
       self.concentrations.append(c)
-      # s['edit_off'].plot_spectrum(c)
-      # s['edit_on'].plot_spectrum(c)
-      # s['difference'].plot_spectrum(c)
     if verbose > 0:
       print("  Spectra with noise: %d" % n_cnt)
 
@@ -228,8 +225,7 @@ class Dataset(object):
       n_row = n_col
       while n_row * n_col < n_hst:
         n_row += 1
-      fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True,
-                               figsize=(25.6, 14.4)) # 1440p@100dpi
+      fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True) # 1440p@100dpi
       axes = axes.flatten()
       plt.suptitle('Concentrations %s of %s; %d spectra; %f - %f ppm @ %d pts'
                    % ('' if norm == 'none' else ("("+norm+" normalised)"),

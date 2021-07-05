@@ -338,8 +338,7 @@ class Basis(object):
     acqs = self.acquisitions
     num_m = len(self.spectra)
     num_a = len(acqs)
-    fig, axes = plt.subplots(num_m, num_a, sharex=True, sharey='row',
-                             figsize=(25.6, 14.4)) # 1440p@100dpi
+    fig, axes = plt.subplots(num_m, num_a, sharex=True, sharey='row')
     if len(axes.shape) == 1:
       axes = np.reshape(axes, (1,num_a))
 

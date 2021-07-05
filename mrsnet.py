@@ -13,6 +13,7 @@ import os
 import sys
 import argparse
 import datetime
+import matplotlib.pyplot as plt
 
 import mrsnet.molecules as molecules
 
@@ -153,7 +154,6 @@ def basis(args):
   if args.verbose > 0:
     print(bases)
     print("# Generating plots")
-  import matplotlib.pyplot as plt
   for b in bases:
     if args.verbose > 0:
       print(b)
@@ -201,10 +201,9 @@ def simulate(args):
   dataset.save()
   if args.verbose > 0:
     print("Plotting concentrations")
-  import matplotlib.pyplot as plt
   for norm in ['none', 'sum', 'max']:
     fig = dataset.plot_concentrations(norm=norm)
-    for res in Cfg.val['image_dpi']:
+    for dpi in Cfg.val['image_dpi']:
       if args.verbose > 0:
         print("Saving %s-normalised concentration figure %s @ %dpi" % (norm,dataset.name,dpi))
       plt.savefig(os.path.join(dataset.name,"concentrations-%s@%d.png" % (norm,dpi)), dpi=dpi)
@@ -215,7 +214,7 @@ def simulate(args):
       if args.show_spectra:
         for s,c in zip(dataset.spectra,dataset.concentrations):
           for a in s.keys():
-            s[a].plot_spectrum(c)
+            s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
             plt.show(block=True)
             plt.close()
 
@@ -300,10 +299,9 @@ def benchmark(args):
                                          concentrations=os.path.join('data','benchmark', id, 'concentrations.json'),
                                          metabolites=cnn.metabolites)
     if args.show_spectra:
-      import matplotlib.pyplot as plt
       for s,c in zip(bm.spectra,bm.concentrations):
         for a in s.keys():
-          s[a].plot_spectrum(c)
+          s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
           plt.show(block=True)
           plt.close()
     d_inp, d_out = bm.export(metabolites=cnn.metabolites, norm=cnn.norm,
@@ -320,6 +318,7 @@ class Cfg:
   # Default configuration - do not overwrite here but set alternatives in file
   val = {
     'default_screen_dpi': 96,
+    'figsize': (26.67,15.0),
     'image_dpi': [300]
   }
   file = os.path.expanduser("~/.config/mrsnet.json")
@@ -336,6 +335,7 @@ class Cfg:
           else:
             raise Exception("Unknown config file entry %s in %s" % (k,Cfg.file))
     Cfg.val["screen_dpi"] = Cfg.get_screen_dpi()
+    plt.rcParams["figure.figsize"] = Cfg.val['figsize']
 
   @staticmethod
   def get_screen_dpi():

@@ -26,9 +26,9 @@ class Train:
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if self.k > 1:
-      fig, axes = plt.subplots(self.k+1,out_dim,figsize=(25.6, 14.4))
+      fig, axes = plt.subplots(self.k+1,out_dim)
     else:
-      fig, axes = plt.subplots(self.k,out_dim,figsize=(25.6, 14.4))
+      fig, axes = plt.subplots(self.k,out_dim)
       axes = np.reshape(axes, (1, out_dim))
     fig.suptitle("Output value distributions in buckets")
     for dim in range(0,out_dim):
@@ -156,7 +156,7 @@ class Train:
     aerr_min -= err_d
     aerr_max += err_d
 
-    fig, axes = plt.subplots(3,2,figsize=(25.6,14.4), sharex=True)
+    fig, axes = plt.subplots(3,2,sharex=True)
 
     axes[0,0].set_title("Train Error Distributions")
     sns.boxplot(data=train_res['error'], ax=axes[0,0])

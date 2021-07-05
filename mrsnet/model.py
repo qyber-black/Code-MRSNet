@@ -257,7 +257,7 @@ class CNN:
       writer.writerow(keys)
       writer.writerows(zip(*[history[key] for key in keys]))
     # Plot
-    fig, axes = plt.subplots(1, 3, figsize=(25.6, 14.4))
+    fig, axes = plt.subplots(1, 3)
     fig.suptitle("%s Training Results" % self.model)
     for key in keys:
       if 'mse' in key or 'loss' in key:

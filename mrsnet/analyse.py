@@ -90,7 +90,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
   info = {}
 
   # Per metabolite plots/data
-  fig, axes =  plt.subplots(2,len(model.metabolites)+1,figsize=(25.6,14.4))
+  fig, axes =  plt.subplots(2,len(model.metabolites)+1)
   fig.suptitle("Concentration Error Analysis (%s)" % prefix)
   for l,m in enumerate(model.metabolites):
     with warnings.catch_warnings():
