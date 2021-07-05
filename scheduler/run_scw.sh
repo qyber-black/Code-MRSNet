@@ -63,7 +63,7 @@ Schedule test dataset trainig on SCW.
     -r, --repeats     number of repeats for dataset [$default_repeats]
     -j, --jobs        maximum jobs to schedule in parallel [$default_jobs]
     -c, --continuous  schedule continously (CTRL-C to quit)
-        --sleep       sleep time between schedule attempts [$default_sleep]
+        --sleep       sleep time between schedule attempts [$default_wait]
         --host        SCW login host [$default_host]
     -h, --help        this help text
 EOD
@@ -95,7 +95,7 @@ while true; do
   d=`expr $max_jobs - $n`
 
   if [ $d -gt 0 ]; then
-    rsync -av --exclude='data/model/*' --exclude='data/benchmark/*' --exclude='*/__pycache__/*' --exclude='.git/*' . ${user}@${host}:code-mrsnet
+    rsync -av --exclude='data/model' --exclude='data/benchmark' --exclude='data/jobs*' --exclude='.git' --exclude='__pycache__' . ${user}@${host}:code-mrsnet
     all_done=1
     for t in $test; do
       ssh ${user}@${host} 'cd ~/code-mrsnet && ./run_test.py '${t}' '${repeats}' -e ./helper/slurm-scw.sh -m '${d}' --no_benchmark'

@@ -1,3 +1,0 @@
-argparse==1.1
-numpy
-pygamma==4.3.4

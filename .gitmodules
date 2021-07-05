@@ -1,3 +1,6 @@
-[submodule "simulators/fida/FID-A"]
+[submodule "mrsnet/simulators/fida/FID-A"]
+	path = mrsnet/simulators/fida/FID-A
 	url = git@github.com:CIC-methods/FID-A.git
-	path = simulators/fida/FID-A
+[submodule "mrsnet/qdicom"]
+	path = mrsnet/qdicom
+	url = git@qyber.black:pca/code-qdicom-utilities.git
