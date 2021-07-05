@@ -13,23 +13,14 @@ import os
 import sys
 import argparse
 import datetime
-import matplotlib
 
 import mrsnet.molecules as molecules
-
-# Only print warnings and errors for tf (set before importing tf)
-if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
-  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-
-# Headless mode
-if not "DISPLAY" in os.environ:
-  matplotlib.use("Agg")
 
 def main():
   # Main function of MRSNet: parse arguments, setup basic environment and run
 
   # Process arguments
-  parser = argparse.ArgumentParser(description='Magnetic Resonance Spectra (MRS) quantification',
+  parser = argparse.ArgumentParser(description='Magnetic Resonance Spectra (MRS) Quantification',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   subparsers = parser.add_subparsers(title="Valid sub-commands")
 
@@ -146,16 +137,6 @@ def add_arguments_simulate(p):
   p.add_argument('--noise_mu', type=float, default=0.0,
                  help='Maximum mu for simulated ADC noise (uniform distribution).')
 
-def get_screen_dpi():
-  # DPI for plots on screen
-  try:
-    from screeninfo import get_monitors
-  except ModuleNotFoundError:
-    return 96
-  from math import hypot
-  m = get_monitors()[0]
-  return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
-
 def basis(args):
   # Basis sub-command
   import mrsnet.basis as basis
@@ -177,11 +158,12 @@ def basis(args):
     if args.verbose > 0:
       print(b)
     fig = b.plot()
-    if args.verbose > 0:
-      print("Saving figure %s @ 300dpi" % b.name())
-    plt.savefig(os.path.join('data','basis',b.name()+"@300.png"), dpi=300)
+    for dpi in Cfg.val['image_dpi']:
+      if args.verbose > 0:
+        print("Saving figure %s @ %ddpi" % (b.name(),res))
+      plt.savefig(os.path.join('data','basis',b.name()+"@"+str(dpi)+".png"), dpi=dpi)
     if not args.no_show:
-      fig.set_dpi(get_screen_dpi())
+      fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
     plt.close()
 
@@ -222,11 +204,12 @@ def simulate(args):
   import matplotlib.pyplot as plt
   for norm in ['none', 'sum', 'max']:
     fig = dataset.plot_concentrations(norm=norm)
-    if args.verbose > 0:
-      print("Saving %s-normalised concentration figure %s @ 300dpi" % (norm,dataset.name))
-    plt.savefig(os.path.join(dataset.name,"concentrations-%s@300.png" % norm), dpi=300)
+    for res in Cfg.val['image_dpi']:
+      if args.verbose > 0:
+        print("Saving %s-normalised concentration figure %s @ %dpi" % (norm,dataset.name,dpi))
+      plt.savefig(os.path.join(dataset.name,"concentrations-%s@%d.png" % (norm,dpi)), dpi=dpi)
     if not args.no_show:
-      fig.set_dpi(get_screen_dpi())
+      fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
       plt.close()
       if args.show_spectra:
@@ -278,7 +261,7 @@ def train(args):
     raise Exception("Unknown validation %f" % args.validate)
   trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
                 args.model_folder, train_dataset_name=dataset.name,
-                screen_dpi=get_screen_dpi(),
+                image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 no_show=args.no_show, verbose=args.verbose)
 
 def quantify(args):
@@ -301,7 +284,7 @@ def quantify(args):
   analyse_model(cnn, d_inp, d_out, args.dataset,
                 id=[s['edit_off'].id for s in dataset.spectra], # FIXME: maybe cannot assume edit_off here
                 show_conc=True, save_conc=True, no_show=args.no_show,
-                verbose=args.verbose, prefix='analyse_'+str(cnn), screen_dpi=get_screen_dpi())
+                verbose=args.verbose, prefix='analyse_'+str(cnn), image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
 
 def benchmark(args):
   # Benchmark sub-command
@@ -330,7 +313,48 @@ def benchmark(args):
     analyse_model(cnn, d_inp, d_out, os.path.dirname(args.model),
                   id=[s['edit_off'].id for s in bm.spectra], # FIXME: maybe cannot assume edit_off here
                   show_conc=True, save_conc=True, no_show=args.no_show,
-                  verbose=args.verbose, prefix='benchmark_'+id+'_'+str(cnn), screen_dpi=get_screen_dpi())
+                  verbose=args.verbose, prefix='benchmark_'+id+'_'+str(cnn), image_dpi=Cfg.val['image_dpi'],
+                  screen_dpi=Cfg.val['screen_dpi'])
+
+class Cfg:
+  # Default configuration - do not overwrite here but set alternatives in file
+  val = {
+    'default_screen_dpi': 96,
+    'image_dpi': [300]
+  }
+  file = os.path.expanduser("~/.config/mrsnet.json")
+
+  @staticmethod
+  def init():
+    if os.path.isfile(Cfg.file):
+      import json
+      with open(Cfg.file, "r") as fp:
+        js = json.load(fp)
+        for k in js.keys():
+          if k in Cfg.val:
+            Cfg.val[k] = js[k]
+          else:
+            raise Exception("Unknown config file entry %s in %s" % (k,Cfg.file))
+    Cfg.val["screen_dpi"] = Cfg.get_screen_dpi()
+
+  @staticmethod
+  def get_screen_dpi():
+    # DPI for plots on screen
+    try:
+      from screeninfo import get_monitors
+    except ModuleNotFoundError:
+      return Cfg.val['default_screen_dpi']
+    from math import hypot
+    m = get_monitors()[0]
+    return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
 
 if __name__ == '__main__':
+  # Only print warnings and errors for tf (set before importing tf)
+  if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+  # Headless mode
+  if not "DISPLAY" in os.environ:
+    from matplotlib import use
+    use("Agg")
+  Cfg.init()
   main()

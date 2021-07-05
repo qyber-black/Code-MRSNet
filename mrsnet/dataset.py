@@ -332,3 +332,16 @@ class Dataset(object):
     elif norm != 'none':
       raise Exception("Unknown norm %s" % norm)
     return out
+
+# FIXME: generate datasets from
+#'metabolites': [['Cr', 'GABA', 'Glu', 'Gln', 'NAA']]
+#'source': ['lcmodel', 'fid-a', 'pygamma']
+#'manufacturer': ['siemens', 'ge', 'phillips']
+#'omega': 123.23
+#'linewidth': 1.0
+#'pulse_sequence': ['megapress']
+#'num': 10000
+#'sample': ['random', 'dirichlet', 'sobol', 'dirichlet-zeros', 'random-zeros', 'sobol-zeros', 'random-one', 'dirichlet-one', 'sobol-one'],
+#'noise_p': 1.0
+#'noise_sigma': 0.1
+#'noise_mu': 0.0

@@ -124,7 +124,7 @@ class CNN:
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
 
   def train(self, d_inp, d_out, v_inp, v_out, epochs, batch_size,
-            folder, verbose=0,no_show=False,screen_dpi=96, train_dataset_name=""):
+            folder, verbose=0,no_show=False, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
     if tf.test.gpu_device_name():
       print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
     else:
@@ -164,14 +164,15 @@ class CNN:
                      optimizer=optimiser,
                      metrics=['mae'])
 
-    plot_model(self.cnn,
-               to_file=os.path.join(folder,'architecture@300.png'),
-               show_shapes=True,
-               show_dtype=True,
-               show_layer_names=True,
-               rankdir='TB',
-               expand_nested=True,
-               dpi=300)
+    for dpi in image_dpi:
+      plot_model(self.cnn,
+                 to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
+                 show_shapes=True,
+                 show_dtype=True,
+                 show_layer_names=True,
+                 rankdir='TB',
+                 expand_nested=True,
+                 dpi=dpi)
     if verbose > 0:
       self.cnn.summary()
 
@@ -204,7 +205,7 @@ class CNN:
       print("      Train          Validation")
       print('MSE:  %.12f %.12f' % (d_score[0], v_score[0]))
       print('MAE:  %.12f %.12f' % (d_score[1], v_score[1]))
-    self._save_results(folder, history.history, d_score, v_score, no_show, screen_dpi)
+    self._save_results(folder, history.history, d_score, v_score, no_show, image_dpi, screen_dpi)
 
     d_res={"MSE":d_score[0],"MAE":d_score[1]}
     v_res={"MSE":v_score[0],"MAE":v_score[1]}
@@ -241,7 +242,7 @@ class CNN:
     model.cnn = load_model(path)
     return model
 
-  def _save_results(self, folder, history, d_score, v_score, no_show, screen_dpi):
+  def _save_results(self, folder, history, d_score, v_score, no_show, image_dpi, screen_dpi):
     keys = sorted(history.keys())
     # History data
     with open(os.path.join(folder, 'history.csv'), "w") as out_file:
@@ -271,7 +272,8 @@ class CNN:
         axes[2].plot(history[key], label=key)
         axes[2].set_ylabel('Time (ms)')
         axes[2].legend(loc='upper right')
-    plt.savefig(os.path.join(folder, 'history@300.png'), dpi=300)
+    for dpi in image_dpi:
+      plt.savefig(os.path.join(folder, 'history@'+str(dpi)+'.png'), dpi=dpi)
     if not no_show:
       fig.set_dpi(screen_dpi)
       plt.show(block=True)
