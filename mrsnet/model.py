@@ -5,22 +5,19 @@
 # Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
 # Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
-# TODO:
 import os
-import shutil
-import datetime
 import time
-import numpy as np
 import csv
 import json
 import matplotlib.pyplot as plt
+import numpy as np
 
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.keras.utils import plot_model
-from tensorflow.keras.models import load_model
 from tensorflow.python.keras.layers import *
 from tensorflow.python.keras.models import Sequential
+from tensorflow.keras.utils import plot_model
+from tensorflow.keras.models import load_model
 
 class CNN:
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):

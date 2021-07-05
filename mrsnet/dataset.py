@@ -288,30 +288,37 @@ class Dataset(object):
 
   @staticmethod
   def _export_spectra(s, acquisitions, datatypes, high_ppm, low_ppm, n_fft_pts,
-                      mean_center=False):
+                      mean_center=True,normalise=True):
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
+    mean = []
+    max = []
+    fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
     for a in acquisitions:
-      fft, nu = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
-      if mean_center: # TODO: True or False? Should this be here? Or mean center the whole dataset?
-        fft = fft - np.mean(fft)
+      a, _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
+      fft[a_idx,:] = a
+      a_idx += 1
+    if mean_center or normalise:
+      # FIXME: different normalisation? any phase normalisation?
+      m = np.abs(fft)
+      p = np.angle(fft)
+      if mean_center:
+        m -= np.mean(m)
+      if normalise:
+        m /= np.max(m)
+      fft = np.multiply(p, np.exp(1j*m))
+    for a_idx in range(0,fft.shape[0]):
       d_idx = 0
       for d in datatypes:
         if d == 'real':
-          inp[a_idx,d_idx,:] = np.real(fft)
+          inp[a_idx,d_idx,:] = np.real(fft[a_idx,:])
         elif d == 'imaginary':
-          inp[a_idx,d_idx,:] = np.imag(fft)
+          inp[a_idx,d_idx,:] = np.imag(fft[a_idx,:])
         elif d == 'magnitude':
-          inp[a_idx,d_idx,:] = np.abs(fft)
+          inp[a_idx,d_idx,:] = np.abs(fft[a_idx,:])
         else:
           raise Exception("Unknown datatype %s" % d)
         d_idx += 1
-      a_idx += 1
-
-    # Normalise the spectra data to fall in the -1:1 range
-    # TODO: shoud this be over the whole dataset?
-    inp = inp / np.max(np.abs(inp))
-
     return inp
 
   @staticmethod

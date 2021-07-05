@@ -183,57 +183,42 @@ class Train:
     axes[1,1].set_xlabel("Fold")
 
     axes[2,0].set_title("Train Metrics")
-    keys = [k for k in train_res.keys()]
+    keys = [k for k in sorted(train_res.keys())]
+    ymin2x = []
     keys.remove("error")
-    if len(keys) == 1:
-      ymin21 = np.min([np.min(train_res[keys[0]]),np.min(val_res[keys[0]])])
-      ymax21 = np.max([np.max(train_res[keys[0]]),np.max(val_res[keys[0]])])
-      axes[2,0].plot(range(0,self.k), train_res[keys[0]])
-      axes[2,0].set_ylim([ymin21,ymax21])
-      axes[2,0].set_ylabel(keys[0])
-    elif len(keys) == 2:
-      ymin21 = np.min([np.min(train_res[keys[0]]),np.min(val_res[keys[0]])])
-      ymax21 = np.max([np.max(train_res[keys[0]]),np.max(val_res[keys[0]])])
-      axes[2,0].plot(range(0,self.k), train_res[keys[0]], color='tab:blue')
-      axes[2,0].set_ylim([ymin21,ymax21])
-      axes[2,0].set_ylabel(keys[0])
-      axes[2,0].tick_params(axis='y', labelcolor='tab:blue')
-      ax2 = axes[2,0].twinx()
-      ymin22 = np.min([np.min(train_res[keys[1]]),np.min(val_res[keys[1]])])
-      ymax22 = np.max([np.max(train_res[keys[1]]),np.max(val_res[keys[1]])])
-      ax2.plot(range(0,self.k), train_res[keys[1]], color='tab:red')
-      ax2.set_ylim([ymin22,ymax22])
-      ax2.set_ylabel(keys[1])
-      ax2.tick_params(axis='y', labelcolor='tab:red')
-    else:
-      ymin21 = np.min([np.min([np.min(train_res[keys[l]]),np.min(val_res[keys[l]])]) for l in range(0,len(keys))])
-      ymax21 = np.max([np.max([np.max(train_res[keys[l]]),np.max(val_res[keys[l]])]) for l in range(0,len(keys))])
-      for k in keys:
-        axes[2,0].plot(range(0,self.k), train_res[k], label=k)
-      axes[2,0].set_ylim([ymin21,ymax21])
-      axes[2,0].legend(loc='upper right')
+    keys.remove("wdq") # Mostly like MAE, if distribution is sound, FIXME?
+    ymax2x = []
+    cols = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown',
+            'tab:pink','tab:gray','tab:olive','tab:cyan']
+    for l in range(0,len(keys)):
+      ymin2x.append(np.min([np.min(train_res[keys[l]]),np.min(val_res[keys[l]])]))
+      ymax2x.append(np.max([np.max(train_res[keys[l]]),np.max(val_res[keys[l]])]))
+      if l == 0:
+        axes[2,0].plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        axes[2,0].set_ylim([ymin2x[l],ymax2x[l]])
+        axes[2,0].set_ylabel(keys[0])
+        axes[2,0].tick_params(axis='y', labelcolor=cols[l])
+      else:
+        ax2 = axes[2,0].twinx()
+        ax2.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        ax2.set_ylim([ymin2x[l],ymax2x[l]])
+        ax2.set_ylabel(keys[l])
+        ax2.tick_params(axis='y', labelcolor=cols[l])
     axes[2,0].set_xlabel("Fold")
 
     axes[2,1].set_title("Validation Metrics")
-    if len(keys) == 1:
-      axes[2,1].plot(range(0,self.k), val_res[keys[0]])
-      axes[2,1].set_ylim([ymin21,ymax21])
-      axes[2,1].set_ylabel(keys[0])
-    elif len(keys) == 2:
-      axes[2,1].plot(range(0,self.k), val_res[keys[0]], color='tab:blue')
-      axes[2,1].set_ylim([ymin21,ymax21])
-      axes[2,1].set_ylabel(keys[0])
-      axes[2,1].tick_params(axis='y', labelcolor='tab:blue')
-      ax2 = axes[2,1].twinx()
-      ax2.plot(range(0,self.k), val_res[keys[1]], color='tab:red')
-      ax2.set_ylim([ymin22,ymax22])
-      ax2.set_ylabel(keys[1])
-      ax2.tick_params(axis='y', labelcolor='tab:red')
-    else:
-      for k in keys:
-        axes[2,1].plot(range(0,self.k), val_res[k], label=k)
-      axes[2,1].legend(loc='upper right')
-      axes[2,1].set_ylim([ymin21,ymax21])
+    for l in range(0,len(keys)):
+      if l == 0:
+        axes[2,0].plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        axes[2,1].set_ylim([ymin2x[l],ymax2x[l]])
+        axes[2,1].set_ylabel(keys[0])
+        axes[2,0].tick_params(axis='y', labelcolor=cols[l])
+      else:
+        ax2 = axes[2,1].twinx()
+        ax2.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        ax2.set_ylim([ymin2x[l],ymax2x[l]])
+        ax2.set_ylabel(keys[l])
+        ax2.tick_params(axis='y', labelcolor=cols[l])
     axes[2,1].set_xlabel("Fold")
 
     plt.savefig(os.path.join(folder, 'folds@300.png'), dpi=300)

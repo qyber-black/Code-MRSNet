@@ -9,14 +9,9 @@ import os
 import copy
 import numpy as np
 import matplotlib.pyplot as plt
-#import random
-#import dill
-#from scipy.io import savemat
 
 from .spectrum import Spectrum
 from .molecules import convert_names
-from .simulators.fida.fida_simulator import fida_spectra
-#from utilities.constants import GYROMAGNETIC_RATIO
 
 class BasisCollection:
   def __init__(self):
@@ -171,6 +166,7 @@ class Basis(object):
       else:
         print('Some spectra are missing, simulating: ' + str(to_simulate))
         # FIXME: load newly generated spectra instead of 2nd call; maybe in load function
+        from .simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth)
         self._load_fida(directory, second_call=True)
 
