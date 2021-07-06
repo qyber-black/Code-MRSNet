@@ -126,7 +126,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
     if l == 0:
       axes[0,l].set_ylabel("Predicted")
     if l == len(model.metabolites)//2:
-      axes[0,l].set_title("True vs. Predicted") # TODO: do not delete metabolite name
+      axes[0,l].set_title("True vs. Predicted\n\n"+m)
     axes[0,l].set_xlim([0,1])
     axes[0,l].set_ylim([0,1])
 

@@ -59,9 +59,6 @@ class Spectrum(object):
     self.adc_noise_mu = 0
     self.adc_noise_sigma = 0
 
-    # TODO: below NEEDED or used?
-    self.te = None
-
   def adc(self):
     adc = np.append(self.raw_adc * self.scale, np.zeros(self.zero_pad))
     return adc

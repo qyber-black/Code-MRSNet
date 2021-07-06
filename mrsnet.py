@@ -302,7 +302,6 @@ def quantify(args):
     print("# Loading dataset %s : %s" % (name,rest))
   ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,rest))
   # FIXME: Load dicoms as alternative or in addition to combine
-  # Load model (FIXME: issue when more models than CNN class)
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
@@ -310,22 +309,25 @@ def quantify(args):
       name = os.path.join(*id[k:k+6])
       train_model = id[k+6]
       trainer = id[k+7]
-      if len(id) > k+7: # Folds
-        rest = id[k+8]
+      rest = id[k+8] if len(id) > k+8 else '' # Folds
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
     print("# Loading model %s : %s : %s : %s" % (name,train_model,trainer,rest))
-  from mrsnet.model import CNN
-  cnn = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+  if name[0:4] == "cnn_":
+    from mrsnet.model import CNN
+    cnn = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+  else:
+    raise Exception("Unknown model "+name)
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=cnn.metabolites, norm=cnn.norm,
                            acquisitions=cnn.acquisitions, datatype=cnn.datatype,
                            verbose=args.verbose)
   from mrsnet.analyse import analyse_model
+  id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
   analyse_model(cnn, d_inp, d_out, args.model,
-                id=[s['edit_off'].id for s in ds.spectra], # FIXME: maybe cannot assume edit_off here
+                id=[s[id_ref].id for s in ds.spectra],
                 show_conc=True, save_conc=True, no_show=args.no_show,
                 verbose=args.verbose, prefix=ds.name.replace("/","_"),
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
@@ -341,8 +343,7 @@ def benchmark(args):
       name = os.path.join(*id[k:k+6])
       train_model = id[k+6]
       trainer = id[k+7]
-      if len(id) > k+7: # Folds
-        rest = id[k+8]
+      rest = id[k+8] if len(id) > k+8 else '' # Folds
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
@@ -368,8 +369,9 @@ def benchmark(args):
                              acquisitions=cnn.acquisitions, datatype=cnn.datatype,
                              verbose=args.verbose)
     from mrsnet.analyse import analyse_model
+    id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
     analyse_model(cnn, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest),
-                  id=[s['edit_off'].id for s in bm.spectra], # FIXME: maybe cannot assume edit_off here
+                  id=[s[id_ref].id for s in bm.spectra],
                   show_conc=True, save_conc=True, no_show=args.no_show,
                   verbose=args.verbose, prefix=id, image_dpi=Cfg.val['image_dpi'],
                   screen_dpi=Cfg.val['screen_dpi'])

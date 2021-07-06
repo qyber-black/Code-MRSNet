@@ -193,10 +193,10 @@ class Train:
     keys = [k for k in sorted(train_res.keys())]
     ymin2x = []
     keys.remove("error")
-    keys.remove("wdq") # Mostly like MAE, if distribution is sound, FIXME?
     ymax2x = []
     cols = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown',
             'tab:pink','tab:gray','tab:olive','tab:cyan']
+    # FIXME: more space for more than 2 axes on the right
     for l in range(0,len(keys)):
       ymin2x.append(np.min([np.min(train_res[keys[l]]),np.min(val_res[keys[l]])]))
       ymax2x.append(np.max([np.max(train_res[keys[l]]),np.max(val_res[keys[l]])]))
