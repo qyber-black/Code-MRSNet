@@ -295,13 +295,15 @@ def train(args):
 def quantify(args):
   # Quantify sub-command
   import mrsnet.dataset as dataset
-  id = get_std_name(args.dataset)
-  name = os.path.join(*id[-7:-1])
-  rest = id[-1]
-  if args.verbose > 0:
-    print("# Loading dataset %s : %s" % (name,rest))
-  ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,rest))
-  # FIXME: Load dicoms as alternative or in addition to combine
+  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+    id = get_std_name(args.dataset)
+    name = os.path.join(*id[-7:-1])
+    rest = id[-1]
+    if args.verbose > 0:
+      print("# Loading dataset %s : %s" % (name,rest))
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,rest))
+  else:
+    ds = None # Load later, as dicom and we don't know metabolites
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
@@ -317,20 +319,40 @@ def quantify(args):
     print("# Loading model %s : %s : %s : %s" % (name,train_model,trainer,rest))
   if name[0:4] == "cnn_":
     from mrsnet.model import CNN
-    cnn = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
+  if ds is None:
+    if args.verbose > 0:
+      print("# Loading dicom data %s" % args.dataset)
+    ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
+                                                  metabolites=quantifier.metabolites)
+    store_in_data = True
+  else:
+    store_in_data = False
   # Export for quantification
-  d_inp, d_out = ds.export(metabolites=cnn.metabolites, norm=cnn.norm,
-                           acquisitions=cnn.acquisitions, datatype=cnn.datatype,
+  d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
+                           acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
                            verbose=args.verbose)
+  if np.sum(d_out.shape) == 0:
+    # No concentrations, so for analysis of data and store results with data, not model
+    store_in_data = True
   from mrsnet.analyse import analyse_model
   id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
-  analyse_model(cnn, d_inp, d_out, args.model,
-                id=[s[id_ref].id for s in ds.spectra],
-                show_conc=True, save_conc=True, no_show=args.no_show,
-                verbose=args.verbose, prefix=ds.name.replace("/","_"),
-                image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
+  if store_in_data:
+    # Store results in data repository, as dicoms or no concentrations (so for actual quantification)
+    analyse_model(quantifier, d_inp, d_out, args.dataset,
+                  id=[s[id_ref].id for s in ds.spectra],
+                  show_conc=True, save_conc=True, no_show=args.no_show,
+                  verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
+                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
+  else:
+    # Store results with model, as concentrations and dataset is for testing model
+    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest),
+                  id=[s[id_ref].id for s in ds.spectra],
+                  show_conc=True, save_conc=True, no_show=args.no_show,
+                  verbose=args.verbose, prefix=ds.name.replace("/","_"),
+                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
 
 def benchmark(args):
   # Benchmark sub-command
@@ -349,8 +371,11 @@ def benchmark(args):
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
     print("# Loading model %s : %s : %s : %s" % (name,train_model,trainer,rest))
-  from mrsnet.model import CNN
-  cnn = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+  if name[0:4] == "cnn_":
+    from mrsnet.model import CNN
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+  else:
+    raise Exception("Unknown model "+name)
   import mrsnet.dataset as dataset
   for id in ['E1', 'E2', 'E3', 'E4a', 'E4b', 'E4c', 'E4d']:
     if args.verbose > 0:
@@ -358,19 +383,19 @@ def benchmark(args):
     bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
                                          concentrations=os.path.join(Cfg.val['path_benchmark'],
                                                                      id, 'concentrations.json'),
-                                         metabolites=cnn.metabolites)
+                                         metabolites=quantifier.metabolites)
     if args.show_spectra:
       for s,c in zip(bm.spectra,bm.concentrations):
         for a in s.keys():
           s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
           plt.show(block=True)
           plt.close()
-    d_inp, d_out = bm.export(metabolites=cnn.metabolites, norm=cnn.norm,
-                             acquisitions=cnn.acquisitions, datatype=cnn.datatype,
+    d_inp, d_out = bm.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
+                             acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
                              verbose=args.verbose)
     from mrsnet.analyse import analyse_model
     id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
-    analyse_model(cnn, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest),
+    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest),
                   id=[s[id_ref].id for s in bm.spectra],
                   show_conc=True, save_conc=True, no_show=args.no_show,
                   verbose=args.verbose, prefix=id, image_dpi=Cfg.val['image_dpi'],

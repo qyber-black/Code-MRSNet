@@ -33,6 +33,7 @@ class Dataset(object):
     from .spectrum import Spectrum
     specs = {}
     concs = {}
+    concs_ok = True
     for dir, subdirs, files in os.walk(folder):
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
@@ -41,6 +42,8 @@ class Dataset(object):
             specs[s.id] = {}
           specs[s.id][s.acquisition] = s
           concs[s.id] = c
+          if np.sum(c.shape) == 0:
+            concs_ok = False
     for id in sorted(specs.keys()):
       b0_shift = []
       # FIXME: b0 correction as average over all acquisitions and peaks?
@@ -50,12 +53,13 @@ class Dataset(object):
           if shift is not None:
             b0_shift.append(shift)
       if len(b0_shift) == 0:
-        raise Exception("B0 correction for failed")
+        raise Exception("B0 correction failed")
       b0_shift = np.mean(np.array(b0_shift, dtype=np.float64))
       for a in specs[id].keys():
         specs[id][a].correct_b0(ppm_shift=b0_shift)
       self.spectra.append(specs[id])
-      self.concentrations.append(concs[id])
+      if concs_ok:
+        self.concentrations.append(concs[id])
     return self
 
   def generate_spectra(self, basis, num, samplers, noise_p, noise_mu, noise_sigma, verbose):
@@ -265,7 +269,7 @@ class Dataset(object):
       if verbose > 0:
         print("  Shape: " + str(d_inp.shape) + " - [spectrum, acquisition, datatype, fft_value]")
     else:
-      d_inp = np.ndarray()
+      d_inp = np.ndarray((0,0))
     if len(self.concentrations) > 0:
       if verbose > 0:
         print("Converting output concentrations to tensor")
@@ -276,10 +280,11 @@ class Dataset(object):
       if verbose > 0:
         print("  Shape: " + str(d_out.shape) + " - [spectrum, metabolite_concentration]")
     else:
-      d_out = np.ndarray()
+      d_out = np.ndarray((0,0))
 
-    if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != self.n_fft_pts:
-      raise Exception("Unexpected input/output tensor shape(s)")
+    if np.sum(d_out.shape) > 0:
+      if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != self.n_fft_pts:
+        raise Exception("Unexpected input/output tensor shape(s)")
 
     return d_inp, d_out
 
