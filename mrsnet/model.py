@@ -32,11 +32,9 @@ class CNN:
     self.cnn = None
 
   def __str__(self):
-    # FIXME: Need to add dataset id to name!
-    n = self.model+"_"+"-".join(self.metabolites)+"_"+self.pulse_sequence+"_"+"-".join(self.acquisitions)+"_"+"-".join(self.datatype)+"_"+self.norm
-    # FIXME: simplify name and fix data setup overall
-    if self.train_dataset_name is not None and len(self.train_dataset_name) > 0:
-      n += "_"+self.train_dataset_name.replace("/","_")
+    n = os.path.join(self.model, "-".join(self.metabolites),
+                     self.pulse_sequence, "-".join(self.acquisitions),
+                     "-".join(self.datatype), self.norm)
     return n
 
   def reset(self):
@@ -218,7 +216,7 @@ class CNN:
     return np.array(self.cnn.predict(x=d_inp,verbose=(verbose>0),batch_size=32),dtype=np.float64)
 
   def save(self, folder):
-    path=os.path.join(folder, self.model+".tf_model")
+    path=os.path.join(folder, "tf_model")
     self.cnn.save(path)
     # FIXME: add MRSNet version information
     with open(os.path.join(path, "mrsnet.json"), 'w') as f:
@@ -234,12 +232,12 @@ class CNN:
 
   @staticmethod
   def load(path):
-    with open(os.path.join(path, "mrsnet.json"), 'r') as f:
+    with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
       data = json.load(f)
     model = CNN(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                 data['datatype'], data['norm'])
     model.train_dataset_name = data['train_dataset_name']
-    model.cnn = load_model(path)
+    model.cnn = load_model(os.path.join(path,"tf_model"))
     return model
 
   def _save_results(self, folder, history, d_score, v_score, no_show, image_dpi, screen_dpi):

@@ -6,6 +6,7 @@
 # Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
+import glob
 import warnings
 import numpy as np
 import json
@@ -29,7 +30,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     error = None
   # Store/print quantification results
   if save_conc:
-    with open(os.path.join(folder, 'quantify_'+prefix+'.csv'), "w") as out_file:
+    with open(os.path.join(folder, prefix+'_quantify.csv'), "w") as out_file:
       writer = csv.writer(out_file, delimiter=",")
       writer.writerows([[str(model).upper()+" Quantification Results"],
                         ["Metabolites", *model.metabolites],
@@ -199,6 +200,8 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
 
   with open(os.path.join(folder, prefix+"_concentration_errors.json"), 'w') as f:
     print(json.dumps(info, indent=2, sort_keys=True), file=f)
+  for f in glob.glob(os.path.join(folder, prefix + '_concentration_errors@*.png')):
+    os.remove(f)
   for dpi in image_dpi:
     plt.savefig(os.path.join(folder, prefix + '_concentration_errors@'+str(dpi)+'.png'), dpi=dpi)
   if not no_show:

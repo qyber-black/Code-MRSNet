@@ -6,6 +6,7 @@
 # Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -14,6 +15,7 @@ from tqdm import tqdm
 from scipy.stats import wasserstein_distance
 
 from .analyse import analyse_model
+from .getfolder import get_folder
 
 class Train:
 
@@ -46,6 +48,8 @@ class Train:
             axes[b+1,dim].set_ylabel("%d Buckets" % b)
     if not os.path.isdir(folder):
       os.makedirs(folder)
+    for f in glob.glob(os.path.join(folder,"output-distribution@*.png")):
+      os.remove(f)
     for dpi in image_dpi:
       plt.savefig(os.path.join(folder,"output-distribution@"+str(dpi)+".png"), dpi=dpi)
     if not no_show:
@@ -95,7 +99,8 @@ class Train:
           os.rename(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"),
                     os.path.join(folder,"architectecture@"+str(dpi)+".png"))
       else:
-        os.remove(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"))
+        for dpi in image_dpi:
+          os.remove(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"))
       model.reset()
 
     # Pairwise Wasserstein distance between validation error distributions
@@ -223,6 +228,8 @@ class Train:
         ax2.tick_params(axis='y', labelcolor=cols[l])
     axes[2,1].set_xlabel("Fold")
 
+    for f in glob.glob(os.path.join(folder, 'folds@*.png')):
+      os.remove(f)
     for dpi in image_dpi:
       plt.savefig(os.path.join(folder, 'folds@'+str(dpi)+'.png'), dpi=dpi)
     if not no_show:
@@ -234,7 +241,7 @@ class NoValidation(Train):
   def __init__(self):
     Train.__init__(self,1)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, folder, train_dataset_name="",
+  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, no_show=False,shuffle=True, verbose=False):
     # No validation
     data_dim = d_out.shape[0]
@@ -244,6 +251,9 @@ class NoValidation(Train):
     # Plot distribution
     self._plot_distributions(d_out, folder, image_dpi, screen_dpi, no_show)
     # Train
+    folder = get_folder(os.path.join(path_model,str(model),
+                                     train_dataset_name.replace("/","_")),
+                        "NoValidation-%s")
     model.train(d_inp,d_out,np.array([]),np.array([]),
                 epochs,batch_size,
                 folder,verbose=verbose,no_show=no_show,image_dpi=image_dpi,screen_dpi=screen_dpi,
@@ -258,7 +268,7 @@ class Split(Train):
     Train.__init__(self,2)
     self.p = p
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, folder, train_dataset_name="",
+  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, no_show=False,shuffle=True, verbose=False):
     # Split train/validation by percentage
     data_dim = d_out.shape[0]
@@ -281,6 +291,9 @@ class Split(Train):
     if verbose > 1:
       print("    Bucket 0: %d" % np.where(self._bucket_idx == 0)[0].shape[0])
       print("    Bucket 1: %d" % np.where(self._bucket_idx == 1)[0].shape[0])
+    folder = get_folder(os.path.join(path_model,str(model),
+                                     train_dataset_name.replace("/","_")),
+                        "Split_"+str(self.p)+"-%s")
     # Plot distributions
     self._plot_distributions(d_out, folder, image_dpi, screen_dpi, no_show)
     # Train
@@ -302,7 +315,7 @@ class DuplexSplit(Train):
     Train.__init__(self,2)
     self.p = p
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, folder, train_dataset_name="",
+  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, no_show=False,shuffle=True, verbose=False):
     # Duplex split
     data_dim = d_out.shape[0]
@@ -369,6 +382,9 @@ class DuplexSplit(Train):
     del dm
     if verbose > 0:
       print("  Split %d / %d" % (np.where(self._bucket_idx==0)[0].shape[0], np.where(self._bucket_idx==1)[0].shape[0]))
+    folder = get_folder(os.path.join(path_model,str(model),
+                                     train_dataset_name.replace("/","_")),
+                        "DuplexSplit_"+str(self.p)+"-%s")
     # Plot distributions
     self._plot_distributions(d_out, folder, image_dpi, screen_dpi, no_show)
     # Train
@@ -389,7 +405,7 @@ class KFold(Train):
   def __init__(self,k):
     Train.__init__(self,k)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, folder, train_dataset_name="",
+  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, no_show=False,shuffle=True, verbose=False):
     # Stratify data into k folds
     data_dim = d_out.shape[0]
@@ -409,6 +425,9 @@ class KFold(Train):
     if verbose > 1:
       for b in range(0,self.k):
         print("    Bucket %d: %d" % (b,np.where(self._bucket_idx == b)[0].shape[0]))
+    folder = get_folder(os.path.join(path_model,str(model),
+                                     train_dataset_name.replace("/","_")),
+                        "KFold_"+str(self.k)+"-%s")
     # Plot distributions
     self._plot_distributions(d_out, folder, image_dpi, screen_dpi, no_show)
     # Run cross validation
@@ -419,7 +438,7 @@ class DuplexKFold(Train):
   def __init__(self,k):
     Train.__init__(self,k)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, folder, train_dataset_name="",
+  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, no_show=False,shuffle=True, verbose=False):
     # Stratify data into k folds
     data_dim = d_out.shape[0]
@@ -483,6 +502,9 @@ class DuplexKFold(Train):
     if verbose > 1:
       for b in range(0,self.k):
         print("    Bucket %d: %d" % (b,np.where(self._bucket_idx == b)[0].shape[0]))
+    folder = get_folder(os.path.join(path_model,str(model),
+                                     train_dataset_name.replace("/","_")),
+                        "DuplexKFold_"+str(self.k)+"-%s")
     # Plot distributions
     self._plot_distributions(d_out, folder, image_dpi, screen_dpi, no_show)
     # Run cross validation

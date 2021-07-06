@@ -296,9 +296,9 @@ class Spectrum(object):
     return figure
 
   @staticmethod
-  def load_fida(fida_file):
+  def load_fida(fida_file,id):
     fida_data = loadmat(fida_file)
-    return Spectrum(id=fida_file,
+    return Spectrum(id=id,
                     source='fid-a',
                     metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
                     pulse_sequence='megapress',
@@ -340,7 +340,7 @@ class Spectrum(object):
             acq = 'edit_on'
           else:
             raise Exception('More than 2 mx objects for megapress? Something is wrong here.')
-        specs.append(Spectrum(id=filename, source='pygamma',
+        specs.append(Spectrum(id=filename.split("/")[-2:], source='pygamma',
                      metabolites=[molecules.short_name(metabolite)],
                      pulse_sequence=pulse_sequence,
                      acquisition=acq,
@@ -399,7 +399,7 @@ class Spectrum(object):
                 center_ppm = -4.65 # defualt LCM value
             # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
             data = np.fft.ifft(np.array(data,dtype=np.complex64))
-            specs.append(Spectrum(id=basis_file,
+            specs.append(Spectrum(id="LCM_"+os.path.basename(basis_file),
                                   source='lcmodel',
                                   metabolites=[molecules.short_name(metabolite)],
                                   pulse_sequence='megapress',
@@ -496,7 +496,7 @@ class Spectrum(object):
 
     id = dicom[TAG_PATIENT_ID].value
     if len(id) < 1:
-      id = "_".join([x for x in file.split("/") if x[-4:].lower() != '.ima'])
+      id = "/".join([x for x in file.split("/")[-4:] if x[-4:].lower() != '.ima'])
 
     omega = float(info["[CSA Image Header Info]"]["ImagingFrequency"])
     sweep_width = 1.0 / (float(info["[CSA Image Header Info]"]["RealDwellTime"]) * 1e-9)

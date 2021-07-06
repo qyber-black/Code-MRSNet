@@ -1,5 +1,4 @@
 argparse>=1.4
-datetime>=4.3
 joblib>=1.0.1
 matplotlib>=3.4
 numpy>=1.19.5

@@ -12,7 +12,7 @@ import subprocess
 from mrsnet.molecules import GYROMAGNETIC_RATIO
 
 def fida_spectra(metabolite_names, omega, linewidth=1.0, npts=4096, adc_dt=4e-4,
-                 save_dir=os.path.join('data', 'basis', 'fida')):
+                 save_dir=os.path.join('data', 'basis', 'fida', 'basis_files')):
   matlab_command = "addpath(genpath(fullfile(pwd,'simulators','fida'))); "
   matlab_command += "Bfield=" + str(omega/GYROMAGNETIC_RATIO) + "; "
   matlab_command += "Npts=" + str(npts) + "; "

@@ -208,14 +208,15 @@ class Dataset(object):
     if verbose > 0:
       print("  Spectra with noise: %d" % n_cnt)
 
-  def save(self):
-    if not os.path.exists(self.name):
-      os.makedirs(self.name)
-    joblib.dump(self, os.path.join(self.name, "data"))
+  def save(self, path):
+    from .getfolder import get_folder
+    folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
+    joblib.dump(self, os.path.join(folder, "spectra.joblib"))
+    return folder
 
   @staticmethod
-  def load(name):
-    return joblib.load(os.path.join(name, "data"))
+  def load(folder):
+    return joblib.load(os.path.join(folder, "spectra.joblib"))
 
   def plot_concentrations(self, norm='none'):
     if len(self.concentrations) > 0:
@@ -225,7 +226,7 @@ class Dataset(object):
       n_row = n_col
       while n_row * n_col < n_hst:
         n_row += 1
-      fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True) # 1440p@100dpi
+      fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
       axes = axes.flatten()
       plt.suptitle('Concentrations %s of %s; %d spectra; %f - %f ppm @ %d pts'
                    % ('' if norm == 'none' else ("("+norm+" normalised)"),

@@ -24,10 +24,11 @@ class BasisCollection:
     str = "BasisCollection: \n" + "\n".join(["  "+idx for idx in self._bases])
     return str
 
-  def add(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence):
+  def add(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence,
+          path_basis=os.path.join('data','basis')):
     basis = Basis(metabolites=metabolites, source=source,
                   manufacturer=manufacturer, omega=omega,
-                  linewidth=linewidth, pulse_sequence=pulse_sequence).setup()
+                  linewidth=linewidth, pulse_sequence=pulse_sequence).setup(path_basis)
     idx = basis.name()
     if idx in self._bases:
       raise Exception("Basis %s already in basis collection" % idx)
@@ -93,11 +94,11 @@ class Basis(object):
     return "_".join(["-".join(self.metabolites), self.source, self.manufacturer,
                      str(self.omega), str(self.linewidth), self.pulse_sequence])
 
-  def setup(self):
+  def setup(self, path_basis=os.path.join('data','basis')):
     if self.acquisitions is not None:
       return self
     # Load set
-    self._load()
+    self._load(path_basis)
     if len(self.spectra) < 1:
       raise Exception("No basis loaded")
     # Add missing spectra (for megapress)
@@ -124,31 +125,31 @@ class Basis(object):
     self._correct_b0()
     return self
 
-  def _load(self):
+  def _load(self,path_basis):
     if self.source == 'lcmodel':
       if self.linewidth != 1.0:
         raise Exception('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
-      self._load_lcm()
+      self._load_lcm(path_basis=os.path.join(path_basis,'lcmodel'))
     elif self.source == 'fid-a':
       if self.manufacturer == 'siemens':
-        self._load_fida()
+        self._load_fida(path_basis=os.path.join(path_basis,'fid-a'))
       else:
         raise Exception('No FID-A simulator for ' + self.manufacturer + ' scanner.')
     elif self.source == 'pygamma':
       if self.manufacturer == 'siemens':
-        self._load_pygamma()
+        self._load_pygamma(path_basis=os.path.join(path_basis,'pygamma'))
       else:
         raise Exception('No PyGamma simulator for ' + self.manufacturer + ' scanner.')
     else:
       raise Exception('Unknown basis source: ' + self.source)
 
-  def _load_fida(self, directory=os.path.join('data', 'basis', 'fida'), second_call=False):
-    if not os.path.exists(directory):
-      os.makedirs(directory)
+  def _load_fida(self, path_basis, second_call=False):
+    if not os.path.join(path_basis,'basis_files'):
+      os.makedirs(os.path.join(path_basis,'basis_files'))
     to_simulate = copy.copy(self.metabolites)
-    for file in os.listdir(directory):
+    for file in os.listdir(os.path.join(path_basis,'basis_files')):
       if file.endswith('.mat'):
-        spec = Spectrum.load_fida(os.path.join(directory,file))
+        spec = Spectrum.load_fida(os.path.join(path_basis,'basis_files',file),file[0:-4])
         if len(spec.metabolites) > 1:
           raise Exception("More than one metabolite in FID-A basis")
         if (spec.metabolites[0].lower() in [x.lower() for x in self.metabolites]) \
@@ -167,16 +168,17 @@ class Basis(object):
         print('Some spectra are missing, simulating: ' + str(to_simulate))
         # FIXME: load newly generated spectra instead of 2nd call; maybe in load function
         from .simulators.fida.fida_simulator import fida_spectra
-        fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth)
-        self._load_fida(directory, second_call=True)
+        fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
+                     save_dir=os.path.join(path_basis,'basis_files'))
+        self._load_fida(path_basis, second_call=True)
 
-  def _load_pygamma(self, directory=os.path.join('data', 'basis', 'pygamma'), second_call=False):
+  def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), second_call=False):
     # Constants, synchronise with pygamma_simulator (passed as arguments, but defaults hardcoded
     # in pygamma simulator as well)
     npts = 4096
     adc_dt = 4e-4
     for metabolite_name in self.metabolites:
-      specs = Spectrum.load_pygamma(directory, metabolite_name,
+      specs = Spectrum.load_pygamma(path_basis, metabolite_name,
                                     self.pulse_sequence, self.omega,
                                     self.linewidth, npts, adc_dt)
       for s in specs:
@@ -184,7 +186,7 @@ class Basis(object):
           self.spectra[s.metabolites[0]] = {}
         self.spectra[s.metabolites[0]][s.acquisition] = s
 
-  def _load_lcm(self, directory=os.path.join('data', 'basis', 'lcmodel')):
+  def _load_lcm(self, path_basis=os.path.join('data', 'basis', 'lcmodel')):
     if self.manufacturer == 'siemens':
       m_str = 'Siemens'
     elif self.manufacturer == 'ge':
@@ -200,7 +202,7 @@ class Basis(object):
       raise Exception('No LCModel basis set for ' + self.pulse_sequence + ' pulse sequence')
     for a in acqs:
       diff_var_str = '_kasier' if a == 'difference' else ''
-      specs = Spectrum.load_lcm(os.path.join(directory,
+      specs = Spectrum.load_lcm(os.path.join(path_basis,'basis_files',
                                 p_str+"_"+a+"_"+m_str+"_3T"+diff_var_str+".basis"),
                                 a, self.omega, self.metabolites)
       for s in specs:
@@ -322,7 +324,7 @@ class Basis(object):
           adc += self.spectra[m][a].adc() * con[m]
           lw += self.spectra[m][a].linewidth
       lw = lw / len(self.spectra.keys()) # Linewidth should be identical, but just in case some default
-      spectra[a] = Spectrum(id=id+"-"+a,
+      spectra[a] = Spectrum(id=id,
                             source='sim_'+self.spectra[self.metabolites[0]][a].source,
                             metabolites=self.metabolites,
                             pulse_sequence=self.pulse_sequence,
