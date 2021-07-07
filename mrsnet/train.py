@@ -161,72 +161,83 @@ class Train:
     aerr_min -= err_d
     aerr_max += err_d
 
-    fig, axes = plt.subplots(3,2,sharex=True)
+    import matplotlib.gridspec as gridspec
+    fig = plt.figure()
+    gs = gridspec.GridSpec(ncols=4,nrows=3,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
+    ax00 = fig.add_subplot(gs[0,0:2])
+    ax01 = fig.add_subplot(gs[0,2:])
+    ax10 = fig.add_subplot(gs[1,0:2])
+    ax11 = fig.add_subplot(gs[1,2:])
+    ax20 = fig.add_subplot(gs[2,0:1])
+    ax21 = fig.add_subplot(gs[2,2:3])
 
-    axes[0,0].set_title("Train Error Distributions")
-    sns.boxplot(data=train_res['error'], ax=axes[0,0])
-    axes[0,0].set_ylim([err_min,err_max])
-    axes[0,0].set_xlabel("Fold")
-    axes[0,0].set_ylabel("Error")
+    ax00.set_title("Train Error Distributions")
+    sns.boxplot(data=train_res['error'], ax=ax00)
+    ax00.set_ylim([err_min,err_max])
+    ax00.set_xlabel("Fold")
+    ax00.set_ylabel("Error")
 
-    sns.boxplot(data=val_res['error'], ax=axes[0,1])
-    axes[0,1].set_ylim([err_min,err_max])
-    axes[0,1].set_title("Validation Error Distributions")
-    axes[0,1].set_xlabel("Fold")
-    axes[0,1].set_ylabel("Error")
+    ax01.set_title("Validation Error Distributions")
+    sns.boxplot(data=val_res['error'], ax=ax01)
+    ax01.set_ylim([err_min,err_max])
+    ax01.set_xlabel("Fold")
+    ax01.set_ylabel("Error")
 
+    ax10.set_title("Train Absolute Error Distributions")
     sns.boxplot(data=[np.abs(train_res['error'][k]) for k in range(0,self.k)],
-                ax=axes[1,0])
-    axes[1,0].set_ylim([aerr_min,aerr_max])
-    axes[1,0].set_title("Train Absolute Error Distributions")
-    axes[1,0].set_xlabel("Fold")
-    axes[1,0].set_ylabel("Abs. Error")
+                ax=ax10)
+    ax10.set_ylim([aerr_min,aerr_max])
+    ax10.set_xlabel("Fold")
+    ax10.set_ylabel("Abs. Error")
 
+    ax11.set_title("Validation Absolute Error Distributions")
     sns.boxplot(data=[np.abs(np.array(val_res['error'][k])).tolist() for k in range(0,self.k)],
-                ax=axes[1,1])
-    axes[1,1].set_ylim([aerr_min,aerr_max])
-    axes[1,1].set_title("Validation Absolute Error Distributions")
-    axes[1,1].set_ylabel("Abs. Error")
-    axes[1,1].set_xlabel("Fold")
+                ax=ax11)
+    ax11.set_ylim([aerr_min,aerr_max])
+    ax11.set_ylabel("Abs. Error")
+    ax11.set_xlabel("Fold")
 
-    axes[2,0].set_title("Train Metrics")
+    ax20.set_title("Train Metrics")
     keys = [k for k in sorted(train_res.keys())]
     ymin2x = []
     keys.remove("error")
     ymax2x = []
     cols = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown',
             'tab:pink','tab:gray','tab:olive','tab:cyan']
-    # FIXME: more space for more than 2 axes on the right
     for l in range(0,len(keys)):
       ymin2x.append(np.min([np.min(train_res[keys[l]]),np.min(val_res[keys[l]])]))
       ymax2x.append(np.max([np.max(train_res[keys[l]]),np.max(val_res[keys[l]])]))
       if l == 0:
-        axes[2,0].plot(range(0,self.k), train_res[keys[l]], color=cols[l])
-        axes[2,0].set_ylim([ymin2x[l],ymax2x[l]])
-        axes[2,0].set_ylabel(keys[0])
-        axes[2,0].tick_params(axis='y', labelcolor=cols[l])
+        ax20.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        ax20.set_ylim([ymin2x[l],ymax2x[l]])
+        ax20.set_ylabel(keys[0])
+        ax20.tick_params(axis='y', labelcolor=cols[l])
       else:
-        ax2 = axes[2,0].twinx()
+        ax2 = ax20.twinx()
         ax2.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
         ax2.set_ylim([ymin2x[l],ymax2x[l]])
         ax2.set_ylabel(keys[l])
         ax2.tick_params(axis='y', labelcolor=cols[l])
-    axes[2,0].set_xlabel("Fold")
+        ax2.spines.right.set_position(("axes", 0.8+(0.2*l)))
+    ax20.set_xlabel("Fold")
 
-    axes[2,1].set_title("Validation Metrics")
+    ax21.set_title("Validation Metrics")
     for l in range(0,len(keys)):
       if l == 0:
-        axes[2,0].plot(range(0,self.k), train_res[keys[l]], color=cols[l])
-        axes[2,1].set_ylim([ymin2x[l],ymax2x[l]])
-        axes[2,1].set_ylabel(keys[0])
-        axes[2,0].tick_params(axis='y', labelcolor=cols[l])
+        ax21.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        ax21.set_ylim([ymin2x[l],ymax2x[l]])
+        ax21.set_ylabel(keys[0])
+        ax21.tick_params(axis='y', labelcolor=cols[l])
       else:
-        ax2 = axes[2,1].twinx()
+        ax2 = ax21.twinx()
         ax2.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
         ax2.set_ylim([ymin2x[l],ymax2x[l]])
         ax2.set_ylabel(keys[l])
         ax2.tick_params(axis='y', labelcolor=cols[l])
-    axes[2,1].set_xlabel("Fold")
+        ax2.spines.right.set_position(("axes", 0.8+(0.2*l)))
+    ax21.set_xlabel("Fold")
+
+    fig.tight_layout()
 
     for f in glob.glob(os.path.join(folder, 'folds@*.png')):
       os.remove(f)

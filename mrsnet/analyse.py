@@ -41,7 +41,6 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       else:
         writer.writerow(['Metabolite', 'Predicted'])
       for l in range(0,inp.shape[0]):
-        # TODO: filenames if dicom
         if id is None:
           writer.writerow(["Spectrum: %d" % l])
         else:
@@ -62,7 +61,6 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     else:
       print('  %12s  %8s' % ('Metabolite', 'Predicted'))
     for l in range(0,inp.shape[0]):
-      # TODO: filenames if dicom
       if id is None:
         print("Spectrum: %d" % l)
       else:
