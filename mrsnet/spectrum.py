@@ -532,7 +532,7 @@ class Spectrum(object):
                     pulse_sequence=pulse_sequence,
                     acquisition=acquisition,
                     omega=omega,
-                    linewidth=-1, # Unknown
+                    linewidth=-1.0, # Unknown
                     dt=dt,
                     center_ppm=-4.7,
                     sweep_width=sweep_width,

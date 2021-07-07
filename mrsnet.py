@@ -42,6 +42,12 @@ def main():
   add_arguments_simulate(p_simulate)
   p_simulate.set_defaults(func=simulate)
 
+  # Generate all datasets
+  p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate all standard datasets.',
+                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  add_arguments_default(p_gen_ds)
+  p_gen_ds.set_defaults(func=generate_datasets)
+
   # Train
   p_train = subparsers.add_parser('train', help='Train model on dataset.',
                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -114,7 +120,7 @@ def add_arguments_simulate(p):
 
 def add_arguments_train(p):
   # Add training arguments
-  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/SIZE-ID).')
+  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('--norm', choices=['sum', 'max'], default='sum',
                  help='Concentration normalisation: sum or max equal to 1')
   p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
@@ -133,7 +139,7 @@ def add_arguments_train(p):
 
 def add_arguments_quantify(p):
   # Add quantification arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/SIZE-ID)')
+  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID)')
   p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
 
@@ -196,7 +202,10 @@ def simulate(args):
                     "-".join([str(k) for k in args.omega]),
                     "-".join([str(k) for k in args.linewidth]),
                     "-".join(args.metabolites),
-                    "-".join(args.pulse_sequence))
+                    "-".join(args.pulse_sequence),
+                    "-".join(args.sample),
+                    str(args.noise_p)+"-"+str(args.noise_mu)+"-"+str(args.noise_sigma))
+
   bases = basis.BasisCollection()
   num_bases = 0
   for s in args.source:
@@ -244,12 +253,58 @@ def simulate(args):
         plt.show(block=True)
         plt.close()
 
+def generate_datasets(args):
+  # Generate datasets sub-command
+  import subprocess
+  import mrsnet.grid as grid
+  # FIXME: argument to select dataset and better specified in a json file or dict in an mrsnet module
+  datasets = grid.Grid({
+      'metabolites': [['Cr', 'GABA', 'Glu', 'Gln', 'NAA']],
+      'source': ['lcmodel', 'fid-a', 'pygamma', ['lcmodel', 'fid-a', 'pygamma'], ['fid-a', 'pygamma']],
+      'manufacturer': ['siemens'],
+      'omega': [123.23],
+      'linewidth': [1.0, [0.75, 1.0, 1.25]],
+      'pulse_sequence': ['megapress'],
+      'num': [10000],
+      'sample': ['random', 'dirichlet', 'sobol'],
+      'noise_p': [1.0],
+      'noise_sigma': [0.05, 0.1, 0.2],
+      'noise_mu': [0.0]
+    }) # FIXME: more needed?
+  k = [str(k) for k in datasets.values.keys()]
+  for v in datasets:
+    cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
+    if args.verbose > 0:
+      cmd += ['-v']*args.verbose
+    lcmodel = False
+    linewidth1 = False
+    for ki in range(0,len(k)):
+      if k[ki] == 'source' and ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
+                                (not isinstance(v[ki],list) and v[ki] == 'lcmodel')):
+        lcmodel = True
+      if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
+        linewidth1 = True
+      cmd.append("--"+k[ki])
+      if isinstance(v[ki],list):
+        for val in v[ki]:
+          cmd.append(str(val))
+      else:
+        cmd.append(str(v[ki]))
+    if not lcmodel or linewidth1: # Skip unsupported linwidths for lcmodel
+      if args.verbose > 0:
+        print('# Run '+' '.join(cmd[3:]))
+      try:
+        p = subprocess.Popen(cmd)
+      except OSError as e:
+        raise Exception('MRSNet simulations failed') from e
+      p.wait()
+
 def train(args):
   # Train sub-command
   import mrsnet.dataset as dataset
   # Standardise name, but could be path anyway
   id = get_std_name(args.dataset)
-  name = os.path.join(*id[-7:-1])
+  name = os.path.join(*id[-8:-1])
   rest = id[-1]
   if args.verbose > 0:
     print("# Loading dataset %s : %s" % (name,rest))
@@ -297,7 +352,7 @@ def quantify(args):
   import mrsnet.dataset as dataset
   if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
     id = get_std_name(args.dataset)
-    name = os.path.join(*id[-7:-1])
+    name = os.path.join(*id[-8:-1])
     rest = id[-1]
     if args.verbose > 0:
       print("# Loading dataset %s : %s" % (name,rest))
