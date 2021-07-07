@@ -502,7 +502,7 @@ class Spectrum(object):
 
     omega = float(info["[CSA Image Header Info]"]["ImagingFrequency"])
     sweep_width = 1.0 / (float(info["[CSA Image Header Info]"]["RealDwellTime"]) * 1e-9)
-    dt = (omega / sweep_width) / 1e+2 # FIXME: negative in original code, why?
+    dt = (omega / sweep_width) / 1e+2 # FIXME: multiplied with -1 in original code, why?
 
     cs = np.array([])
     if concentrations is not None:

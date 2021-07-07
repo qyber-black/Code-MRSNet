@@ -120,7 +120,7 @@ def add_arguments_train(p):
   p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
                  help='Acquisitions from pulse sequence used (megapress: edit_off, edit_on, difference).')
   p.add_argument('--datatype', type=lambda s : s.lower(), nargs='+',
-                 choices=['magnitude', 'phase]', 'real', 'imaginary'], default=['magnitude'],
+                 choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_medium_softmax',
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]- see mrsnet/models.py for details.')
@@ -462,7 +462,7 @@ class Cfg:
 if __name__ == '__main__':
   # Only print warnings and errors for tf (set before importing tf)
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
   # Headless mode
   if not "DISPLAY" in os.environ:
     from matplotlib import use

@@ -6,11 +6,11 @@
 # Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
-import time
 import csv
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+from time import time_ns
 
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -175,23 +175,23 @@ class CNN:
     if verbose > 0:
       self.cnn.summary()
 
-    timer = TimeHistory()
+    timer = TimeHistory(epochs)
     callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
                                                min_delta=1e-12,
-                                               patience=15,
+                                               patience=50,
                                                verbose=(verbose > 0),
                                                restore_best_weights=True),
                  timer]
-    # FIXME: callback delays?
     history = self.cnn.fit(x=d_inp,
                            y=d_out,
                            batch_size=batch_size,
                            epochs=epochs,
-                           verbose=(verbose > 0),
+                           verbose=(verbose > 0)*2,
                            validation_data=validation_data,
                            shuffle=True,
                            callbacks=callbacks)
-    history.history['time (ms)'] = timer.times
+    le = len(history.history['loss'])
+    history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
     if verbose > 0:
       print("# Evaluating")
@@ -278,11 +278,14 @@ class CNN:
     plt.close()
 
 class TimeHistory(keras.callbacks.Callback):
-  def on_train_begin(self, logs={}):
-    self.times = []
-  def on_epoch_begin(self, batch, logs={}):
-    self.tic = time.time()
-  def on_epoch_end(self, batch, logs={}):
-    self.times.append((time.time() - self.tic)*1000)
-  def on_train_batch_end(self, batch, logs={}):
-    pass
+  def __init__(self, epochs):
+    super(TimeHistory, self).__init__()
+    self.counter = 0
+    self.times = np.zeros((epochs,2),dtype=np.int64)
+  def on_train_begin(self, logs=None):
+    self.counter = 0
+  def on_epoch_begin(self, batch, logs=None):
+    self.times[self.counter,0] = time_ns()
+  def on_epoch_end(self, batch, logs=None):
+    self.times[self.counter,1] = time_ns()
+    self.counter += 1
