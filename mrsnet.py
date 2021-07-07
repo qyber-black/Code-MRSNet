@@ -46,6 +46,7 @@ def main():
   p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate all standard datasets.',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_gen_ds)
+  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (basic-1, mixed-1)')
   p_gen_ds.set_defaults(func=generate_datasets)
 
   # Train
@@ -257,47 +258,55 @@ def generate_datasets(args):
   # Generate datasets sub-command
   import subprocess
   import mrsnet.grid as grid
-  # FIXME: argument to select dataset and better specified in a json file or dict in an mrsnet module
-  datasets = grid.Grid({
-      'metabolites': [['Cr', 'GABA', 'Glu', 'Gln', 'NAA']],
-      'source': ['lcmodel', 'fid-a', 'pygamma', ['lcmodel', 'fid-a', 'pygamma'], ['fid-a', 'pygamma']],
-      'manufacturer': ['siemens'],
-      'omega': [123.23],
-      'linewidth': [1.0, [0.75, 1.0, 1.25]],
-      'pulse_sequence': ['megapress'],
-      'num': [10000],
-      'sample': ['random', 'dirichlet', 'sobol'],
-      'noise_p': [1.0],
-      'noise_sigma': [0.05, 0.1, 0.2],
-      'noise_mu': [0.0]
-    }) # FIXME: more needed?
+  from mrsnet.dataset import Collections
+  datasets = Collections[args.collection]
   k = [str(k) for k in datasets.values.keys()]
   for v in datasets:
-    cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
-    if args.verbose > 0:
-      cmd += ['-v']*args.verbose
-    lcmodel = False
-    linewidth1 = False
+    # Check if it exists already
+    na = {}
     for ki in range(0,len(k)):
-      if k[ki] == 'source' and ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
-                                (not isinstance(v[ki],list) and v[ki] == 'lcmodel')):
-        lcmodel = True
-      if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
-        linewidth1 = True
-      cmd.append("--"+k[ki])
       if isinstance(v[ki],list):
-        for val in v[ki]:
-          cmd.append(str(val))
+        na[k[ki]] = [str(val) for val in v[ki]]
       else:
-        cmd.append(str(v[ki]))
-    if not lcmodel or linewidth1: # Skip unsupported linwidths for lcmodel
+        na[k[ki]] = [str(v[ki])]
+    name=os.path.join("-".join(na['source']),
+                      "-".join(na['manufacturer']),
+                      "-".join(na['omega']),
+                      "-".join(na['linewidth']),
+                      "-".join(na['metabolites']),
+                      "-".join(na['pulse_sequence']),
+                      "-".join(na['sample']),
+                      na['noise_p'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
+    if os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra.joblib")):
       if args.verbose > 0:
-        print('# Run '+' '.join(cmd[3:]))
-      try:
-        p = subprocess.Popen(cmd)
-      except OSError as e:
-        raise Exception('MRSNet simulations failed') from e
-      p.wait()
+        print("Exists: %s:%s" % (name,na['num'][0]))
+    else:
+      # Create
+      cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
+      if args.verbose > 0:
+        cmd += ['-v']*args.verbose
+      lcmodel = False
+      linewidth1 = False
+      for ki in range(0,len(k)):
+        if k[ki] == 'source' and ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
+                                  (not isinstance(v[ki],list) and v[ki] == 'lcmodel')):
+          lcmodel = True
+        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
+          linewidth1 = True
+        cmd.append("--"+k[ki])
+        if isinstance(v[ki],list):
+          for val in v[ki]:
+            cmd.append(str(val))
+        else:
+          cmd.append(str(v[ki]))
+      if not lcmodel or linewidth1: # Skip unsupported linwidths for lcmodel
+        if args.verbose > 0:
+          print('# Run '+' '.join(cmd[3:]))
+        try:
+          p = subprocess.Popen(cmd)
+        except OSError as e:
+          raise Exception('MRSNet simulations failed') from e
+        p.wait()
 
 def train(args):
   # Train sub-command

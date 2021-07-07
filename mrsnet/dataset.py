@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from itertools import combinations
 
+from .grid import Grid
+
 class Dataset(object):
   # A dataset is a collection of spectra for training, tesing or predicting.
   # The dataset object contains methods for how to handle and export the data
@@ -336,3 +338,32 @@ class Dataset(object):
     elif norm != 'none':
       raise Exception("Unknown norm %s" % norm)
     return out
+
+Collections = {
+  'basic-1': Grid({
+    'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
+    'source': ['lcmodel', 'fid-a', 'pygamma'],
+    'manufacturer': ['siemens'],
+    'omega': [123.23],
+    'linewidth': [1.0],
+    'pulse_sequence': ['megapress'],
+    'num': [10000],
+    'sample': ['random', 'dirichlet', 'sobol'],
+    'noise_p': [1.0],
+    'noise_sigma': [0.05, 0.1, 0.2],
+    'noise_mu': [0.0]
+  }),
+  'mixed-1': Grid({
+    'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
+    'source': [['lcmodel', 'fid-a', 'pygamma'], ['fid-a', 'pygamma'], ['fid-a', 'lcmodel']],
+    'manufacturer': ['siemens'],
+    'omega': [123.23],
+    'linewidth': [1.0, [0.75, 1.0, 1.25]],
+    'pulse_sequence': ['megapress'],
+    'num': [10000],
+    'sample': ['random', 'dirichlet', 'sobol', ['dirichlet', 'sobol']],
+    'noise_p': [1.0],
+    'noise_sigma': [0.1],
+    'noise_mu': [0.0]
+  })
+}
