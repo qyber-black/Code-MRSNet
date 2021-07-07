@@ -242,6 +242,9 @@ class Spectrum(object):
     if mode == 'magnitude':
       Y = np.abs(Y)
       axes.set_ylabel('Magn.')
+    elif mode == 'phase':
+      Y = np.angle(Y)
+      axes.set_ylabel('Phase')
     elif mode == 'real':
       Y = np.real(Y)
       axes.set_ylabel('Re')
@@ -264,21 +267,24 @@ class Spectrum(object):
     if self.adc_noise_mu != 0.0 or self.adc_noise_sigma != 0.0:
       super_title += (" - Noise mu: %f sigma: %f" % (self.adc_noise_mu,self.adc_noise_sigma))
 
-    figure, axes = plt.subplots(3, n_cols, sharex=True, sharey=True, dpi=screen_dpi)
+    figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
-      axes = np.reshape(axes, (3, 1))
+      axes = np.reshape(axes, (4, 1))
     else:
       axes[0,1].remove()
       axes[1,1].remove()
       axes[2,1].remove()
+      axes[3,1].remove()
 
     plt.suptitle(super_title)
 
     self.plot(axes[0,0], type=type, mode='magnitude')
     axes[0,0].set_xlabel("")
-    self.plot(axes[1,0], type=type, mode='real')
+    self.plot(axes[1,0], type=type, mode='phase')
     axes[1,0].set_xlabel("")
-    self.plot(axes[2,0], type=type, mode='imaginary')
+    self.plot(axes[2,0], type=type, mode='real')
+    axes[2,0].set_xlabel("")
+    self.plot(axes[3,0], type=type, mode='imaginary')
 
     if n_cols == 2:
       ax = plt.subplot(1, 2, 2)
@@ -288,7 +294,6 @@ class Spectrum(object):
       ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv)
       ax.set_xticks(np.arange(len(self.metabolites)))
       ax.set_xticklabels(molecules.short_name(cn))
-    plt.show()
 
     return figure
 

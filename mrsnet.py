@@ -120,7 +120,7 @@ def add_arguments_train(p):
   p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
                  help='Acquisitions from pulse sequence used (megapress: edit_off, edit_on, difference).')
   p.add_argument('--datatype', type=lambda s : s.lower(), nargs='+',
-                 choices=['magnitude', 'real', 'imaginary'], default=['magnitude'],
+                 choices=['magnitude', 'phase]', 'real', 'imaginary'], default=['magnitude'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_medium_softmax',
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]- see mrsnet/models.py for details.')
@@ -237,12 +237,12 @@ def simulate(args):
       fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
       plt.close()
-      if args.show_spectra:
-        for s,c in zip(dataset.spectra,dataset.concentrations):
-          for a in s.keys():
-            s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
-            plt.show(block=True)
-            plt.close()
+  if args.show_spectra:
+    for s,c in zip(dataset.spectra,dataset.concentrations):
+      for a in s.keys():
+        s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
+        plt.show(block=True)
+        plt.close()
 
 def train(args):
   # Train sub-command

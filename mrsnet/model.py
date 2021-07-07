@@ -219,7 +219,6 @@ class CNN:
   def save(self, folder):
     path=os.path.join(folder, "tf_model")
     self.cnn.save(path)
-    # FIXME: add MRSNet version information
     with open(os.path.join(path, "mrsnet.json"), 'w') as f:
       print(json.dumps({
           'model': self.model,

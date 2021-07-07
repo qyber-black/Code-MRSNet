@@ -301,7 +301,7 @@ class Dataset(object):
       fft[a_idx,:] = a
       a_idx += 1
     if mean_center or normalise:
-      # FIXME: different normalisation? any phase normalisation?
+      # FIXME: different normalisation?
       m = np.abs(fft)
       p = np.angle(fft)
       if mean_center:
@@ -318,6 +318,8 @@ class Dataset(object):
           inp[a_idx,d_idx,:] = np.imag(fft[a_idx,:])
         elif d == 'magnitude':
           inp[a_idx,d_idx,:] = np.abs(fft[a_idx,:])
+        elif d == 'phase':
+          inp[a_idx,d_idx,:] = np.angle(fft[a_idx,:]) / np.pi # Normalise to (-1,1]
         else:
           raise Exception("Unknown datatype %s" % d)
         d_idx += 1
