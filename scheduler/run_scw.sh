@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run_scw.sh - MRSNet - scheduled jobs on SCW
+# run_scw.sh - MRSNet - run jobs on SCW
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -8,71 +8,65 @@
 #
 
 default_host="hawklogin.cf.ac.uk"
-default_jobs=10
-default_repeats=1
-default_wait=1h
 
-if [ ! -r helper/slurm-scw.sh ]; then
-  echo "$0: must be run in code-mrsnet folder" >&2
-  exit 1
-fi
-
+cmd=""
 user=""
-test=""
-r=0
-max_jobs=$default_jobs
 host=$default_host
-repeats=$default_repeats
-wait=$default_wait
 
 while [ -n "$1" ]; do
-  if [ "$1" = "-c" -o "$1" = "--continuous" ]; then
-    r=1
-    shift
-  elif [ "$1" = "--sleep" ]; then
-    shift
-    wait=$1
-    shift
-  elif [ "$1" = "--host" ]; then
+  if [ "$1" = "--host" ]; then
     shift
     host=$1
     shift
-  elif [ "$1" = "-j" -o "$1" = "--jobs" ]; then
-    shift
-    case $1 in
-      ''|*[!0-9]*) echo "$0: argument of -j|--jobs must be a number"; exit 1 ;;
-    esac
-    max_jobs=$1
-    shift
-  elif [ "$1" = "-r" -o "$1" = "--repeats" ]; then
-    shift
-    case $1 in
-      ''|*[!0-9]*) echo "$0: argument of -r|--repeats must be a number"; exit 1 ;;
-    esac
-    repeats=$1
-    shift
   elif [ "$1" = "-h" -o "$1" = "--help" ]; then
     cat <<EOD
-$0 [OPTIONS] USER TEST-DATASET...
-Schedule test dataset trainig on SCW.
+$0 [OPTIONS] USER [sync | run ARGS| check ARGS]
+Schedule MRSNet job on SCW.
+
+  COMMAND:
+    sync            synchronise MRSNet code
+    run             start MRSNet job
+    check           check if MRSNet job is done
 
   USER              SCW user id
-  TEST-DATASET      run-test.py test dataset ids
+  ARGS              MRSNet job arguments:
+                      DATASET        - path
+                      METABOLITES    - - separated strings
+                      PULSE_SEQUENCE - string
+                      EPOCHS         - number
+                      VALIDATE       - number
+                      NORM           - string
+                      ACQUISITIONS   - - separated strings
+                      DATATYPE       - - separated strings
+                      MODEL          - string
+                      BATCH_SIZE     - number
 
   OPTIONS:
-    -r, --repeats     number of repeats for dataset [$default_repeats]
-    -j, --jobs        maximum jobs to schedule in parallel [$default_jobs]
-    -c, --continuous  schedule continously (CTRL-C to quit)
-        --sleep       sleep time between schedule attempts [$default_wait]
-        --host        SCW login host [$default_host]
     -h, --help        this help text
+    --host        SCW login host [$default_host]
 EOD
     exit 0
   else
     if [ -z "$user" ]; then
       user="$1"
+    elif [ -z "$cmd" ]; then
+      cmd="$1"
+      if [ "$cmd" = run -o "$cmd" = check ]; then
+        for var in DATASET METABOLITES PULSE_SEQUENCE EPOCHS VALIDATE NORM ACQUISITIONS DATATYPE MODEL BATCH_SIZE; do
+          shift
+          if [ -z "$1" ]; then
+            echo "$0: no $var value" >&2
+            exit 1
+          fi
+          eval $var=\"$1\"
+        done
+      elif [ "$cmd" != "sync" ]; then
+        echo "$0: unknown command $cmd" >&2
+        exit 1
+      fi
     else
-      test="$test $1"
+      echo "$0: extra argument: $1" >&2
+      exit 1
     fi
     shift
   fi
@@ -82,38 +76,114 @@ if [ -z "$user" ]; then
   echo "$0: no user specified" >&2
   exit 1
 fi
-if [ -z "$test" ]; then
-  echo "$0: no dataset specified" >&2
+if [ -z "$cmd" ]; then
+  echo "$0: no command specified" >&2
   exit 1
 fi
 
-while true; do
+if [ "$cmd" == sync ]; then
+  echo "# Sync'ing code from `pwd`"
+  rsync -a --progress --exclude='.git' --exclude='__pycache__' --exclude 'data' . ${user}@${host}:code-mrsnet
+  ssh ${user}@${host} 'find code-mrsnet/data/{jobs-scw,model,sim-spectra} -type d -empty -delete'
+elif [ "$cmd" == run ]; then
+  DATASET="`echo $DATASET | sed -e 's,^.*/sim-spectra/,,'`"
+  echo "# Sync'ing dataset $DATASET"
+  ssh ${user}@${host} 'mkdir -p 'code-mrsnet/data/sim-spectra/$DATASET
+  rsync -a --progress data/sim-spectra/$DATASET/spectra.joblib ${user}@${host}:code-mrsnet/data/sim-spectra/$DATASET/spectra.joblib
 
-  date
+  echo "# Schedule job"
+  DATASET_ID="`echo $DATASET | sed -e s,/,_,g`"
+  id="$DATASET_ID/$METABOLITES/$PULSE_SEQUENCE/$EPOCHS/$VALIDATE/$NORM/$ACQUISITIONS/$DATATYPE/$MODEL/$BATCH_SIZE"
+  folder="code-mrsnet/data/jobs-scw/$id"
 
-  n="`ssh ${user}@${host} squeue | grep $user | wc -l`"
-  d=`expr $max_jobs - $n`
+  METABOLITES="`echo $METABOLITES | sed -e 's,-, ,g'`"
+  DATATYPE="`echo $DATATYPE | sed -e 's,-, ,g'`"
+  ACQUISITIONS="`echo $ACQUISITIONS | sed -e 's,-, ,g'`"
 
-  if [ $d -gt 0 ]; then
-    rsync -av --exclude='data/model' --exclude='data/benchmark' --exclude='data/jobs*' --exclude='.git' --exclude='__pycache__' . ${user}@${host}:code-mrsnet
-    all_done=1
-    for t in $test; do
-      ssh ${user}@${host} 'cd ~/code-mrsnet && ./run_test.py '${t}' '${repeats}' -e ./helper/slurm-scw.sh -m '${d}' --no_benchmark'
-      if [ "$?" != 0 ]; then
-        all_done=0
-      fi
-    done
-    if [ "$all_done" == 1 ]; then
-      echo "All tests scheduled"
-      exit 0
+  cat <<EOF | ssh ${user}@${host} 'mkdir -p "'$folder'" && cat - >"'$folder'/job.sh"'
+#!/bin/bash --login
+#SBATCH --job-name=${id}
+#SBATCH --output=${folder}/out
+#SBATCH --error=${folder}/err
+#SBATCH --time=1-00:00
+#SBATCH --ntasks=1
+#SBATCH --mem-per-cpu=32768
+#SBATCH --ntasks-per-node=1
+#SBATCH -p gpu_v100,gpu
+#SBATCH --gres=gpu:1
+
+module load python/3.9.2
+module load CUDA/11.2
+
+export PATH=~/.local/bin:\$PATH
+export PYTHONPATH=~/.local/lib/python3.9/site-packages:\$PYTHONPATH
+export LD_LIBRARY_PATH=~/.local/lib64:\$LD_LIBRARY_PATH
+
+cd ~/code-mrsnet
+
+echo "Job ${id} :"
+echo "  \$SLURM_JOB_NAME/\$SLURM_JOB_ID on \$SLURM_JOB_NODELIST"
+/usr/bin/env python3 ./mrsnet.py train --no-show --verbose \\
+  --metabolites ${METABOLITES} \\
+  --dataset data/sim-spectra/${DATASET} \\
+  --epochs ${EPOCHS} \\
+  --validate ${VALIDATE} \\
+  --norm ${NORM} \\
+  --acquisitions ${ACQUISITIONS} \\
+  --datatype ${DATATYPE} \\
+  --model ${MODEL} \\
+  --batch-size ${BATCH_SIZE}
+test "\$?" = 0 && date >~/${folder}/done
+EOF
+
+  ssh ${user}@${host} 'sbatch -A `grep '^MRSNet ' ~/projects  | cut -d\  -f2` '$folder/job.sh
+
+else
+  DATASET="`echo $DATASET | sed -e 's,^.*/sim-spectra/,,'`"
+  echo "# Check if done"
+  DATASET_ID="`echo $DATASET | sed -e s,/,_,g`"
+  id="$DATASET_ID/$METABOLITES/$PULSE_SEQUENCE/$EPOCHS/$VALIDATE/$NORM/$ACQUISITIONS/$DATATYPE/$MODEL/$BATCH_SIZE"
+  folder="code-mrsnet/data/jobs-scw/$id"
+  if [ "$VALIDATE" = 0.0 -o "$VALIDATE" = 0 ]; then
+    VALIDATOR="NoValidation"
+  elif [ "`echo $VALIDATE | cut -c1`" = - ]; then
+    if [ "`echo $VALIDATE | cut -c2`" = 0 ]; then
+      VALIDATOR="DuplexSplit_${VALIDATE}"
+    else
+      VALIDATOR="DuplexKFold_${VALIDATE}"
+    fi
+  else
+    if [ "`echo $VALIDATE | cut -c1`" = 0 ]; then
+      VALIDATOR="Split_${VALIDATE}"
+    else
+      VALIDATOR="KFold_${VALIDATE}"
     fi
   fi
-
-  if [ "$r" = 0 ]; then
-    exit 0
+  model_folder="code-mrsnet/data/model/$MODEL/$METABOLITES/$PULSE_SEQUENCE/$ACQUISITIONS/$DATATYPE/$NORM/$BATCH_SIZE/$EPOCHS/$DATASET_ID/$VALIDATOR-1"
+  local_model_folder="data/model/$MODEL/$METABOLITES/$PULSE_SEQUENCE/$ACQUISITIONS/$DATATYPE/$NORM/$BATCH_SIZE/$EPOCHS/$DATASET_ID/$VALIDATOR-1"
+  ssh ${user}@${host} 'ls '$folder 2>/dev/null 1>&2
+  if [ "$?" != 0 ]; then
+    echo "OFFLINE"
+  else
+    ssh ${user}@${host} 'ls '$folder/done 2>/dev/null 1>&2
+    if [ "$?" != 0 ]; then
+      n="`ssh ${user}@${host} squeue -n $id 2>/dev/null | sed -n '1!p'`"
+      echo $n
+      if [ -z "$n" ]; then
+        # Delete job folder and model
+        ssh ${user}@${host} 'rm -rf '$folder $model_folder
+        echo "FAILED"
+      else
+        ssh ${user}@${host} tail -2 $folder/out
+        echo "WAIT"
+      fi
+    else
+      # Copy results
+      mkdir -p $local_model_folder
+      rsync -a --progress ${user}@${host}:$model_folder/ $local_model_folder/
+      # Delete job folder and model
+      ssh ${user}@${host} 'rm -rf '$folder $model_folder
+      echo "DONE"
+    fi
   fi
-
-  echo "  Waiting $wait..."
-  sleep $wait
-
-done
+fi

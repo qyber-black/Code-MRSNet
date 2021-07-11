@@ -137,9 +137,6 @@ class CNN:
     if verbose > 0:
       print("# Train CNN %s" % str(self))
 
-    d_inp_save = d_inp
-    d_out_save = d_out
-
     d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_out, dtype=tf.float32)
     d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))

@@ -17,6 +17,9 @@ from scipy.stats import wasserstein_distance
 from .analyse import analyse_model
 from .getfolder import get_folder
 
+# FIXME: evluation prediction for train and validation dataset is done twice, in train call and analyse_model call
+# FIXME: Rename Wasserstein distance (quality to error)
+
 class Train:
 
   def __init__(self,k):
@@ -262,7 +265,7 @@ class NoValidation(Train):
     # Plot distribution
     self._plot_distributions(d_out, folder, image_dpi, screen_dpi, no_show)
     # Train
-    folder = get_folder(os.path.join(path_model,str(model),
+    folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "NoValidation-%s")
     model.train(d_inp,d_out,np.array([]),np.array([]),
@@ -302,7 +305,7 @@ class Split(Train):
     if verbose > 1:
       print("    Bucket 0: %d" % np.where(self._bucket_idx == 0)[0].shape[0])
       print("    Bucket 1: %d" % np.where(self._bucket_idx == 1)[0].shape[0])
-    folder = get_folder(os.path.join(path_model,str(model),
+    folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "Split_"+str(self.p)+"-%s")
     # Plot distributions
@@ -393,7 +396,7 @@ class DuplexSplit(Train):
     del dm
     if verbose > 0:
       print("  Split %d / %d" % (np.where(self._bucket_idx==0)[0].shape[0], np.where(self._bucket_idx==1)[0].shape[0]))
-    folder = get_folder(os.path.join(path_model,str(model),
+    folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "DuplexSplit_"+str(self.p)+"-%s")
     # Plot distributions
@@ -436,7 +439,7 @@ class KFold(Train):
     if verbose > 1:
       for b in range(0,self.k):
         print("    Bucket %d: %d" % (b,np.where(self._bucket_idx == b)[0].shape[0]))
-    folder = get_folder(os.path.join(path_model,str(model),
+    folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "KFold_"+str(self.k)+"-%s")
     # Plot distributions
@@ -513,7 +516,7 @@ class DuplexKFold(Train):
     if verbose > 1:
       for b in range(0,self.k):
         print("    Bucket %d: %d" % (b,np.where(self._bucket_idx == b)[0].shape[0]))
-    folder = get_folder(os.path.join(path_model,str(model),
+    folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "DuplexKFold_"+str(self.k)+"-%s")
     # Plot distributions

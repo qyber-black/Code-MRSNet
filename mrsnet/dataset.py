@@ -303,7 +303,6 @@ class Dataset(object):
       fft[a_idx,:] = a
       a_idx += 1
     if mean_center or normalise:
-      # FIXME: different normalisation?
       m = np.abs(fft)
       p = np.angle(fft)
       if mean_center:

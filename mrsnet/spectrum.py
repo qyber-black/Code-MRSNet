@@ -343,15 +343,14 @@ class Spectrum(object):
           else:
             raise Exception('More than 2 mx objects for megapress? Something is wrong here.')
         specs.append(Spectrum(id=filename.split("/")[-2:], source='pygamma',
-                     metabolites=[molecules.short_name(metabolite)],
-                     pulse_sequence=pulse_sequence,
-                     acquisition=acq,
-                     omega=omega,
-                     linewidth=linewidth,
-                     dt=dt,
-                     center_ppm=0,
-                     raw_adc = np.array(raw["adc_re"]) + 1j * np.array(raw["adc_im"])))
-
+                              metabolites=[molecules.short_name(metabolite)],
+                              pulse_sequence=pulse_sequence,
+                              acquisition=acq,
+                              omega=omega,
+                              linewidth=linewidth,
+                              dt=dt,
+                              center_ppm=0,
+                              raw_adc = np.array(raw["adc_re"]) + 1j * np.array(raw["adc_im"])))
     return specs
 
   @staticmethod

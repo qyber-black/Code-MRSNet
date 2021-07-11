@@ -46,7 +46,7 @@ def main():
   p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate all standard datasets.',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_gen_ds)
-  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (basic-1, mixed-1)')
+  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (basic-1, mixed-1; see mrsnet.dataset.Collection)')
   p_gen_ds.set_defaults(func=generate_datasets)
 
   # Train
@@ -54,8 +54,25 @@ def main():
                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_train)
   add_arguments_metabolites(p_train)
+  add_arguments_train_select(p_train)
   add_arguments_train(p_train)
   p_train.set_defaults(func=train)
+
+  # Model selection
+  p_select = subparsers.add_parser('select', help='Model selection on dataset.',
+                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  add_arguments_default(p_select)
+  add_arguments_metabolites(p_select)
+  add_arguments_train_select(p_select)
+  p_select.add_argument('--method', choices=['grid', 'qmc', 'gpo', 'evo'], default='random',
+                        help='Model selection approach')
+  p_select.add_argument('-r', '--repeats', type=int, default=100,
+                        help='Maximum number of repeats (for qmc, gpo, evo).')
+  p_select.add_argument('--remote', type=str, default='',
+                        help='Remote execution: scheduler:user:[max_parallel_tasks=10:[wait_minutes=15]]')
+
+  p_select.add_argument('collection', type=str, help='Model collection name (see mrsnet.selection.Collection)')
+  p_select.set_defaults(func=model_selection)
 
   # Quantify
   p_quantify = subparsers.add_parser('quantify', help='Quantify spectra in dicoms.',
@@ -119,9 +136,16 @@ def add_arguments_simulate(p):
   p.add_argument('--show-spectra', action='store_true', default=False,
                  help='Shows plots of all generated spectra.')
 
+def add_arguments_train_select(p):
+  # Add training/selection arguments
+  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
+  p.add_argument('-e', '--epochs', type=int, default=500,
+                 help='Number of training epochs.')
+  p.add_argument('--validate', type=float, default=5,
+                 help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
+
 def add_arguments_train(p):
   # Add training arguments
-  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('--norm', choices=['sum', 'max'], default='sum',
                  help='Concentration normalisation: sum or max equal to 1')
   p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
@@ -131,22 +155,18 @@ def add_arguments_train(p):
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_medium_softmax',
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]- see mrsnet/models.py for details.')
-  p.add_argument('-b', '--batch_size', type=int, default=64,
+  p.add_argument('-b', '--batch-size', type=int, default=32,
                  help='Batch size.')
-  p.add_argument('-e', '--epochs', type=int, default=100,
-                 help='Number of training epochs.')
-  p.add_argument('--validate', type=float, default=10,
-                 help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
 
 def add_arguments_quantify(p):
   # Add quantification arguments
   p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID)')
-  p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
+  p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
 
 def add_arguments_benchmark(p):
   # Add benchmark arguments
-  p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
+  p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
   p.add_argument('--show-spectra', action='store_true', default=False,
                  help='Shows plots of all spectra.')
@@ -313,11 +333,11 @@ def train(args):
   import mrsnet.dataset as dataset
   # Standardise name, but could be path anyway
   id = get_std_name(args.dataset)
-  name = os.path.join(*id[-8:-1])
-  rest = id[-1]
+  name = os.path.join(*id[-9:-1])
+  ds_rest = id[-1]
   if args.verbose > 0:
-    print("# Loading dataset %s : %s" % (name,rest))
-  dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,rest))
+    print("# Loading dataset %s : %s" % (name,ds_rest))
+  dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
   args.datatype.sort()
@@ -352,20 +372,46 @@ def train(args):
   else:
     raise Exception("Unknown validation %f" % args.validate)
   trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
-                Cfg.val['path_model'], train_dataset_name=dataset.name,
+                Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 no_show=args.no_show, verbose=args.verbose)
+
+def model_selection(args):
+  # Select sub-command
+  import subprocess
+  from mrsnet.selection import Collections
+  args.metabolites.sort()
+  models = Collections[args.collection]
+  if args.method == "grid":
+    from mrsnet.selection import SelectGrid
+    selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,
+                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+  elif args.method == "qmc":
+    from mrsnet.selection import SelectQMC
+    selector = SelectQMC(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+  elif args.method == "gpo":
+    from mrsnet.selection import SelectGPO
+    selector = SelectGPO(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+  elif args.method == "evo":
+    from mrsnet.selection import SelectEvo
+    selector = SelectEvo(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+  else:
+    raise Exception("Unknown model selection method %s" % args.method)
+  selector.optimise(args.collection, models, Cfg.val['path_model'])
 
 def quantify(args):
   # Quantify sub-command
   import mrsnet.dataset as dataset
   if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
     id = get_std_name(args.dataset)
-    name = os.path.join(*id[-8:-1])
-    rest = id[-1]
+    name = os.path.join(*id[-9:-1])
+    ds_rest = id[-1]
     if args.verbose > 0:
-      print("# Loading dataset %s : %s" % (name,rest))
-    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,rest))
+      print("# Loading dataset %s : %s" % (name,ds_rest))
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   else:
     ds = None # Load later, as dicom and we don't know metabolites
   id = get_std_name(args.model)
@@ -374,16 +420,18 @@ def quantify(args):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
       train_model = id[k+6]
-      trainer = id[k+7]
-      rest = id[k+8] if len(id) > k+8 else '' # Folds
+      batch_size = id[k+7]
+      epochs = id[k+8]
+      trainer = id[k+9]
+      rest = id[k+10] if len(id) > k+10 else '' # Folds
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print("# Loading model %s : %s : %s : %s" % (name,train_model,trainer,rest))
+    print("# Loading model %s : %s : %s %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
   if name[0:4] == "cnn_":
     from mrsnet.model import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
   if ds is None:
@@ -412,7 +460,8 @@ def quantify(args):
                   image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
   else:
     # Store results with model, as concentrations and dataset is for testing model
-    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest),
+    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size,
+                                                         epochs, train_model, trainer, rest),
                   id=[s[id_ref].id for s in ds.spectra],
                   show_conc=True, save_conc=True, no_show=args.no_show,
                   verbose=args.verbose, prefix=ds.name.replace("/","_"),
@@ -428,16 +477,18 @@ def benchmark(args):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
       train_model = id[k+6]
-      trainer = id[k+7]
-      rest = id[k+8] if len(id) > k+8 else '' # Folds
+      batch_size = id[k+7]
+      epochs = id[k+8]
+      trainer = id[k+9]
+      rest = id[k+10] if len(id) > k+10 else '' # Folds
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print("# Loading model %s : %s : %s : %s" % (name,train_model,trainer,rest))
+    print("# Loading model %s : %s : %s : %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
   if name[0:4] == "cnn_":
     from mrsnet.model import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
   import mrsnet.dataset as dataset
@@ -459,7 +510,8 @@ def benchmark(args):
                              verbose=args.verbose)
     from mrsnet.analyse import analyse_model
     id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
-    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, train_model, trainer, rest),
+    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size, epochs,
+                                                         train_model, trainer, rest),
                   id=[s[id_ref].id for s in bm.spectra],
                   show_conc=True, save_conc=True, no_show=args.no_show,
                   verbose=args.verbose, prefix=id, image_dpi=Cfg.val['image_dpi'],
@@ -468,7 +520,7 @@ def benchmark(args):
 def get_std_name(name):
   _, path = os.path.splitdrive(name)
   id = []
-  while 1:
+  while True:
     path, folder = os.path.split(path)
     if folder != "":
       id.append(folder)
@@ -519,8 +571,11 @@ class Cfg:
       from screeninfo import get_monitors
     except ModuleNotFoundError:
       return Cfg.val['default_screen_dpi']
+    try:
+      m = get_monitors()[0]
+    except:
+      return Cfg.val['default_screen_dpi']
     from math import hypot
-    m = get_monitors()[0]
     return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
 
 if __name__ == '__main__':
