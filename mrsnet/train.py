@@ -17,9 +17,6 @@ from scipy.stats import wasserstein_distance
 from .analyse import analyse_model
 from .getfolder import get_folder
 
-# FIXME: evluation prediction for train and validation dataset is done twice, in train call and analyse_model call
-# FIXME: Rename Wasserstein distance (quality to error)
-
 class Train:
 
   def __init__(self,k):
@@ -90,12 +87,12 @@ class Train:
                                    fold_folder, no_show=no_show,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
 
-      train_res['wdq'][val_fold] = info['wasserstein_distance_quality']
+      train_res['wdq'][val_fold] = info['wasserstein_distance_error']
       train_res['error'][val_fold] = err
       _, info, err = analyse_model(model, d_inp[val_sel], d_out[val_sel],
                                    fold_folder, no_show=no_show,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      val_res['wdq'][val_fold] = info['wasserstein_distance_quality']
+      val_res['wdq'][val_fold] = info['wasserstein_distance_error']
       val_res['error'][val_fold] = err
       if val_fold == 0:
         for dpi in image_dpi:

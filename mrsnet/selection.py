@@ -259,10 +259,10 @@ class Select:
     if len(fold) == 0:
       with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
         data = json.load(f)
-      train_p = [data['wasserstein_distance_quality']]
+      train_p = [data['wasserstein_distance_error']]
       with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
         data = json.load(f)
-      val_p = [data['wasserstein_distance_quality']]
+      val_p = [data['wasserstein_distance_error']]
     else:
       train_p = []
       val_p = []
@@ -270,10 +270,10 @@ class Select:
       while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
         with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        train_p.append(data['wasserstein_distance_quality'])
+        train_p.append(data['wasserstein_distance_error'])
         with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        val_p.append(data['wasserstein_distance_quality'])
+        val_p.append(data['wasserstein_distance_error'])
         f_cnt += 1
     return val_p, train_p
 

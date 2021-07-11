@@ -192,9 +192,9 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
                             np.array([0]),
                             np.ones(error.shape[0])/error.shape[0],
                             np.ones(1))
-  info["wasserstein_distance_quality"] = wd
+  info["wasserstein_distance_error"] = wd
   if verbose > 0:
-    print("  Wasserstein distance quality: %f" % wd)
+    print("  Wasserstein distance error: %f" % wd)
 
   with open(os.path.join(folder, prefix+"_concentration_errors.json"), 'w') as f:
     print(json.dumps(info, indent=2, sort_keys=True), file=f)

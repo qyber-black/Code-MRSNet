@@ -48,7 +48,7 @@ class Dataset(object):
             concs_ok = False
     for id in sorted(specs.keys()):
       b0_shift = []
-      # FIXME: b0 correction as average over all acquisitions and peaks?
+      # b0 correction as average over all acquisitions and peaks
       for a in specs[id].keys():
         if 'NAA' in specs[id][a].metabolites or 'Cr' in self.specs[id][a].metabolites:
           shift = specs[id][a].correct_b0()

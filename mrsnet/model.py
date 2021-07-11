@@ -86,7 +86,7 @@ class CNN:
       output_act = vals[12]
     pooling = True if vals[-1] == 'pool' else False
 
-    # FIXME: row column exchange for speed?
+    # FIXME: row column exchange for speed? (needs benchmarking)
 
     self.cnn.add(Conv2D(filter1, (1,freq_convolution1), strides=(1, strides1),
                  input_shape=input_shape, activation='relu'))
@@ -196,7 +196,7 @@ class CNN:
     if len(v_inp) > 0:
       v_score = self.cnn.evaluate(v_inp, v_out, verbose=(verbose > 0))
     else:
-      v_score = np.array([np.nan,np.nan,np.nan])
+      v_score = np.array([np.nan,np.nan])
     if verbose > 0:
       print("      Train          Validation")
       print('MSE:  %.12f %.12f' % (d_score[0], v_score[0]))

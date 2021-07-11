@@ -89,7 +89,7 @@ class Spectrum(object):
           ppm_shift.append(self.b0_ppm_shift + (peak - reference_signal))
       if len(ppm_shift) == 0:
         return None
-      # FIXME: average or focus on best reference peak?
+      # Average over all reference peaks
       ppm_shift = np.mean(np.array(ppm_shift, dtype=np.float64))
     # Apply Shift
     if ppm_shift != self.b0_ppm_shift:
@@ -100,17 +100,18 @@ class Spectrum(object):
     return ppm_shift
 
   def _fft_peak_location(self, location, ppm_range, fft=None):
-    # FIXME: better peak finding; in particular as we take averages of shifts
     nu = self.nu()
     if fft is None:
-      fft = -np.abs(self.fft()) # Avoids loop if already called from fft (for remove_water_peak)
-    median = np.median(fft)
+      fft_abs = -np.abs(self.fft())
+    else:
+      fft_abs = -np.abs(fft) # Avoids loop if already called from fft (for remove_water_peak)
+    median = np.median(fft_abs)
     # finds the highest peak from location +- ppm_range
-    peak_idxs = fft.argsort()
+    peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:
       if abs(location - nu[idx]) < ppm_range:
         return nu[idx]
-      if fft[idx] < median:
+      if fft_abs[idx] < median:
         return None
     return None
 
@@ -204,18 +205,16 @@ class Spectrum(object):
     water_peak_loc = self._fft_peak_location(molecules.WATER_REFERENCE, 0.5, fft=fft)
     if water_peak_loc is not None:
       nu = self.nu()
-      ppm_range = float(ppm_range)
-      mean_abs = np.mean(np.abs(fft))
       abs_fft = np.abs(fft)
+      mean_abs = np.mean(abs_fft)
       under_mean = 0
-      mean = np.mean(np.real(fft)) + 1j * np.mean(np.imag(fft))
       for jj in range(0, len(fft)):
-        if (water_peak_loc - (ppm_range / 2) < nu[jj]) and (water_peak_loc + (ppm_range / 2) > nu[jj]):
+        if np.abs(water_peak_loc - nu[jj]) < ppm_range/2.0:
           if abs_fft[jj] > mean_abs:
             under_mean = 0
-            fft[jj] = mean
-          if nu[jj] > water_peak_loc and abs_fft[jj] < mean_abs:
-            # trailing edge detection, clip it as soon as the water peak (in absolute terms is over).
+            fft[jj] = mean_abs * np.exp(1j*np.angle(fft[jj]))
+          elif nu[jj] > water_peak_loc:
+            # trailing edge detection, stop when the water peak is over
             under_mean += 1
             if under_mean > 5:
               return fft
@@ -321,8 +320,6 @@ class Spectrum(object):
     if not os.path.exists(filename):
       if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
-
-      # FIXME: Call directly instead of separate script (but careful with memory issues)
       pygamma_cmd = ['/usr/bin/env', 'python3', os.path.join('mrsnet',
                       'simulators', 'pygamma', 'pygamma_simulator.py'),
                      metabolite, str(omega), pulse_sequence, str(linewidth),
@@ -501,7 +498,7 @@ class Spectrum(object):
 
     omega = float(info["[CSA Image Header Info]"]["ImagingFrequency"])
     sweep_width = 1.0 / (float(info["[CSA Image Header Info]"]["RealDwellTime"]) * 1e-9)
-    dt = (omega / sweep_width) / 1e+2 # FIXME: multiplied with -1 in original code, why?
+    dt = (omega / sweep_width) / 1e+2
 
     cs = np.array([])
     if concentrations is not None:

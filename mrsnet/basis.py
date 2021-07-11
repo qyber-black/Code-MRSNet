@@ -166,7 +166,6 @@ class Basis(object):
                         'I\'m going to end up in an endless loop.')
       else:
         print('Some spectra are missing, simulating: ' + str(to_simulate))
-        # FIXME: load newly generated spectra instead of 2nd call; maybe in load function
         from .simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
                      save_dir=os.path.join(path_basis,'basis_files'))
@@ -292,7 +291,7 @@ class Basis(object):
               b0_shift.append(shift)
       if len(b0_shift) == 0:
         raise Exception("B0 correction for basis failed")
-      # FIXME: Average or focus on specific reference peak?
+      # Take average of shifts from peak locations
       b0_shift = np.mean(np.array(b0_shift, dtype=np.float64))
       for m in self.spectra.keys():
         for a in self.spectra[m].keys():
