@@ -1,8 +1,11 @@
 argparse>=1.4
+gpyopt>=1.2.6
 graphviz>=0.16
 joblib>=1.0.1
+kaleido>=0.2.1
 matplotlib>=3.4
 numpy>=1.19.5
+plotly>=5.1.0
 pydicom>=2.1.2
 pydot>=1.4.2
 pygamma>=4.3.4

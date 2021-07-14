@@ -150,13 +150,13 @@ else
     if [ "`echo $VALIDATE | cut -c2`" = 0 ]; then
       VALIDATOR="DuplexSplit_${VALIDATE}"
     else
-      VALIDATOR="DuplexKFold_${VALIDATE}"
+      VALIDATOR="DuplexKFold_`echo ${VALIDATE} | cut -d. -f1`"
     fi
   else
     if [ "`echo $VALIDATE | cut -c1`" = 0 ]; then
       VALIDATOR="Split_${VALIDATE}"
     else
-      VALIDATOR="KFold_${VALIDATE}"
+      VALIDATOR="KFold_`echo ${VALIDATE} | cut -d. -f1`"
     fi
   fi
   model_folder="code-mrsnet/data/model/$MODEL/$METABOLITES/$PULSE_SEQUENCE/$ACQUISITIONS/$DATATYPE/$NORM/$BATCH_SIZE/$EPOCHS/$DATASET_ID/$VALIDATOR-1"
@@ -171,7 +171,7 @@ else
       echo $n
       if [ -z "$n" ]; then
         # Delete job folder and model
-        ssh ${user}@${host} 'rm -rf '$folder $model_folder
+        ssh ${user}@${host} rm -rf $folder $model_folder
         echo "FAILED"
       else
         ssh ${user}@${host} tail -2 $folder/out
@@ -179,10 +179,11 @@ else
       fi
     else
       # Copy results
+      echo "Done: $model_folder -> $local_model_folder"
       mkdir -p $local_model_folder
       rsync -a --progress ${user}@${host}:$model_folder/ $local_model_folder/
       # Delete job folder and model
-      ssh ${user}@${host} 'rm -rf '$folder $model_folder
+      ssh ${user}@${host} rm -rf $folder $model_folder
       echo "DONE"
     fi
   fi

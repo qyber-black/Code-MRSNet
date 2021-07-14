@@ -150,7 +150,7 @@ class CNN:
       validation_data = None
 
     if verbose > 1:
-      print("  Input:",d_inp.shape,"[spectrum, acquisition x datatype, fft_value]")
+      print("  Input:",d_inp.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Output:",d_out.shape,"[spectrum, metabolite_concentration]")
     self._construct(d_inp.shape[1:],d_out.shape[1:])
     optimiser = keras.optimizers.Adam(learning_rate=1e-4,
@@ -192,9 +192,9 @@ class CNN:
 
     if verbose > 0:
       print("# Evaluating")
-    d_score = self.cnn.evaluate(d_inp, d_out, verbose=(verbose > 0))
+    d_score = self.cnn.evaluate(d_inp, d_out, verbose=(verbose > 0)*2)
     if len(v_inp) > 0:
-      v_score = self.cnn.evaluate(v_inp, v_out, verbose=(verbose > 0))
+      v_score = self.cnn.evaluate(v_inp, v_out, verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
@@ -211,7 +211,7 @@ class CNN:
     if reshape:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
-    return np.array(self.cnn.predict(x=d_inp,verbose=(verbose>0),batch_size=32),dtype=np.float64)
+    return np.array(self.cnn.predict(x=d_inp,verbose=(verbose>0)*2,batch_size=32),dtype=np.float64)
 
   def save(self, folder):
     path=os.path.join(folder, "tf_model")

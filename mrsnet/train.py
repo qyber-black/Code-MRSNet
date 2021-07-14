@@ -94,13 +94,13 @@ class Train:
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
       val_res['wdq'][val_fold] = info['wasserstein_distance_error']
       val_res['error'][val_fold] = err
-      if val_fold == 0:
-        for dpi in image_dpi:
-          os.rename(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"),
-                    os.path.join(folder,"architectecture@"+str(dpi)+".png"))
-      else:
-        for dpi in image_dpi:
-          os.remove(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"))
+      for dpi in image_dpi:
+        if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
+          if val_fold == 0:
+            os.rename(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"),
+                      os.path.join(folder,"architectecture@"+str(dpi)+".png"))
+          else:
+            os.remove(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"))
       model.reset()
 
     # Pairwise Wasserstein distance between validation error distributions
@@ -127,7 +127,7 @@ class Train:
           max_wd_aerr = wd
     if verbose > 0:
       print("  Max 1st order Wasserstein distance between error: %f" % max_wd_err)
-      print("  Max 1st order Wasserstein distance betweeb absolute error: %f" % max_wd_aerr)
+      print("  Max 1st order Wasserstein distance between absolute error: %f" % max_wd_aerr)
 
     # Plot corss-validation results
     self._plot_cross_validate(train_res, val_res, folder, no_show, image_dpi, screen_dpi)

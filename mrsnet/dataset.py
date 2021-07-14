@@ -269,7 +269,7 @@ class Dataset(object):
                 for s in tqdm(self.spectra, disable=(verbose<1)))
       d_inp = np.array(d_inp, dtype=np.float64)
       if verbose > 0:
-        print("  Shape: " + str(d_inp.shape) + " - [spectrum, acquisition, datatype, fft_value]")
+        print("  Shape: " + str(d_inp.shape) + " - [spectrum, acquisition, datatype, frequency]")
     else:
       d_inp = np.ndarray((0,0))
     if len(self.concentrations) > 0:

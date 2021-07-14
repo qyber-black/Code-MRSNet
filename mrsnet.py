@@ -43,7 +43,7 @@ def main():
   p_simulate.set_defaults(func=simulate)
 
   # Generate all datasets
-  p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate all standard datasets.',
+  p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate standard datasets.',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_gen_ds)
   p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (basic-1, mixed-1; see mrsnet.dataset.Collection)')
@@ -70,7 +70,6 @@ def main():
                         help='Maximum number of repeats (for qmc, gpo, evo).')
   p_select.add_argument('--remote', type=str, default='',
                         help='Remote execution: scheduler:user:[max_parallel_tasks=10:[wait_minutes=15]]')
-
   p_select.add_argument('collection', type=str, help='Model collection name (see mrsnet.selection.Collection)')
   p_select.set_defaults(func=model_selection)
 

@@ -1,10 +1,11 @@
-# mrsnet/selkection.py - MRSNet - model selection
+# mrsnet/selection.py - MRSNet - model selection
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Copyright (C) 2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
+import shutil
 import subprocess
 import time
 import json
@@ -47,13 +48,12 @@ class Select:
       self.remote_user = remote[1]
       self.remote_tasks = int(remote[2]) if len(remote) > 2 else 10
       self.remote_wait = int(remote[3]) if len(remote) > 3 else 15
-
       cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "sync"]
       p = subprocess.run(cmd, capture_output=True)
       output = p.stdout.decode("utf-8").split("\n")
       if self.verbose > 0:
         print("# Remote Sync")
-        for l in output[:-2]:
+        for l in output:
           print(l)
     else:
       self.remote = 'local'
@@ -116,30 +116,40 @@ class Select:
       trainer = "NoValidation"
     else:
       raise Exception("Unknown validation %f" % args.validate)
-    return os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
-                        train_model, trainer+"-1"), fold
+    # Check if sane, delete otherwise
+    base_path = os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
+                             train_model, trainer)
+    if (os.path.exists(base_path+"-1") and
+        not (os.path.exists(os.path.join(base_path+"-1",fold,"train_concentration_errors.json")) and
+             os.path.exists(os.path.join(base_path+"-1",fold,"validation_concentration_errors.json")))):
+      if self.verbose > 0:
+        print("# WARNING: %s model broken - deleting" % (base_path+"-1"))
+      shutil.rmtree(base_path+"-1")
+    return base_path+"-1", fold
 
   def _add_task(self,key_vals,path_model):
     model_path, fold = self._model_path(key_vals,path_model)
     self.tasks.append({
         'model_path': model_path,
         'fold': fold,
-        'args': key_vals
+        'args': key_vals.copy()
       })
 
-  def _run_tasks(self):
+  def _run_tasks(self, load_only=False):
     counter = 1
     remote_run = []
     for t in self.tasks:
-      print("# Task %d / %d" % (counter,len(self.tasks)))
+      print("# Task %d / %d %s" % (counter,len(self.tasks)," - only loading" if load_only else ""))
+      val_p = None
       if os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")):
         if self.verbose > 0:
           print("Exists %s:%s" % (t['model_path'],t['fold']))
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
-        self.key_vals.append(t['args'])
-        self.val_performance.append(val_p)
-        self.train_performance.append(train_p)
-      else:
+        if val_p is not None:
+          self.key_vals.append(t['args'])
+          self.val_performance.append(val_p)
+          self.train_performance.append(train_p)
+      if val_p is None and not load_only:
         # Train
         if t['args']['model'] == 'cnn':
           # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]
@@ -165,9 +175,12 @@ class Select:
           self._run(t['args']['norm'],t['args']['acquisitions'],t['args']['datatype'],
                     model_str,t['args']['batch_size'])
           val_p, train_p = self._load_performance(t['model_path'], t['fold'])
-          self.key_vals.append(t['args'])
-          self.val_performance.append(val_p)
-          self.train_performance.append(train_p)
+          if val_p is not None:
+            self.key_vals.append(t['args'])
+            self.val_performance.append(val_p)
+            self.train_performance.append(train_p)
+          else:
+            raise Exception("Local job failed: "+str(t)+" : "+model_str)
         else:
           remote_run.append(['run',
                              [t['args']['norm'],
@@ -175,7 +188,8 @@ class Select:
                               t['args']['datatype'],
                               model_str,
                               t['args']['batch_size']],
-                             t['model_path'],t['fold']])
+                             t['model_path'],
+                             t['fold']])
       counter += 1
     if len(remote_run) > 0:
       if self.verbose > 0:
@@ -187,9 +201,12 @@ class Select:
           status = self._run_remote(k,remote_run)
           if status == 'done':
             val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
-            self.key_vals.append(t['args'])
-            self.val_performance.append(val_p)
-            self.train_performance.append(train_p)
+            if val_p is not None:
+              self.key_vals.append(t['args'])
+              self.val_performance.append(val_p)
+              self.train_performance.append(train_p)
+            else:
+              raise Exception("Job failed: "+str(remote[k])) # FIXME: why?
         running = len([l for l in remote_run if l[0] == 'run'])
         waiting = len([l for l in remote_run if l[0] == 'wait'])
         if self.verbose > 0:
@@ -202,7 +219,6 @@ class Select:
   def _run(self,norm,acquisitions,datatype,model,batch_size):
     cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'train', '--no-show',
            '--metabolites', *[m for m in self.metabolites],
-           '--pulse_sequence', self.pulse_sequence,
            '--dataset', self.dataset,
            '--epochs', str(self.epochs),
            '--validate', str(self.validate),
@@ -256,25 +272,32 @@ class Select:
     return all[id][0]
 
   def _load_performance(self, model_path, fold):
-    if len(fold) == 0:
-      with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
-        data = json.load(f)
-      train_p = [data['wasserstein_distance_error']]
-      with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
-        data = json.load(f)
-      val_p = [data['wasserstein_distance_error']]
-    else:
-      train_p = []
-      val_p = []
-      f_cnt = 0
-      while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
-        with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
+    # FIXME: What if there is more than one Validation result? Load All? Some may be broken.
+    try:
+      if len(fold) == 0:
+        with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        train_p.append(data['wasserstein_distance_error'])
-        with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
+        train_p = [data['wasserstein_distance_error']]
+        with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        val_p.append(data['wasserstein_distance_error'])
-        f_cnt += 1
+        val_p = [data['wasserstein_distance_error']]
+      else:
+        train_p = []
+        val_p = []
+        f_cnt = 0
+        while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
+          with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
+            data = json.load(f)
+          train_p.append(data['wasserstein_distance_error'])
+          with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
+            data = json.load(f)
+          val_p.append(data['wasserstein_distance_error'])
+          f_cnt += 1
+    except:
+      if self.verbose > 0:
+        print("# WARNING: %s model broken - deleting" % (model_path))
+      shutil.rmtree(model_path)
+      return None, None
     return val_p, train_p
 
   def _save_performance(self, collection_name, var_keys, fix_keys):
@@ -320,21 +343,24 @@ class Select:
                   for p in range(0,len(self.key_vals))]
     val_error = [np.mean(self.val_performance[idx[p]]) for p in range(0,len(self.val_performance))]
     train_error = [np.mean(self.train_performance[idx[p]]) for p in range(0,len(self.val_performance))]
+    top_n = np.min([len(self.val_performance),50])
     Y = np.arange(2*len(val_error),1,-2)
-    ax.barh(y=Y, width=val_error, height=0.9, left=0, align='center',
+    ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
             label="Val. Error", color="#4878D0", zorder=1)
-    ax.barh(y=Y-0.75, width=train_error, height=0.6, left=0, align='center',
+    ax.barh(y=Y[:top_n]-0.75, width=train_error[:top_n], height=0.6, left=0, align='center',
             label="Train Error", color="#A1C9F4", zorder=0)
-    ax.scatter(y=Y, x=np.array([self.val_performance[idx[p]]
-                                for p in range(0,len(self.val_performance))]).flatten(),
+    ax.scatter(y=[Y[:top_n]]*len(self.val_performance[0]),
+               x=[self.val_performance[idx[p]][q]
+                  for q in range(0,len(self.val_performance[0])) for p in range(0,top_n)],
                color="#000000", s=5.0, zorder=2)
-    ax.scatter(y=Y-0.75, x=np.array([self.train_performance[idx[p]]
-                                     for p in range(0,len(self.train_performance))]).flatten(),
+    ax.scatter(y=[Y[:top_n]-0.75]*len(self.train_performance[0]),
+               x=[self.train_performance[idx[p]][q]
+                   for q in range(0,len(self.train_performance[0])) for p in range(0,top_n)],
                color="#000000", s=5.0, zorder=2)
-    plt.yticks(Y, parameters)
+    plt.yticks(Y[:top_n], parameters[:top_n])
     ax.legend(loc="upper right", frameon=True)
-    ax.set(xlim=(0,np.max([np.max(self.val_performance[idx[-1]]),
-                           np.max(self.train_performance[idx[-1]])])),
+    ax.set(xlim=(0,np.max([np.max([self.val_performance[idx[p]] for p in range(0,top_n)]),
+                           np.max([self.train_performance[idx[p]] for p in range(0,top_n)])])),
            ylabel="", xlabel="Wasserstein Distance Error")
     fig.tight_layout()
     for dpi in self.image_dpi:
@@ -380,6 +406,38 @@ class Select:
     if not self.no_show:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
+    plt.close()
+    # Parallel coordinates
+    import plotly.graph_objects as go
+    dims = []
+    for ki in range(0,len(var_keys)):
+      keys = list(set([self.key_vals[idx[p]][var_keys[ki]] for p in range(0,len(self.key_vals))]))
+      keys.sort()
+      vals = []
+      for p in range(0,len(self.key_vals)):
+        vals.append(keys.index(self.key_vals[idx[p]][var_keys[ki]]))
+      dims.append({
+          'range': (0,len(keys)-1),
+          'tickvals': np.arange(0,len(keys),1),
+          'ticktext': keys,
+          'label': var_keys[ki],
+          'values': vals
+        })
+    fig = go.Figure(data=go.Parcoords(
+                      line = {'color': -np.array(val_error),
+                              'colorscale': 'speed',
+                              'showscale': True,
+                              'cmin': -np.max(val_error),
+                              'cmax': 0},
+                      dimensions = dims))
+    for dpi in self.image_dpi:
+      # FIXME: take size from default in mrsnet.py
+      r = plt.rcParams["figure.figsize"]
+      fig.write_image(os.path.join(folder,"error-pc@"+str(dpi)+".png"),
+                      width=int(r[0]*self.screen_dpi+0.5), height=int(r[1]*self.screen_dpi+0.5),
+                      scale=dpi/self.screen_dpi)
+    if not self.no_show:
+      fig.show()
     plt.close()
 
 class SelectGrid(Select):
@@ -443,13 +501,156 @@ class SelectQMC(Select):
     self._save_performance(collection_name+"-qmc", var_keys, fix_keys)
 
 class SelectGPO(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,mscreen_dpi,image_dpi,no_show,verbose):
-    super(SelecttGPO, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose)
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,no_show,verbose):
+    super(SelectGPO, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
-    # FIXME: ...
-    pass
+    if self.verbose > 0:
+      print("# GPO Model Selection")
+    keys = [k for k in models.values.keys()]
+    var_keys = [k for k in keys if len(models.values[k]) > 1]
+    fix_keys = [k for k in keys if len(models.values[k]) == 1]
+    path_model = path_model
+    total = np.prod([len(models.values[k]) for k in keys])
+    if self.verbose > 0:
+      print("Search space size: %d" % total)
+    import GPyOpt as gpo
+    domain = []
+    self.values = {}
+    for k in var_keys:
+      domain.append({
+          'name': k,
+          'type': 'categorical', # FIXME: discrete for integer ranges
+          'domain': np.arange(0,len(models.values[k])),
+          'dimensionality': 1
+        })
+    if self.verbose > 1:
+      print("Domain: "+str(domain))
+
+    # Initialise values from those we have
+    if self.verbose > 0:
+      print("# Init GPO")
+    # Load Existing
+    key_vals = {}
+    for k in fix_keys:
+      key_vals[k] = models.values[k][0]
+    for model in models:
+      for ki,k in enumerate(var_keys):
+        key_vals[k] = model[ki]
+      self._add_task(key_vals, path_model)
+    self._run_tasks(load_only=True)
+    # Evaluate first, if none available so far
+    if len(self.key_vals) < 1:
+      for ki,k in enumerate(var_keys):
+        key_vals[k] = models.values[k][0]
+      self._add_task(key_vals, path_model)
+      self._run_tasks()
+    # Convert eval. data to GPO format
+    Xdata = np.ndarray((0,len(var_keys)))
+    Ydata = np.ndarray((0,1))
+    res_n = len(self.val_performance[0])
+    Xnext = np.ndarray((len(self.key_vals)*res_n,len(var_keys)))
+    Ynext = np.ndarray((Xnext.shape[0],1))
+    for l in range(0,len(self.key_vals)):
+      # Add results; multiple times if multiple evluations due to KFold validation, etc.
+      ll = l
+      for ri in range(0,res_n):
+        for ki,k in enumerate(var_keys):
+          Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
+        Ynext[ll,0] = self.val_performance[l][ri]
+        ll += 1
+    Xdata = np.vstack((Xdata,Xnext))
+    Ydata = np.vstack((Ydata,Ynext))
+    # Init GPO performance data
+    remaining_samples = total - Xdata.shape[0] // res_n
+    idx_best = np.argmin(Ydata,axis=0)[0]
+    Ybest = [Ydata[idx_best,0]]
+    XDiff = [0]
+    XLast = Xdata[-1,:]
+    if self.verbose > 0:
+      print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
+
+    # Optimisation iterations
+    current_iter = 0
+    if self.remote == 'local':
+      eval_per_step = 1
+    else:
+      eval_per_step = self.remote_tasks
+    while current_iter < self.repeats and remaining_samples > 0:
+      if eval_per_step  == 1:
+        evaluator = 'sequential'
+      else:
+        # Switch to avoid posterior sampling bias
+        evaluator = 'thompson_sampling' if current_iter % 2 == 0 else 'random'
+      if self.verbose > 0:
+        print("### Iteration %d / %d - samples remaining: %d [eval: %s]"
+              % (current_iter+1,self.repeats,remaining_samples,evaluator))
+      # Optimiser to get next evaluations
+      bop = gpo.methods.BayesianOptimization(f=None, domain=domain,
+                                             X=Xdata, Y=Ydata,
+                                             normalize_Y=False,
+                                             batch_size=np.min([eval_per_step,remaining_samples]),
+                                             evaluator_type=evaluator,
+                                             verbosity=(self.verbose>1),
+                                             acquisition_type='EI',
+                                             acquisition_optimizer_type='lbfgs',
+                                             exact_feval=False,
+                                             de_duplication=True)
+      Xnext = bop.suggest_next_locations()
+      # Evaluate next data points
+      Y_data_pos = len(self.val_performance)
+      for x in Xnext:
+        remaining_samples -= 1
+        for l in range(0,len(var_keys)):
+          key_vals[var_keys[l]] = models.values[var_keys[l]][int(x[l])]
+        if self.verbose > 0:
+          print("# Evaluate "+str(x))
+          print("  "+str([str(key_vals[k]) for k in var_keys]))
+        self._add_task(key_vals, path_model)
+      self._run_tasks()
+      Ynext = np.ndarray((Xnext.shape[0],1))
+      # Add results; multiple times if multipel evluations due to KFold validation, etc.
+      for ri in range(0,len(self.val_performance[0])):
+        for l in range(0,Ynext.shape[0]):
+          Ynext[l,0] = self.val_performance[Y_data_pos+l][ri]
+        Xdata = np.vstack((Xdata,Xnext))
+        Ydata = np.vstack((Ydata,Ynext))
+      idx_best = np.argmin(Ydata,axis=0)[0]
+      Ybest.append(Ydata[idx_best,0])
+      XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
+      XLast = Xdata[-1,:]
+      if self.verbose > 0:
+        print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
+        for l in range(0,len(var_keys)):
+          key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[idx_best,l])]
+        print("   "+str([str(key_vals[k]) for k in var_keys]))
+      # Next iter
+      current_iter += 1
+
+    # Store performance info
+    self._save_performance(collection_name+"-gpo", var_keys, fix_keys)
+
+    # GPO convergence
+    fig, ax = plt.subplots(1,2)
+    ax[0].plot(np.arange(0,len(XDiff))*eval_per_step,XDiff, 'ro-')
+    ax[0].set_title("Distance between consecutive samples")
+    ax[0].set_xlabel("Samples")
+    ax[0].set_ylabel("L2 Distance")
+    ax[0].xaxis.get_major_locator().set_params(integer=True)
+    ax[1].plot(np.arange(0,len(Ybest))*eval_per_step,Ybest, 'bo-')
+    ax[1].set_title("Best selected sample")
+    ax[1].set_xlabel("Samples")
+    ax[1].set_ylabel("Best Wasserstein distance error")
+    ax[1].xaxis.get_major_locator().set_params(integer=True)
+    fig.tight_layout()
+    folder = os.path.join(self.dataset,collection_name+"-gpo-"+str(self.epochs))
+    for dpi in self.image_dpi:
+      plt.savefig(os.path.join(folder,"gpo_convergence@"+str(dpi)+".png"), dpi=dpi)
+    if not self.no_show:
+      fig.set_dpi(self.screen_dpi)
+      plt.show(block=True)
+    plt.close()
 
 class SelectEvo(Select):
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,no_show,verbose):
@@ -474,11 +675,12 @@ def _get_std_name(name):
 
 Collections = {
   # Parameter lists (i.e. lists for single arguments) must be sorted!
-  'test-1': Grid({
-    'norm':         ['sum'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on']],
-    'datatype':     [['magnitude']],
-    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax'],
+  'basic-1': Grid({
+    'norm':         ['sum', 'max'],
+    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['difference','edit_off','edit_on']],
+    'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
+    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
+                     'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
     'batch_size':   [16, 32, 64]
   }),
   'test-2': Grid({
