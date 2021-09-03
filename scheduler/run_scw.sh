@@ -159,7 +159,9 @@ else
       VALIDATOR="KFold_`echo ${VALIDATE} | cut -d. -f1`"
     fi
   fi
+  # Remotely we presumably only have one run, so only -1
   model_folder="code-mrsnet/data/model/$MODEL/$METABOLITES/$PULSE_SEQUENCE/$ACQUISITIONS/$DATATYPE/$NORM/$BATCH_SIZE/$EPOCHS/$DATASET_ID/$VALIDATOR-1"
+  # We'd only call remotely if there is no local data, so also only -1
   local_model_folder="data/model/$MODEL/$METABOLITES/$PULSE_SEQUENCE/$ACQUISITIONS/$DATATYPE/$NORM/$BATCH_SIZE/$EPOCHS/$DATASET_ID/$VALIDATOR-1"
   ssh ${user}@${host} 'ls '$folder 2>/dev/null 1>&2
   if [ "$?" != 0 ]; then

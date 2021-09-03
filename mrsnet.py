@@ -474,12 +474,14 @@ def benchmark(args):
   name = []
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
+      # FIXME: index issues!
       name = os.path.join(*id[k:k+6])
-      train_model = id[k+6]
-      batch_size = id[k+7]
-      epochs = id[k+8]
+      batch_size = id[k+6]
+      epochs = id[k+7]
+      train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
+      print(k,id,name,train_model,batch_size)
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")

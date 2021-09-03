@@ -44,7 +44,7 @@ class Dataset(object):
             specs[s.id] = {}
           specs[s.id][s.acquisition] = s
           concs[s.id] = c
-          if np.sum(c.shape) == 0:
+          if len(c) == 0:
             concs_ok = False
     for id in sorted(specs.keys()):
       b0_shift = []

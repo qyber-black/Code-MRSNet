@@ -5,7 +5,6 @@
 # Copyright (C) 2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
-import shutil
 import subprocess
 import time
 import json
@@ -118,14 +117,39 @@ class Select:
       raise Exception("Unknown validation %f" % args.validate)
     # Check if sane, delete otherwise
     base_path = os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
-                             train_model, trainer)
-    if (os.path.exists(base_path+"-1") and
-        not (os.path.exists(os.path.join(base_path+"-1",fold,"train_concentration_errors.json")) and
-             os.path.exists(os.path.join(base_path+"-1",fold,"validation_concentration_errors.json")))):
-      if self.verbose > 0:
-        print("# WARNING: %s model broken - deleting" % (base_path+"-1"))
-      shutil.rmtree(base_path+"-1")
-    return base_path+"-1", fold
+                             train_model)
+    # Find model folder, assuming there may be multiple repeats.
+    # We assume the last valid repeat is the best option/latest result.
+    # iterate over files in
+    selected_id = -1
+    if os.path.isdir(base_path):
+      for fn in os.listdir(base_path):
+        ffn = os.path.join(base_path,fn)
+        if os.path.isdir(ffn):
+          file_s = fn.split("-")
+          repeat_id = -1
+          if len(file_s) > 1:
+            try:
+              repeat_id = int(file_s[-1])
+            except:
+              pass
+          if (repeat_id > 0 and
+              fn == trainer+"-"+str(repeat_id) and
+              os.path.exists(os.path.join(base_path,fn,
+                             fold,"train_concentration_errors.json")) and
+              os.path.exists(os.path.join(base_path,fn,
+                             fold,"validation_concentration_errors.json"))):
+            if repeat_id > selected_id:
+              selected_id = repeat_id
+          else:
+            if self.verbose > 0:
+              print("# WARNING: %s - broken/incomplete model" % fn)
+        else:
+          if self.verbose > 0:
+            print("# WARNING: %s - this file should not be there" % ffn)
+    if selected_id < 0:
+      selected_id = 1
+    return os.path.join(base_path,trainer+"-"+str(selected_id)), fold
 
   def _add_task(self,key_vals,path_model):
     model_path, fold = self._model_path(key_vals,path_model)
@@ -182,7 +206,7 @@ class Select:
           else:
             raise Exception("Local job failed: "+str(t)+" : "+model_str)
         else:
-          remote_run.append(['run',
+          remote_run.append(['wait',
                              [t['args']['norm'],
                               t['args']['acquisitions'],
                               t['args']['datatype'],
@@ -195,18 +219,24 @@ class Select:
       if self.verbose > 0:
         print("# Running remotely")
       # Remote tasks scheduling
-      while len([l for l in remote_run if l[0] == 'done']) != len(remote_run):
+      all_done = False
+      while not all_done:
+        all_done = True
         for k in range(0,len(remote_run)):
-          print("## Job %d / %d" % (k+1,len(remote_run)))
-          status = self._run_remote(k,remote_run)
-          if status == 'done':
-            val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
-            if val_p is not None:
-              self.key_vals.append(t['args'])
-              self.val_performance.append(val_p)
-              self.train_performance.append(train_p)
+          if remote_run[k][0] != 'complete':
+            print("## Job %d / %d" % (k+1,len(remote_run)))
+            status = self._run_remote(k,remote_run)
+            if status == 'done':
+              val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
+              if val_p is not None:
+                self.key_vals.append(t['args'])
+                self.val_performance.append(val_p)
+                self.train_performance.append(train_p)
+              else:
+                raise Exception("Job failed: "+str(remote[k]))
+              remote_run[k] = 'complete'
             else:
-              raise Exception("Job failed: "+str(remote[k])) # FIXME: why?
+              all_done = False
         running = len([l for l in remote_run if l[0] == 'run'])
         waiting = len([l for l in remote_run if l[0] == 'wait'])
         if self.verbose > 0:
@@ -272,7 +302,6 @@ class Select:
     return all[id][0]
 
   def _load_performance(self, model_path, fold):
-    # FIXME: What if there is more than one Validation result? Load All? Some may be broken.
     try:
       if len(fold) == 0:
         with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
@@ -295,8 +324,7 @@ class Select:
           f_cnt += 1
     except:
       if self.verbose > 0:
-        print("# WARNING: %s model broken - deleting" % (model_path))
-      shutil.rmtree(model_path)
+        print("# WARNING: %s - model broken" % (model_path))
       return None, None
     return val_p, train_p
 
@@ -304,6 +332,7 @@ class Select:
     var_keys.sort()
     fix_keys.sort()
     # Results folder
+    # FIXME: folder name more carefully for different modes/repeats?
     folder = os.path.join(self.dataset,collection_name+"-"+str(self.epochs))
     if not os.path.exists(folder):
       os.makedirs(folder)
@@ -311,7 +340,7 @@ class Select:
     idx = [l[0] for l in sorted(enumerate(self.val_performance), key=lambda x:np.mean(x[1]))]
     with open(os.path.join(folder,"model_performance.csv"), "w") as f:
       writer = csv.writer(f, delimiter=",")
-      writer.writerow(["Results from SelectGrid"])
+      writer.writerow(["Results from %s" % self.__class__.__name__])
       writer.writerow([])
       writer.writerow(["Dataset", self.dataset])
       writer.writerow(["Epochs", self.epochs])
@@ -325,8 +354,9 @@ class Select:
         row.append(self.key_vals[0][k])
       writer.writerow(row)
       writer.writerow([])
-      writer.writerow([*var_keys,"Val. Perf."*len(self.val_performance[0]),
-                                 "Train Perf."*len(self.train_performance[0])])
+      writer.writerow(var_keys
+                      + ["Val. Perf."]*len(self.val_performance[0])
+                      + ["Train Perf."]*len(self.train_performance[0]))
       for l in range(0,len(self.val_performance)):
         ll = idx[l]
         row = []
@@ -431,7 +461,6 @@ class Select:
                               'cmax': 0},
                       dimensions = dims))
     for dpi in self.image_dpi:
-      # FIXME: take size from default in mrsnet.py
       r = plt.rcParams["figure.figsize"]
       fig.write_image(os.path.join(folder,"error-pc@"+str(dpi)+".png"),
                       width=int(r[0]*self.screen_dpi+0.5), height=int(r[1]*self.screen_dpi+0.5),
@@ -531,15 +560,15 @@ class SelectGPO(Select):
     # Initialise values from those we have
     if self.verbose > 0:
       print("# Init GPO")
-    # Load Existing
     key_vals = {}
     for k in fix_keys:
       key_vals[k] = models.values[k][0]
-    for model in models:
-      for ki,k in enumerate(var_keys):
-        key_vals[k] = model[ki]
-      self._add_task(key_vals, path_model)
-    self._run_tasks(load_only=True)
+    # Load Existing - disabled, so we can run repeatedly and use existing results
+    ###for model in models:
+    ###  for ki,k in enumerate(var_keys):
+    ###    key_vals[k] = model[ki]
+    ###  self._add_task(key_vals, path_model)
+    ###self._run_tasks(load_only=True)
     # Evaluate first, if none available so far
     if len(self.key_vals) < 1:
       for ki,k in enumerate(var_keys):
@@ -552,9 +581,9 @@ class SelectGPO(Select):
     res_n = len(self.val_performance[0])
     Xnext = np.ndarray((len(self.key_vals)*res_n,len(var_keys)))
     Ynext = np.ndarray((Xnext.shape[0],1))
+    ll = 0
     for l in range(0,len(self.key_vals)):
       # Add results; multiple times if multiple evluations due to KFold validation, etc.
-      ll = l
       for ri in range(0,res_n):
         for ki,k in enumerate(var_keys):
           Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
@@ -572,7 +601,7 @@ class SelectGPO(Select):
       print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
 
     # Optimisation iterations
-    current_iter = 0
+    current_iter = len(self.key_vals)
     if self.remote == 'local':
       eval_per_step = 1
     else:
@@ -658,8 +687,8 @@ class SelectEvo(Select):
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
-    # FIXME: ...
-    pass
+    # FIXME: evolutionary model selection
+    raise Exception("Not implemented")
 
 def _get_std_name(name):
   _, path = os.path.splitdrive(name)
@@ -675,6 +704,12 @@ def _get_std_name(name):
 
 Collections = {
   # Parameter lists (i.e. lists for single arguments) must be sorted!
+  #
+  # basic-1: select over basic model parameters.
+  # Tested with dataset:
+  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #     * max with *_softmax model does not work well
+  #     * not much visible difference between the rest, but sum seems generally better than max
   'basic-1': Grid({
     'norm':         ['sum', 'max'],
     'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['difference','edit_off','edit_on']],
@@ -683,6 +718,28 @@ Collections = {
                      'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
     'batch_size':   [16, 32, 64]
   }),
+  # basic-2: select over basic model parameters restricted to best choices from basic-1
+  # Tested with dataset:
+  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #      diff-edit_off-edit_on > diff-edit_on > diff-edit_off
+  #      16/32 OK, 64 slightly worse
+  #      imaginary-real, magnitude-phase OK, others worse.
+  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
+  #
+  # DATASETS:
+  #   BASIS: lcmodel, pygamma, FID-A
+  #   SAMPLING: sobol,dirichlet,random
+  #   SIGMA: 0.05, 0.1, 0.2
+  'basic-2': Grid({
+    'norm':         ['sum'],
+    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['difference','edit_off','edit_on']],
+    'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
+    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax'],
+    'batch_size':   [16, 32, 64]
+  }),
+  # LATER:
+  #   MIXED datasets
+  # Testing; FIXME: finalise
   'test-2': Grid({
     'norm':             ['sum'],
     'acquisitions':     [['difference','edit_on']],
