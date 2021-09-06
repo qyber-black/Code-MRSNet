@@ -16,6 +16,10 @@ import matplotlib.pyplot as plt
 from .grid import Grid
 from .dataset import Dataset
 
+# FIXME: on run where data is actually computed, not everyting seems to be plotted!
+#        Re-run fixed this (tested for grid), but not sure what is going on.
+#        Looks like not all values are stored for the variable keys
+
 class Select:
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose):
     from .dataset import Dataset
@@ -234,7 +238,7 @@ class Select:
                 self.train_performance.append(train_p)
               else:
                 raise Exception("Job failed: "+str(remote[k]))
-              remote_run[k] = 'complete'
+              remote_run[k][0] = 'complete'
             else:
               all_done = False
         running = len([l for l in remote_run if l[0] == 'run'])
@@ -725,6 +729,12 @@ Collections = {
   #      16/32 OK, 64 slightly worse
   #      imaginary-real, magnitude-phase OK, others worse.
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
+  #      diff-edit_off-edit_on > diff-edit_on > diff-edit_off
+  #      16/32 OK, 64 slightly worse
+  #      imaginary-real, magnitude-phase OK, others worse.
+  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
+  #
+  #   fida/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #
   # DATASETS:
   #   BASIS: lcmodel, pygamma, FID-A
@@ -738,7 +748,10 @@ Collections = {
     'batch_size':   [16, 32, 64]
   }),
   # LATER:
-  #   MIXED datasets
+  #   MIXED datasets (basis, sampling, sigma, linewidth, mu, noise-probability)
+  #   single acquisitions?
+  #   mixed datatype
+  #   optimise over model parameters
   # Testing; FIXME: finalise
   'test-2': Grid({
     'norm':             ['sum'],
