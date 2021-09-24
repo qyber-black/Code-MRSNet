@@ -27,8 +27,7 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 ### Prerequisites
 
 * Python 3.9 for main MRSNet.
-* Python 2.7 for pygamma basis set simulations. Unfortunately, PyGamma still requires Python 2.7 to run. It is not essential if you do not intend to use pygamma basis sets and we do provide the basis sets used in our experiments as a download.
-* MATLAB - Only required if you plan to simulate new FID-A spectra. Similar to PyGamma, the basis sets we used are in the the basis sets downloaded.
+* MATLAB - Only required if you plan to simulate new FID-A spectra. (basis sets we used are in the git data/basis submodule)
 * Linux system packages:
     * Git-lfs for git submodule support: `git-lfs`
     * Install these using your package manager with root privileges. E.g. Debian based distributions: `sudo apt update && sudo apt install git-lfs`.
@@ -37,11 +36,9 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 
 1. Clone the repository: `git clone https://qyber.black/MRIS/mrsnet.git`
 2. Navigate to the directory: `cd mrsnet`
-3. Update submodules: `git submodule init && git submodule update`
-6. Install the requirements (CPU or GPU):
-    1. MRSNet python3 requirements: `pip3 install -r requirements.txt` (GPU support requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu))
-    2. Optionally, for PyGamma support `pip3 install -r requirements-pygamma.txt`
-7. Download the additional required data: `python3 setup.py`
+3. Update submodules: `git -c submodule.data/model.update=none -c submodule.data/sim-spectra.update=none submodule update --init --recursive`. This excludes data/model and data/sim-spectra, which are not needed for the operation and they are very large. To include them you can omit the -c options for both submodules.
+6. Install the requirements (CPU or GPU): `pip3 install -r requirements.txt` (GPU support requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu))
+7. Download the additional required data: `python3 setup.py` (currenlty not needed as basis is in the data/basis git submodule!)
 
 Call `mrsnet.py --help` to get further information about all its sub-commands and `mrsnet.py COMMAND --help` for details for each sub-command.
 
