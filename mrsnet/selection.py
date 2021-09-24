@@ -217,7 +217,8 @@ class Select:
                               model_str,
                               t['args']['batch_size']],
                              t['model_path'],
-                             t['fold']])
+                             t['fold'],
+                             t['args']])
       counter += 1
     if len(remote_run) > 0:
       if self.verbose > 0:
@@ -233,7 +234,7 @@ class Select:
             if status == 'done':
               val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
               if val_p is not None:
-                self.key_vals.append(t['args'])
+                self.key_vals.append(remote_run[k][4])
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
@@ -440,37 +441,6 @@ class Select:
     if not self.no_show:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
-    plt.close()
-    # Parallel coordinates
-    import plotly.graph_objects as go
-    dims = []
-    for ki in range(0,len(var_keys)):
-      keys = list(set([self.key_vals[idx[p]][var_keys[ki]] for p in range(0,len(self.key_vals))]))
-      keys.sort()
-      vals = []
-      for p in range(0,len(self.key_vals)):
-        vals.append(keys.index(self.key_vals[idx[p]][var_keys[ki]]))
-      dims.append({
-          'range': (0,len(keys)-1),
-          'tickvals': np.arange(0,len(keys),1),
-          'ticktext': keys,
-          'label': var_keys[ki],
-          'values': vals
-        })
-    fig = go.Figure(data=go.Parcoords(
-                      line = {'color': -np.array(val_error),
-                              'colorscale': 'speed',
-                              'showscale': True,
-                              'cmin': -np.max(val_error),
-                              'cmax': 0},
-                      dimensions = dims))
-    for dpi in self.image_dpi:
-      r = plt.rcParams["figure.figsize"]
-      fig.write_image(os.path.join(folder,"error-pc@"+str(dpi)+".png"),
-                      width=int(r[0]*self.screen_dpi+0.5), height=int(r[1]*self.screen_dpi+0.5),
-                      scale=dpi/self.screen_dpi)
-    if not self.no_show:
-      fig.show()
     plt.close()
 
 class SelectGrid(Select):
@@ -714,9 +684,10 @@ Collections = {
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #     * max with *_softmax model does not work well
   #     * not much visible difference between the rest, but sum seems generally better than max
+  #   * RE-RUN - FIXME
   'basic-1': Grid({
     'norm':         ['sum', 'max'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['difference','edit_off','edit_on']],
+    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
     'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
     'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
                      'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
@@ -725,16 +696,24 @@ Collections = {
   # basic-2: select over basic model parameters restricted to best choices from basic-1
   # Tested with dataset:
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #      diff-edit_off-edit_on > diff-edit_on > diff-edit_off
-  #      16/32 OK, 64 slightly worse
-  #      imaginary-real, magnitude-phase OK, others worse.
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
-  #      diff-edit_off-edit_on > diff-edit_on > diff-edit_off
-  #      16/32 OK, 64 slightly worse
-  #      imaginary-real, magnitude-phase OK, others worse.
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
   #
-  #   fida/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1 FIXME*
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1 FIXME
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1 FIXME
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.05/10000-1 FIXME
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.05/10000-1 FIXME
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.05/10000-1 FIXME
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.2/10000-1 FIXME
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.2/10000-1 FIXME
+  #
+  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #
+  # FIXME: recheck and suggest more datasets/grids
+  #
+  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-2 -vvv --remote ./scheduler/run_scw.sh:c.scmfcl:10:15
   #
   # DATASETS:
   #   BASIS: lcmodel, pygamma, FID-A
@@ -742,11 +721,13 @@ Collections = {
   #   SIGMA: 0.05, 0.1, 0.2
   'basic-2': Grid({
     'norm':         ['sum'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['difference','edit_off','edit_on']],
+    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
     'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
     'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax'],
     'batch_size':   [16, 32, 64]
   }),
+  # FIXME: Some pool may work with sum/max?
+  #
   # LATER:
   #   MIXED datasets (basis, sampling, sigma, linewidth, mu, noise-probability)
   #   single acquisitions?
