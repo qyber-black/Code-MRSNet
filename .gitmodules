@@ -5,5 +5,5 @@
 	path = mrsnet/qdicom
 	url = git@qyber.black:pca/code-qdicom-utilities.git
 [submodule "data/benchmark"]
-	path = data/benchmark
+	path = benchmark
 	url = git@qyber.black:mrs/data-mrs-megapress-gaba-quantification.git

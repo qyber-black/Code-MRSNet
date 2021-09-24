@@ -531,6 +531,7 @@ def get_std_name(name):
   return id
 
 class Cfg:
+  # FIXME: PATHS!
   # Default configuration - do not overwrite here but set alternatives in file
   val = {
     'path_basis': os.path.expanduser('~/.local/share/mrsnet/basis'),
@@ -550,7 +551,7 @@ class Cfg:
       Cfg.val['path_basis'] = os.path.join('.','data','basis')
       Cfg.val['path_simulation'] = os.path.join('.','data','sim-spectra')
       Cfg.val['path_model'] = os.path.join('.','data','model')
-      Cfg.val['path_benchmark'] = os.path.join('.','data','benchmark')
+      Cfg.val['path_benchmark'] = os.path.join('.','benchmark')
     # Load cfg file
     if os.path.isfile(Cfg.file):
       import json
