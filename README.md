@@ -36,7 +36,7 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 
 1. Clone the repository: `git clone https://qyber.black/MRIS/mrsnet.git`
 2. Navigate to the directory: `cd mrsnet`
-3. Update submodules: `git -c submodule.data/model.update=none -c submodule.data/sim-spectra.update=none submodule update --init --recursive`. This excludes data/model and data/sim-spectra, which are not needed for the operation and they are very large. To include them you can omit the -c options for both submodules.
+3. Update submodules: `git submodule update --init --recursive`.
 6. Install the requirements (CPU or GPU): `pip3 install -r requirements.txt` (GPU support requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu))
 7. Download the additional required data: `python3 setup.py` (currenlty not needed as basis is in the data/basis git submodule!)
 
