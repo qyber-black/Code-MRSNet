@@ -404,6 +404,7 @@ def model_selection(args):
 def quantify(args):
   # Quantify sub-command
   import mrsnet.dataset as dataset
+  import numpy as np
   if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
     id = get_std_name(args.dataset)
     name = os.path.join(*id[-9:-1])
