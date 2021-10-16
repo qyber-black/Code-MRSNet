@@ -706,7 +706,7 @@ Collections = {
   #
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1 FIXME*
+  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
   #
   # FIXME: recheck and suggest more datasets/grids
   #
