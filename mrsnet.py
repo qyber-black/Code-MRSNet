@@ -552,7 +552,7 @@ class Cfg:
       Cfg.val['path_basis'] = os.path.join('.','data','basis')
       Cfg.val['path_simulation'] = os.path.join('.','data','sim-spectra')
       Cfg.val['path_model'] = os.path.join('.','data','model')
-      Cfg.val['path_benchmark'] = os.path.join('.','benchmark')
+      Cfg.val['path_benchmark'] = os.path.join('.','data','benchmark')
     # Load cfg file
     if os.path.isfile(Cfg.file):
       import json
