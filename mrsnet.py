@@ -58,6 +58,15 @@ def main():
   add_arguments_train(p_train)
   p_train.set_defaults(func=train)
 
+  # AETrain
+  p_aetrain = subparsers.add_parser('aetrain', help='Train autoencoder model on dataset.',
+                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  add_arguments_default(p_aetrain)
+  add_arguments_metabolites(p_aetrain)
+  add_arguments_train_select(p_aetrain)
+  add_arguments_train(p_aetrain)
+  p_aetrain.set_defaults(func=aetrain)
+
   # Model selection
   p_select = subparsers.add_parser('select', help='Model selection on dataset.',
                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -374,6 +383,35 @@ def train(args):
                 Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 no_show=args.no_show, verbose=args.verbose)
+
+def aetrain(args):
+  # Aerain sub-command
+  import mrsnet.dataset as dataset
+  # Standardise name, but could be path anyway
+  id = get_std_name(args.dataset)
+  name = os.path.join(*id[-9:-1])
+  ds_rest = id[-1]
+  if args.verbose > 0:
+    print("# Loading dataset %s : %s" % (name,ds_rest))
+  dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  args.metabolites.sort()
+  args.acquisitions.sort()
+  args.datatype.sort()
+  d_inp, d_out = dataset.export(metabolites=args.metabolites, norm=args.norm,
+                                acquisitions=args.acquisitions, datatype=args.datatype,
+                                verbose=args.verbose)
+  import mrsnet.aetrain as aetrain
+  # Call to autoencoder train function - adjust arguments, etc. as necesary (those listed are all available with the current arguments from the mrsnet call)
+  # Create ae-trainer class to store arguments
+  trainer = aetrain.AETrain(args.model, args.metabolites, dataset.pulse_sequence,
+                            args.acquisitions, args.datatype, args.norm,
+                            args.validate,
+                            d_inp, d_out, args.epochs, args.batch_size,
+                            Cfg.val['path_model'], dataset.name+"_"+ds_rest,
+                            Cfg.val['image_dpi'], Cfg.val['screen_dpi'],
+                            args.no_show, args.verbose)
+  # ...and execute trainer (to be implemented - FIXME)
+  trainer.train()
 
 def model_selection(args):
   # Select sub-command
