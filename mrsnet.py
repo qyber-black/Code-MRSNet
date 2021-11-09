@@ -385,7 +385,7 @@ def train(args):
                 no_show=args.no_show, verbose=args.verbose)
 
 def aetrain(args):
-  # Aerain sub-command
+  # Aetrain sub-command
   import mrsnet.dataset as dataset
   # Standardise name, but could be path anyway
   id = get_std_name(args.dataset)
