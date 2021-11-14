@@ -482,12 +482,11 @@ def benchmark(args):
       train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
-      print(k,id,name,train_model,batch_size)
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print("# Loading model %s : %s : %s : %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
+    print("# Model %s : %s : %s : %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
   if name[0:4] == "cnn_":
     from mrsnet.model import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))

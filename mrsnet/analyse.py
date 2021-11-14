@@ -52,7 +52,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
           for k,m in enumerate(model.metabolites):
             writer.writerow([m, pre[l,k]])
   if show_conc:
-    print('\n# %s Quantifcation Results' % str(model).upper())
+    print('\n# %s Quantification Results' % str(model).upper())
     print("Metabolites: "+", ".join(model.metabolites))
     print("Pulse Sequence: "+model.pulse_sequence)
     print('\n                       Concentrations')
