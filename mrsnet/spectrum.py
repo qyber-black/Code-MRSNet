@@ -225,6 +225,7 @@ class Spectrum(object):
       raise Exception("Adding noise twice is not advised")
     self.adc_noise_mu = mu
     self.adc_noise_sigma = sigma
+    self.fft_cache = None
     self.raw_adc += (     np.random.normal(mu, sigma, len(self.raw_adc)) + \
                      1j * np.random.normal(mu, sigma, len(self.raw_adc))) / self.scale
 
