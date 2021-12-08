@@ -251,7 +251,7 @@ class Basis(object):
           # on = s1 * diff + s2 * off
           if np.abs(self.spectra[m]['difference'].scale - self.spectra[m]['edit_off'].scale) < 1e-8:
             eon.scale = (self.spectra[m]['difference'].scale + self.spectra[m]['edit_off'].scale) / 2.0
-            eon.raw_adc = self.spectra[m]['difference'].raw_adc - self.spectra[m]['edit_off'].raw_adc
+            eon.raw_adc = self.spectra[m]['difference'].raw_adc + self.spectra[m]['edit_off'].raw_adc
           elif self.spectra[m]['edit_on'].scale > self.spectra[m]['edit_off'].scale:
             # on = s2 (s1/s2 * diff + off)
             eon.scale = self.spectra[m]['edit_off'].scale
