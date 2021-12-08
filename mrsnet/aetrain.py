@@ -159,5 +159,3 @@ autoencoder = AETrain()
 #autoencoder.train()
 #autoencoder.Fit()
 #autoencoder.summary()
-
-

@@ -432,7 +432,6 @@ def aetrain(args):
   args.acquisitions.sort()
   print('acquisitions:',args.acquisitions)
   args.datatype.sort()
-  print('datatype:', args.datatype)
 
   d_inp, d_out= dataset1.export(metabolites=args.metabolites, norm=args.norm,
                                 acquisitions=args.acquisitions, datatype=args.datatype,
@@ -520,7 +519,6 @@ def aetrain(args):
                             Cfg.val['path_model'], dataset.name+"_"+ds_rest,
                             Cfg.val['image_dpi'], Cfg.val['screen_dpi'],
                             args.no_show, args.verbose)'''
-
   # ...and execute trainer (to be implemented - FIXME)
   #trainer.train()
   aetrain.autoencoder.Encoder()
@@ -530,10 +528,6 @@ def aetrain(args):
   trainer = aetrain.autoencoder.Fit(x_train,x_test,x_train_noise,x_test_noise,args.epochs,args.batch_size)
   aetrain.autoencoder.summary()
   return trainer
-
-
-
-
 
 def model_selection(args):
   # Select sub-command
