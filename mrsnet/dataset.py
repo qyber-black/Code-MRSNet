@@ -233,35 +233,29 @@ class Dataset(object):
           for a in self.spectra[idx]:
             if a != 'difference':
               self.spectra[idx][a].add_noise(mu=n_mu[idx], sigma=n_sigma[idx])
-
           if 'difference' in self.spectra[idx]:
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
               raise Exception("Difference spectrum without edit_off or edit_on")
             diff = copy.deepcopy(self.spectra[idx]['edit_off'])
             diff.fft_cache = None
-
             # https: // www.ncbi.nlm.nih.gov / pmc / articles / PMC3825742 /
             # diff = s1 * on - s2 * off
             if np.abs(self.spectra[idx]['edit_on'].scale - self.spectra[idx]['edit_off'].scale) < 1e-8:
               diff.scale = (self.spectra[idx]['edit_on'].scale + self.spectra[idx]['edit_off'].scale) / 2.0
               diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
-
             elif self.spectra[idx]['edit_on'].scale > self.spectra[idx]['edit_off'].scale:
               # diff = s2 * (s1/s2 * on - off)
               diff.scale = self.spectra[idx]['edit_off'].scale
               s12 = self.spectra[idx]['edit_on'].scale / self.spectra[idx]['edit_off'].scale
               diff.raw_adc = s12 * self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
-
             else:
               # diff = s1 * ( on - s2/s1 * off)
               diff.scale = self.spectra[idx]['edit_on'].scale
               s21 = self.spectra[idx]['edit_off'].scale / self.spectra[idx]['edit_on'].scale
               diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - s21 * self.spectra[idx]['edit_off'].raw_adc
-
             diff.acquisition = 'difference'
             self.spectra[idx]['difference'] = diff
-
       return self
     if verbose > 1:
         print("  Added noise to %d of %d spectra" % (n_cnt,num))
