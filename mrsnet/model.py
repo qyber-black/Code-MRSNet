@@ -86,8 +86,6 @@ class CNN:
       output_act = vals[12]
     pooling = True if vals[-1] == 'pool' else False
 
-    # FIXME: row column exchange for speed? (needs benchmarking)
-
     self.cnn.add(Conv2D(filter1, (1,freq_convolution1), strides=(1, strides1),
                  input_shape=input_shape, activation='relu'))
     self.cnn.add(BatchNormalization())

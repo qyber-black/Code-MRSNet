@@ -680,10 +680,10 @@ Collections = {
   # Parameter lists (i.e. lists for single arguments) must be sorted!
   #
   # basic-1: select over basic model parameters.
-  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-1 -vv --remote ./scheduler/run_scw.sh:USER:10:15
+  # ./mrsnet.py select -d PATH -e 100 --validate 0.8 --method grid basic-all -vv --remote ./scheduler/run_scw.sh:USER:10:15
   # Tested with dataset (PATH):
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  'basic-1': Grid({
+  'basic-all': Grid({
     'norm':         ['sum', 'max'],
     'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
     'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
@@ -697,7 +697,6 @@ Collections = {
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
@@ -732,6 +731,7 @@ Collections = {
                      'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
     'batch_size':   [16, 32]
   }),
+  # FIXME: check influence of noise level in data on results
   # FIXME: check models trained with one dataset on another dataset?
   # FIXME: train on MIXED datasets (basis, sampling, sigma, linewidth, mu, noise-probability)
   # FIXME: noise adding? difference?!

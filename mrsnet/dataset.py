@@ -377,7 +377,7 @@ class Dataset(object):
     return out
 
 Collections = {
-  'basic-1': Grid({
+  'single_source-sampler-noise01': Grid({
     'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
     'source': ['lcmodel', 'fid-a', 'pygamma'],
     'manufacturer': ['siemens'],
@@ -385,9 +385,9 @@ Collections = {
     'linewidth': [1.0],
     'pulse_sequence': ['megapress'],
     'num': [10000],
-    'sample': ['random', 'dirichlet', 'sobol'],
+    'sample': ['random', 'sobol', 'dirichlet'],
     'noise_p': [1.0],
-    'noise_sigma': [0.05, 0.1, 0.2],
+    'noise_sigma': [0.1],
     'noise_mu': [0.0]
   }),
   'mixed-1': Grid({
