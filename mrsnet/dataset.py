@@ -266,16 +266,6 @@ class Dataset(object):
     if verbose > 1:
         print("  Added noise to %d of %d spectra" % (n_cnt,num))
 
-  def noise(self,noise_mu,noise_sigma):
-    print('1.length of spectra:',len(self.spectra))
-    for s in self.spectra:
-                for a in s:
-                 s[a].add_noise(mu=noise_mu, sigma=noise_sigma)
-    #self.spectra.append(s)
-
-    print('2.length of spectra:',len(self.spectra))
-    return self
-
   def save(self, path):
     from .getfolder import get_folder
     folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
