@@ -680,11 +680,9 @@ Collections = {
   # Parameter lists (i.e. lists for single arguments) must be sorted!
   #
   # basic-1: select over basic model parameters.
-  # Tested with dataset:
+  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-1 -vv --remote ./scheduler/run_scw.sh:USER:10:15
+  # Tested with dataset (PATH):
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #     * max with *_softmax model does not work well
-  #     * not much visible difference between the rest, but sum seems generally better than max
-  #   * RE-RUN - FIXME
   'basic-1': Grid({
     'norm':         ['sum', 'max'],
     'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
@@ -694,28 +692,18 @@ Collections = {
     'batch_size':   [16, 32, 64]
   }),
   # basic-2: select over basic model parameters restricted to best choices from basic-1
-  # Tested with datasets:
+  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-2 -vv --remote ./scheduler/run_scw.sh:USER:10:15
+  # Tested with datasets (PATH):
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
-  #
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #
-  # FIXME: recheck and suggest more datasets/grids
-  #
-  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-2 -vvv --remote ./scheduler/run_scw.sh:c.scmfcl:10:15
-  #
-  # DATASETS:
-  #   BASIS: lcmodel, pygamma, FID-A
-  #   SAMPLING: sobol,dirichlet,random
-  #   SIGMA: 0.1
   'basic-2': Grid({
     'norm':         ['sum'],
     'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
@@ -723,15 +711,32 @@ Collections = {
     'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax'],
     'batch_size':   [16, 32, 64]
   }),
-  # FIXME: Some pool may work with sum/max?
-  #
-  # LATER:
-  #   MIXED datasets (basis, sampling, sigma, linewidth, mu, noise-probability)
-  #   single acquisitions?
-  #   mixed datatype
-  #   optimise over model parameters
-  # Testing; FIXME: finalise
-  'test-2': Grid({
+  # basic-3: select over basic model parameters restricted to best choices from basic-2, extended by sigmoid_pool cnns
+  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-3 -vv --remote ./scheduler/run_scw.sh:USER:10:15
+  # Tested with datasets (PATH):
+  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
+  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
+  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
+  #  fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #  fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
+  #  fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
+  #  pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #  - pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
+  #  - pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
+  'basic-3': Grid({
+    'norm':         ['sum'],
+    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
+    'datatype':     [['magnitude','phase'], ['imaginary','real']],
+    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
+                     'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
+    'batch_size':   [16, 32]
+  }),
+  # FIXME: check models trained with one dataset on another dataset?
+  # FIXME: train on MIXED datasets (basis, sampling, sigma, linewidth, mu, noise-probability)
+  # FIXME: noise adding? difference?!
+  # FIXME: optimise over model parameters
+  'optim-1': Grid({
     'norm':             ['sum'],
     'acquisitions':     [['difference','edit_on']],
     'datatype':         [['magnitude','phase']],
@@ -750,12 +755,5 @@ Collections = {
     'model_ACTIVATION': ['softmax'],
     'model_POOL':       [False],
     'batch_size':       [32]
-  }),
-  'test-3': Grid({
-    'norm':         ['sum'],
-    'acquisitions': Grid.all_combinations_sort(['edit_off', 'edit_on', 'difference']),
-    'datatype':     Grid.all_combinations_sort(['magnitude', 'phase', 'real', 'imaginary']),
-    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax'],
-    'batch_size':   [16, 32, 64]
   })
 }
