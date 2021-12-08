@@ -219,6 +219,7 @@ class Dataset(object):
       self.concentrations.append(c)
     if verbose > 0:
       print("  Spectra with noise: %d" % n_cnt)
+    # FIXME: noise generation separate; also careful with difference
 
   def noise(self,noise_mu,noise_sigma):
     print('1.length of spectra:',len(self.spectra))
@@ -315,8 +316,7 @@ class Dataset(object):
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
     for a in acquisitions:
-      a, _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
-      fft[a_idx,:] = a
+      fft[a_idx,:], _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
       a_idx += 1
     if mean_center or normalise:
       m = np.abs(fft)
@@ -325,7 +325,7 @@ class Dataset(object):
         m -= np.mean(m)
       if normalise:
         m /= np.max(m)
-      fft = np.multiply(p, np.exp(1j*m))
+      fft = np.multiply(m, np.exp(1j*p))
     for a_idx in range(0,fft.shape[0]):
       d_idx = 0
       for d in datatypes:
