@@ -683,7 +683,7 @@ Collections = {
   # ./mrsnet.py select -d PATH -e 100 --validate 0.8 --method grid simple-all -vv --remote ./scheduler/run_scw.sh:USER:10:15
   # Tested with dataset (PATH):
   #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  'model-all': Grid({
+  'simple-all': Grid({
     'norm':         ['sum', 'max'],
     'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
     'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
