@@ -254,7 +254,6 @@ class Dataset(object):
       return self
     if verbose > 1:
         print("  Added noise to %d of %d spectra" % (n_cnt,num))
-    return self
 
   def save(self, path):
     from .getfolder import get_folder
