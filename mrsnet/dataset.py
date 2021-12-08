@@ -94,11 +94,17 @@ class Dataset(object):
 
     n0 = num // len(samplers)
     n1 = num % len(samplers)
+    print('n0:', n0)
+    print('n1:', n1)
+    print('length of samplers:',len(samplers))
     n_metabolites = len(self.metabolites)
+    print('n_metabolites:',n_metabolites)
     all_concentrations = np.empty((0,n_metabolites))
     for sampler in samplers:
       n = n0 + (1 if n1 > 0 else 0)
       n1 -= 1
+      print('n:', n)
+      print('n1:', n1)
       if verbose > 0:
         print("Generating %d concentrations with %s sampling" % (n,sampler))
       if sampler == 'random':
@@ -213,6 +219,16 @@ class Dataset(object):
       self.concentrations.append(c)
     if verbose > 0:
       print("  Spectra with noise: %d" % n_cnt)
+
+  def noise(self,noise_mu,noise_sigma):
+    print('1.length of spectra:',len(self.spectra))
+    for s in self.spectra:
+                for a in s:
+                 s[a].add_noise(mu=noise_mu, sigma=noise_sigma)
+    #self.spectra.append(s)
+
+    print('2.length of spectra:',len(self.spectra))
+    return self
 
   def save(self, path):
     from .getfolder import get_folder

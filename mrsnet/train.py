@@ -1,4 +1,4 @@
-# mrsnet/selection.py - MRSNet - selection
+ # mrsnet/selection.py - MRSNet - selection
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #

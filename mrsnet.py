@@ -14,9 +14,10 @@ import glob
 import sys
 import argparse
 import matplotlib.pyplot as plt
-
+import numpy as np
 import mrsnet.molecules as molecules
-
+import tensorflow as tf
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 def main():
   # Main function of MRSNet: parse arguments, setup basic environment and run
 
@@ -63,8 +64,8 @@ def main():
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_aetrain)
   add_arguments_metabolites(p_aetrain)
-  add_arguments_train_select(p_aetrain)
-  add_arguments_train(p_aetrain)
+  add_arguments_aetrain(p_aetrain)
+  #add_arguments_train(p_aetrain)
   p_aetrain.set_defaults(func=aetrain)
 
   # Model selection
@@ -166,6 +167,22 @@ def add_arguments_train(p):
   p.add_argument('-b', '--batch-size', type=int, default=32,
                  help='Batch size.')
 
+def add_arguments_aetrain(p):
+    # Adding aetrain arguments
+  p.add_argument('-d', '--dataset', type=str,help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
+  p.add_argument('-e', '--epochs', type=int, default=500, help='Number of training epochs.')
+  p.add_argument('-b', '--batch_size', type=int, default=32, help='Batch size.')
+  p.add_argument('-r', '--run', type=str, default='default', help='Currently only one selection')
+
+  p.add_argument('--norm', choices=['sum', 'max'], default='sum',
+                   help='Concentration normalisation: sum or max equal to 1')
+  p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
+                   help='Acquisitions from pulse sequence used (megapress: edit_off, edit_on, difference).')
+  p.add_argument('--datatype', type=lambda s: s.lower(), nargs='+',
+                   choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude'],
+                   help='Data representation of spectrum.')
+
+
 def add_arguments_quantify(p):
   # Add quantification arguments
   p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID)')
@@ -244,16 +261,26 @@ def simulate(args):
           for ps in args.pulse_sequence:
             bases.add(args.metabolites, s, m, o, l, ps)
           num_bases += 1
+  print('num-bases:',num_bases)
   if args.verbose > 0:
-    print(bases)
+    print('bases:',bases)
     print("# Generating dataset")
   # Generate datasets
   dataset = dataset.Dataset(name)
+  print('dataset:',dataset)
+  print('dataset:', type(dataset))
+  print('name:',name)
   n0 = args.num // num_bases
   n1 = args.num % num_bases
+  print('bases:',bases)
+  print('n0:',n0)
+  print('n1',n1)
   for b in bases:
     n = n0 + (1 if n1 > 0 else 0)
     n1 -= 1
+    print('n:',n)
+    print('n1:',n1)
+    print('b:',b)
     if args.verbose > 0:
       print("Generating %d spectra for %s" % (n,b))
     dataset.generate_spectra(b, n, args.sample, args.noise_p, args.noise_mu,
@@ -393,25 +420,94 @@ def aetrain(args):
   ds_rest = id[-1]
   if args.verbose > 0:
     print("# Loading dataset %s : %s" % (name,ds_rest))
-  dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  dataset1 = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
   args.datatype.sort()
-  d_inp, d_out = dataset.export(metabolites=args.metabolites, norm=args.norm,
+
+  d_inp, d_out= dataset1.export(metabolites=args.metabolites, norm=args.norm,
                                 acquisitions=args.acquisitions, datatype=args.datatype,
                                 verbose=args.verbose)
+  #d_inp_noise = dataset.Dataset.noise(d_inp)
+  #print('d_inp_type:', type(d_inp))
+  d_inp_noise = dataset.Dataset.noise(dataset1,0,0.001)
+  #print((d_inp_noise))
+  d_inp_noise, d_out_noise = d_inp_noise.export(metabolites=args.metabolites, norm=args.norm,
+                                   acquisitions=args.acquisitions, datatype=args.datatype,
+                                   verbose=args.verbose)
   import mrsnet.aetrain as aetrain
+  n = 5
+  for i in range(n):
+
+   aetrain.autoencoder.plot_spectra(d_inp[i, 0, 0],"Clean_edit-off")
+   aetrain.autoencoder.plot_spectra(d_inp[i, 1, 0], "Clean_difference")
+   aetrain.autoencoder.plot_spectra(d_inp_noise[i, 0, 0],"With_Noise_edit-off")
+   aetrain.autoencoder.plot_spectra(d_inp_noise[i, 1, 0], "With_Noise_difference")
+
+  #print('d_inp_noise_header[0]',d_inp_noise[0,0,0])
+  print('d_inp_noise_len:', len(d_inp_noise))
+  print('______________________________________')
+  #print('d_inp_type:', type(d_inp))
+  d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
+  print('d_inp_shape:',d_inp.shape)
+  #print('d_inp_type:',type(d_inp))
+  #print('d_inp_noise_type:', type(d_inp_noise))
+  #d_out = tf.convert_to_tensor(d_out, dtype=tf.float32)
+  print('d_inp_noise_shape:', d_inp_noise.shape)
+  d_inp_noise = tf.convert_to_tensor(d_inp_noise, dtype=tf.float32)
+  #d_inp_noise = tf.ragged.constant(d_inp_noise, dtype=tf.float32)
+  # Calling function from the dataset and adding noise
+
+  d_inp = tf.reshape(d_inp, (d_inp.shape[0], d_inp.shape[1] * d_inp.shape[2], d_inp.shape[3], 1))
+  d_inp_noise = tf.reshape(d_inp_noise, (d_inp_noise.shape[0], d_inp_noise.shape[1] * d_inp_noise.shape[2], d_inp_noise.shape[3], 1))
+  #print(d_inp.shape)
+  print(d_inp_noise.shape)
+
+  dr_rest_num= ds_rest[:-2]
+  split_point = int(int(dr_rest_num)/10) * 8
+  x_train=d_inp[0:split_point]
+  x_test= d_inp[split_point:]
+  print(x_train.shape)
+  x_train_noise=d_inp_noise[0:split_point]
+  x_test_noise=d_inp_noise[split_point:]
+  print(x_test_noise.shape)
+  x_train_plot = tf.reshape(x_train,(4000,2,1,2048))
+  x_test_plot = tf.reshape(x_test,(1000,2,1,2048))
+
+  x_train_noise_plot = tf.reshape(x_train_noise,(4000,2,1,2048))
+  x_test_noise_plot = tf.reshape(x_test_noise,(1000,2,1,2048))
+
+  aetrain.autoencoder.plot_spectra(x_train_plot[0, 0, 0], "tf.Clean_edit-off")
+  aetrain.autoencoder.plot_spectra(x_train_plot[0, 1, 0], "tf.Clean_difference")
+  aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 0, 0], "tf.With_Noise_edit-off")
+  aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 1, 0], "tf.With_Noise_difference")
+
+  import mrsnet.aetrain as aetrain
+  #aetrain.autoencoder.plot_spectra(x_train_noise)
   # Call to autoencoder train function - adjust arguments, etc. as necesary (those listed are all available with the current arguments from the mrsnet call)
   # Create ae-trainer class to store arguments
-  trainer = aetrain.AETrain(args.model, args.metabolites, dataset.pulse_sequence,
+  if args.run == 'default':
+    print('AE is set as default')
+  '''trainer = aetrain.AETrain(args.model, args.metabolites, dataset.pulse_sequence,
                             args.acquisitions, args.datatype, args.norm,
                             args.validate,
                             d_inp, d_out, args.epochs, args.batch_size,
                             Cfg.val['path_model'], dataset.name+"_"+ds_rest,
                             Cfg.val['image_dpi'], Cfg.val['screen_dpi'],
-                            args.no_show, args.verbose)
+                            args.no_show, args.verbose)'''
   # ...and execute trainer (to be implemented - FIXME)
-  trainer.train()
+  #trainer.train()
+  aetrain.autoencoder.Encoder()
+  aetrain.autoencoder.Decoder()
+  aetrain.autoencoder.Autoencoder()
+  aetrain.autoencoder.train()
+  trainer = aetrain.autoencoder.Fit(x_train,x_test,x_train_noise,x_test_noise,args.epochs,args.batch_size)
+  aetrain.autoencoder.summary()
+  return trainer
+
+
+
+
 
 def model_selection(args):
   # Select sub-command
@@ -564,7 +660,7 @@ def get_std_name(name):
     path, folder = os.path.split(path)
     if folder != "":
       id.append(folder)
-    if path == "":
+    if path == "" or path == '/':
       break
   id.reverse()
   return id
@@ -624,8 +720,11 @@ if __name__ == '__main__':
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
   # Headless mode
+  from matplotlib import use
   if not "DISPLAY" in os.environ:
-    from matplotlib import use
+    print(os.environ["DISPLAY"])
     use("Agg")
+  else:
+    use("Qt5Agg")
   Cfg.init()
   main()

@@ -14,8 +14,8 @@ from time import time_ns
 
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.python.keras.layers import *
-from tensorflow.python.keras.models import Sequential
+from tensorflow.keras.layers import *
+from tensorflow.keras.models import Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import load_model
 
