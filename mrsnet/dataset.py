@@ -254,15 +254,6 @@ class Dataset(object):
       return self
     if verbose > 1:
         print("  Added noise to %d of %d spectra" % (n_cnt,num))
-
-  def noise(self,noise_mu,noise_sigma):
-    print('1.length of spectra:',len(self.spectra))
-    for s in self.spectra:
-                for a in s:
-                 s[a].add_noise(mu=noise_mu, sigma=noise_sigma)
-    #self.spectra.append(s)
-
-    print('2.length of spectra:',len(self.spectra))
     return self
 
   def save(self, path):
