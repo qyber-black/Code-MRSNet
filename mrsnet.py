@@ -209,6 +209,7 @@ def simulate(args):
   # Simulate sub-command
   import mrsnet.basis as basis
   import mrsnet.dataset as dataset
+  import mrsnet.spectrum as spectrum
   if args.verbose > 0:
     print("# Setting up bases")
   args.source.sort()
@@ -247,8 +248,8 @@ def simulate(args):
     n1 -= 1
     if args.verbose > 0:
       print("Generating %d spectra for %s" % (n,b))
-    dataset.generate_spectra(b, n, args.sample, args.noise_p, args.noise_mu,
-                             args.noise_sigma, verbose=args.verbose)
+    dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
+    dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
   if args.verbose > 0:
     print("Saving dataset %s" % dataset.name)
   path = dataset.save(Cfg.val["path_simulation"])
@@ -265,13 +266,12 @@ def simulate(args):
     if not args.no_show:
       fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
-      plt.close()
+    plt.close()
   if args.show_spectra:
     for s,c in zip(dataset.spectra,dataset.concentrations):
-      for a in s.keys():
-        s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
-        plt.show(block=True)
-        plt.close()
+      spectrum.Spectrum.plot_full_spectrum(s,c,screen_dpi=Cfg.val['screen_dpi'])
+      plt.show(block=True)
+      plt.close()
 
 def generate_datasets(args):
   # Generate datasets sub-command
@@ -475,7 +475,6 @@ def benchmark(args):
   name = []
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
-      # FIXME: index issues!
       name = os.path.join(*id[k:k+6])
       batch_size = id[k+6]
       epochs = id[k+7]
@@ -531,18 +530,18 @@ def get_std_name(name):
   return id
 
 class Cfg:
-  # FIXME: PATHS!
+  # FIXME: search multiple paths
   # Default configuration - do not overwrite here but set alternatives in file
   val = {
-    'path_basis': os.path.expanduser('~/.local/share/mrsnet/basis'),
-    'path_simulation': os.path.expanduser('~/.local/share/mrsnet/sim-spectra'),
-    'path_model': os.path.expanduser('~/.local/share/mrsnet/model'),
-    'path_benchmark': os.path.expanduser('~/.local/share/mrsnet/benchmark'),
+    'path_basis': os.path.expanduser(os.path.join('~','.local','share','mrsnet','basis')),
+    'path_simulation': os.path.expanduser(os.path.join('~','.local','share','mrsnet','sim-spectra')),
+    'path_model': os.path.expanduser(os.path.join('~','.local','share','mrsnet','model')),
+    'path_benchmark': os.path.expanduser(os.path.join('~','.local','share','mrsnet','benchmark')),
     'figsize': (26.67,15.0),
     'default_screen_dpi': 96,
     'image_dpi': [300]
   }
-  file = os.path.expanduser("~/.config/mrsnet.json")
+  file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod
   def init():

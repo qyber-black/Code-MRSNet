@@ -7,6 +7,7 @@
 
 import os
 import math
+import copy
 import sobol_seq
 import numpy as np
 import joblib
@@ -30,6 +31,7 @@ class Dataset(object):
     self.low_ppm = low_ppm
     self.n_fft_pts = n_fft_pts
     self.pulse_sequence = None
+    self.noise_added = False
 
   def load_dicoms(self, folder, concentrations=None, metabolites=[]):
     from .spectrum import Spectrum
@@ -64,7 +66,7 @@ class Dataset(object):
         self.concentrations.append(concs[id])
     return self
 
-  def generate_spectra(self, basis, num, samplers, noise_p, noise_mu, noise_sigma, verbose):
+  def generate_spectra(self, basis, num, samplers, verbose):
     # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
     # Does not add noise, but only generates clean combined ADC signal.
     if num <= 0:
@@ -198,22 +200,58 @@ class Dataset(object):
 
     if verbose > 0:
       print("Combining basis spectra")
-      print("  Noise p: %f  max. mu: %f  max. sigma:%f " % (noise_p,noise_mu,noise_sigma))
-    n_add = np.random.uniform(0.0,1.0,num)
-    n_mu = np.random.uniform(0.0,noise_mu,num)
-    n_sigma = np.random.uniform(0.0,noise_sigma,num)
     n_cnt = 0
     for count in range(num):
       s,c = basis.combine(all_concentrations[count],str(count))
-      if n_add[count] <= noise_p:
-        n_cnt += 1
-        for a in s:
-          s[a].add_noise(mu=n_mu[count], sigma=n_sigma[count])
       self.spectra.append(s)
       self.concentrations.append(c)
-    if verbose > 0:
-      print("  Spectra with noise: %d" % n_cnt)
-    # FIXME: noise generation separate; also careful with difference
+
+  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose):
+    # Add noise to all spectra
+    if self.noise_added:
+      raise Exception("Noise added twice to dataset")
+    if noise_p > 0.0:
+      if verbose > 0:
+        print("Adding noise Normal(mu=%f,sigma=%f) with probability %f to time signal"
+              % (noise_mu,noise_sigma,noise_p))
+      self.noise_added = True
+      num = len(self.spectra)
+      n_add = np.random.uniform(0.0,1.0,num)
+      n_mu = np.random.uniform(0.0,noise_mu,num)
+      n_sigma = np.random.uniform(0.0,noise_sigma,num)
+      n_cnt = 0
+      for idx in range(num):
+        if n_add[idx] <= noise_p:
+          n_cnt += 1
+          # Add noise
+          for a in self.spectra[idx]:
+            if a != 'difference':
+              self.spectra[idx][a].add_noise(mu=n_mu[idx], sigma=n_sigma[idx])
+          if 'difference' in self.spectra[idx]:
+            # Add difference of noisy spectra
+            if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
+              raise Exception("Difference spectrum without edit_off or edit_on")
+            diff = copy.deepcopy(self.spectra[idx]['edit_off'])
+            diff.fft_cache = None
+            # https: // www.ncbi.nlm.nih.gov / pmc / articles / PMC3825742 /
+            # diff = s1 * on - s2 * off
+            if np.abs(self.spectra[idx]['edit_on'].scale - self.spectra[idx]['edit_off'].scale) < 1e-8:
+              diff.scale = (self.spectra[idx]['edit_on'].scale + self.spectra[idx]['edit_off'].scale) / 2.0
+              diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
+            elif self.spectra[idx]['edit_on'].scale > self.spectra[idx]['edit_off'].scale:
+              # diff = s2 * (s1/s2 * on - off)
+              diff.scale = self.spectra[idx]['edit_off'].scale
+              s12 = self.spectra[idx]['edit_on'].scale / self.spectra[idx]['edit_off'].scale
+              diff.raw_adc = s12 * self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
+            else:
+              # diff = s1 * ( on - s2/s1 * off)
+              diff.scale = self.spectra[idx]['edit_on'].scale
+              s21 = self.spectra[idx]['edit_off'].scale / self.spectra[idx]['edit_on'].scale
+              diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - s21 * self.spectra[idx]['edit_off'].raw_adc
+            diff.acquisition = 'difference'
+            self.spectra[idx]['difference'] = diff
+      if verbose > 1:
+        print("  Added noise to %d of %d spectra" % (n_cnt,num))
 
   def save(self, path):
     from .getfolder import get_folder

@@ -298,6 +298,75 @@ class Spectrum(object):
     return figure
 
   @staticmethod
+  def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
+    n_cols = len(spectra)
+
+    super_title = type.upper() + " "
+    if len(concentrations) > 0:
+      n_cols +=1
+    else:
+      super_title += "-".join(self.metabolites[0]) + " "
+    source = set([spectra[a].source for a in spectra])
+    pulse_sequence = set([spectra[a].pulse_sequence for a in spectra])
+    omega = set([spectra[a].omega for a in spectra])
+    linewidth = set([spectra[a].linewidth for a in spectra])
+    adc_noise_mu = set([spectra[a].adc_noise_mu for a in spectra])
+    adc_noise_sigma = set([spectra[a].adc_noise_sigma for a in spectra])
+    if len(source) != 1 or len(pulse_sequence) != 1 or len(omega) != 1 or len(linewidth) != 1 or \
+       len(adc_noise_mu) != 1 or len(adc_noise_sigma) != 1:
+      raise Exception("Spectra differ in more than acqusition")
+
+    super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
+                   " @ " + str(next(iter(omega))) + "Hz Linewidth: " + str(next(iter(linewidth)))
+    adc_noise_mu = next(iter(adc_noise_mu))
+    adc_noise_sigma = next(iter(adc_noise_sigma))
+    if adc_noise_mu != 0.0 or adc_noise_sigma != 0.0:
+      super_title += (" - Noise mu: %f sigma: %f" % (adc_noise_mu,adc_noise_sigma))
+
+    figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
+    if len(axes.shape) == 1:
+      axes = np.reshape(axes, (4, 1))
+    else:
+      axes[0,n_cols-1].remove()
+      axes[1,n_cols-1].remove()
+      axes[2,n_cols-1].remove()
+      axes[3,n_cols-1].remove()
+
+    plt.suptitle(super_title)
+
+    col = 0
+    for a in sorted(spectra):
+      axes[0,col].set_title(a.upper())
+      spectra[a].plot(axes[0,col], type=type, mode='magnitude')
+      axes[0,col].set_xlabel("")
+      if col > 0:
+        axes[0,0].get_shared_y_axes().join(axes[0,0], axes[0,col])
+      spectra[a].plot(axes[1,col], type=type, mode='phase')
+      axes[1,col].set_xlabel("")
+      if col > 0:
+        axes[1,0].get_shared_y_axes().join(axes[1,0], axes[1,col])
+      spectra[a].plot(axes[2,col], type=type, mode='real')
+      axes[2,col].set_xlabel("")
+      if col > 0:
+        axes[2,0].get_shared_y_axes().join(axes[2,0], axes[2,col])
+      spectra[a].plot(axes[3,col], type=type, mode='imaginary')
+      if col > 0:
+        axes[3,0].get_shared_y_axes().join(axes[3,0], axes[3,col])
+      col += 1
+
+    if n_cols > col:
+      ax = plt.subplot(1, n_cols, n_cols)
+      plt.title('Concentrations')
+      cn = [n for n in concentrations.keys()]
+      cv = [concentrations[v] for v in cn]
+      ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv)
+      metabolites = spectra[next(iter(spectra))].metabolites
+      ax.set_xticks(np.arange(len(metabolites)))
+      ax.set_xticklabels(molecules.short_name(cn))
+
+    return figure
+
+  @staticmethod
   def load_fida(fida_file,id):
     fida_data = loadmat(fida_file)
     return Spectrum(id=id,
