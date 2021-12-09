@@ -74,14 +74,14 @@ sub-commands available are:
 
 #### Folders and Git Submodules
 
-The benchmark dataset is in `data/bechmark/` and the basis sets in `data/basis`
+The benchmark dataset is in `data/bechmark` and the basis sets in `data/basis`
 and the best models for distribution in `data/model-dist`. All these folders are
 git submodules and installed with the procedure above. They are generally
 required to run MRSNet.
 
-By default, networks are stored in `data/models/` along with some basic
+By default, networks are stored in `data/models` along with some basic
 analytics and the simulated spectra are stored in `data/sim-spectra`. Usually
-these folders are empty on installation. There are two git repistories on
+these folders are empty on installation. There are two git repositories on
 qyber.black with some data for these folders, generated for the publications,
 etc.:
 
@@ -92,12 +92,12 @@ These can be cloned into those folders, if you wish to explore this data and use
 it for your own analysis.
 
 Generally it is best to run `mrsnet.py` from the base-folder of the git
-repository. If not, MRSNet searches default folders defined in the class `Cfg`
-in `mrsnet.py`. These would, however, not be populated with any data (in
-particular basis sets and the benchmark) at this stage and the repository folder
-will not be searched for them (this will change in a later version). The paths
-can also be specified in a config file `~/.config/mrsnet.json` (currently also
-not fully supported, but should be working).
+repository. The folder locations in data are determined by the real location of
+the `mrsnet.py` file (not symbolic links). These and other configuration values
+can be overwritten by providing a `~/.config/mrsnet.json` file (see `Cfg` class
+in `mrsnet.py` for details; generally this is not needed). If you change the
+location of the folders in data, you do have to make sure the submodule data
+is available in the new location. MRSNet does not search multiple paths.
 
 ## Simulating Spectra
 
