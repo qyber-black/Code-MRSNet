@@ -29,8 +29,7 @@ class Select:
       self.ds_rest = id[-1]
       if verbose > 0:
         print("# Loading dataset %s : %s" % (name,self.ds_rest))
-      ds = Dataset.load(dataset) # We trust the path is in Cfg{path_simulation},
-                                 # so no re-construction here (as in ../mrsnet.py)
+      ds = Dataset.load(dataset)
       self.pulse_sequence = ds.pulse_sequence
     else:
       raise Exception("Cannot find dataset")
