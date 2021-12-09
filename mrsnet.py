@@ -193,17 +193,18 @@ def basis(args):
   for b in bases:
     if args.verbose > 0:
       print(b)
-    fig = b.plot()
-    if args.verbose > 0:
-      print("Saving figure %s" % b.name())
-    for f in glob.glob(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"@*.png")):
+    for f in glob.glob(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"*.png")):
       os.remove(f)
-    for dpi in Cfg.val['image_dpi']:
-      plt.savefig(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"@"+str(dpi)+".png"), dpi=dpi)
-    if not args.no_show:
-      fig.set_dpi(Cfg.val['screen_dpi'])
-      plt.show(block=True)
-    plt.close()
+    for d in ['magnitude','phase','real','imaginary']:
+      fig = b.plot(data=d, type='fft')
+      if args.verbose > 0:
+        print("Saving figure %s" % b.name())
+      for dpi in Cfg.val['image_dpi']:
+        plt.savefig(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"-"+d+"@"+str(dpi)+".png"), dpi=dpi)
+      if not args.no_show:
+        fig.set_dpi(Cfg.val['screen_dpi'])
+        plt.show(block=True)
+      plt.close()
 
 def simulate(args):
   # Simulate sub-command
