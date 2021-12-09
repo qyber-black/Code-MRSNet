@@ -42,7 +42,7 @@ https://langbein.org/mrsnet-paper/
   tensorflow support) is strongly recommended.
 
 * Standard packages:
-  * Git with git-lfs for git submodule support.
+  * Git and git-lfs for git with submodules and LFS support.
   * Python 3.9 with pip (recent python3 versions should be OK).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
