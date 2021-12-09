@@ -682,59 +682,24 @@ Collections = {
   # simple-all: select over all simple model parameters.
   # ./mrsnet.py select -d PATH -e 100 --validate 0.8 --method grid simple-all -vv --remote ./scheduler/run_scw.sh:USER:10:15
   # Tested with dataset (PATH):
-  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  # FIXME:
+  #   -lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   -fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   +pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   -> dirichlet, random
+  #   -> noise effect: 0.05, 0.1, 0.2
+  #   -> benchmark
   'simple-all': Grid({
     'norm':         ['sum', 'max'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
+    'acquisitions': [['difference','edit_off'], ['difference','edit_on'],
+                     ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
     'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
     'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
                      'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
     'batch_size':   [16, 32, 64]
   }),
-  # basic-2: select over basic model parameters restricted to best choices from basic-1
-  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-2 -vv --remote ./scheduler/run_scw.sh:USER:10:15
-  # Tested with datasets (PATH):
-  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  'basic-2': Grid({
-    'norm':         ['sum'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
-    'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
-    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax'],
-    'batch_size':   [16, 32, 64]
-  }),
-  # basic-3: select over basic model parameters restricted to best choices from basic-2, extended by sigmoid_pool cnns
-  # ./mrsnet.py select -d PATH -e 250 --validate 5 --method grid basic-3 -vv --remote ./scheduler/run_scw.sh:USER:10:15
-  # Tested with datasets (PATH):
-  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #  lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.2/10000-1
-  #  fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #  fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #  fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  #  pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #  - pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/dirichlet/1.0-0.0-0.1/10000-1
-  #  - pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10000-1
-  'basic-3': Grid({
-    'norm':         ['sum'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'], ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
-    'datatype':     [['magnitude','phase'], ['imaginary','real']],
-    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
-                     'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
-    'batch_size':   [16, 32]
-  }),
-  # FIXME: check influence of noise level in data on results
-  # FIXME: check models trained with one dataset on another dataset?
-  # FIXME: train on MIXED datasets (basis, sampling, sigma, linewidth, mu, noise-probability)
-  # FIXME: noise adding? difference?!
+  # FIXME: check models trained with one dataset on another dataset
+  # FIXME: train on MIXED datasets (basis, linewidth)
   # FIXME: optimise over model parameters
   'optim-1': Grid({
     'norm':             ['sum'],
