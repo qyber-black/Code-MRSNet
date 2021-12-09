@@ -690,8 +690,9 @@ def get_std_name(name):
   return id
 
 class Cfg:
-  # FIXME: search multiple paths
   # Default configuration - do not overwrite here but set alternatives in file
+  # These are static variables for the class, accessed via the class. No object
+  # of this class should be used; all methods are static.
   val = {
     'path_basis': None,
     'path_simulation': None,
@@ -706,10 +707,11 @@ class Cfg:
 
   @staticmethod
   def init():
+    # Find base folder
     bin_path = os.path.realpath(__file__)
     if not os.path.isfile(bin_path):
       raise Exception("Cannot find location of mrsnet.py root folder")
-    # Load cfg file
+    # Load cfg file - data folders and other Cfg values can be overwritten by config file
     if os.path.isfile(Cfg.file):
       import json
       with open(Cfg.file, "r") as fp:
@@ -719,6 +721,7 @@ class Cfg:
             Cfg.val[k] = js[k]
           else:
             raise Exception("Unknown config file entry %s in %s" % (k,Cfg.file))
+    # Check data folders and create as needed
     data_dir = os.path.join(os.path.dirname(bin_path),'data')
     paths = {
       "path_basis": "basis",
@@ -731,7 +734,7 @@ class Cfg:
         Cfg.val[p] = os.path.join(data_dir,paths[p])
       if not os.path.isdir(Cfg.val[p]):
         os.makedirs(os.path.isdir(Cfg.val[p]))
-    # Setup defaults
+    # Setup plot defaults
     if Cfg.val["screen_dpi"] == None:
       Cfg.val["screen_dpi"] = Cfg._screen_dpi()
     plt.rcParams["figure.figsize"] = Cfg.val['figsize']
