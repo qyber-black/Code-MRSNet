@@ -87,7 +87,7 @@ def main():
   p_quantify = subparsers.add_parser('quantify', help='Quantify spectra in dicoms.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_quantify)
-  add_arguments_train(p_quantify)
+  add_arguments_quantify(p_quantify)
   p_quantify.set_defaults(func=quantify)
 
   # Benchmark
