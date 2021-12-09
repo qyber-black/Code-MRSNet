@@ -534,24 +534,22 @@ class Cfg:
   # FIXME: search multiple paths
   # Default configuration - do not overwrite here but set alternatives in file
   val = {
-    'path_basis': os.path.expanduser(os.path.join('~','.local','share','mrsnet','basis')),
-    'path_simulation': os.path.expanduser(os.path.join('~','.local','share','mrsnet','sim-spectra')),
-    'path_model': os.path.expanduser(os.path.join('~','.local','share','mrsnet','model')),
-    'path_benchmark': os.path.expanduser(os.path.join('~','.local','share','mrsnet','benchmark')),
+    'path_basis': None,
+    'path_simulation': None,
+    'path_model': None,
+    'path_benchmark': None,
     'figsize': (26.67,15.0),
     'default_screen_dpi': 96,
+    'screen_dpi': None,
     'image_dpi': [300]
   }
   file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod
   def init():
-    if os.path.isfile('mrsnet.py') and os.path.isdir('data') and os.path.isdir('.git'):
-      # Dev mode
-      Cfg.val['path_basis'] = os.path.join('.','data','basis')
-      Cfg.val['path_simulation'] = os.path.join('.','data','sim-spectra')
-      Cfg.val['path_model'] = os.path.join('.','data','model')
-      Cfg.val['path_benchmark'] = os.path.join('.','data','benchmark')
+    bin_path = os.path.realpath(__file__)
+    if not os.path.isfile(bin_path):
+      raise Exception("Cannot find location of mrsnet.py root folder")
     # Load cfg file
     if os.path.isfile(Cfg.file):
       import json
@@ -562,8 +560,21 @@ class Cfg:
             Cfg.val[k] = js[k]
           else:
             raise Exception("Unknown config file entry %s in %s" % (k,Cfg.file))
+    data_dir = os.path.join(os.path.dirname(bin_path),'data')
+    paths = {
+      "path_basis": "basis",
+      "path_simulation": "sim-spectra",
+      "path_model": "model",
+      "path_benchmark": "benchmark"
+    }
+    for p in paths:
+      if Cfg.val[p] == None:
+        Cfg.val[p] = os.path.join(data_dir,paths[p])
+      if not os.path.isdir(Cfg.val[p]):
+        os.makedirs(os.path.isdir(Cfg.val[p]))
     # Setup defaults
-    Cfg.val["screen_dpi"] = Cfg._screen_dpi()
+    if Cfg.val["screen_dpi"] == None:
+      Cfg.val["screen_dpi"] = Cfg._screen_dpi()
     plt.rcParams["figure.figsize"] = Cfg.val['figsize']
 
   @staticmethod
