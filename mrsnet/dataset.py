@@ -390,16 +390,16 @@ Collections = {
     'noise_sigma': [0.05,0.1,0.2],
     'noise_mu': [0.0]
   }),
-  # FIXME: decide mixed set
-  'mixed-1': Grid({
+  'multi_source-linewidth': Grid({
     'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
-    'source': [['lcmodel', 'fid-a', 'pygamma'], ['fid-a', 'pygamma'], ['fid-a', 'lcmodel']],
+    'source': [['lcmodel', 'fid-a', 'pygamma'], ['lcmodel', 'fid-a'],
+               ['fid-a', 'pygamma'], ['lcmodel', 'pygamma']],
     'manufacturer': ['siemens'],
     'omega': [123.23],
     'linewidth': [1.0, [0.75, 1.0, 1.25]],
     'pulse_sequence': ['megapress'],
-    'num': [10000],
-    'sample': ['dirichlet', 'sobol'],
+    'num': [100000],
+    'sample': ['sobol'],
     'noise_p': [1.0],
     'noise_sigma': [0.1],
     'noise_mu': [0.0]
