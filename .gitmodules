@@ -10,3 +10,6 @@
 [submodule "data/basis"]
 	path = data/basis
 	url = git@qyber.black:mrs/data-mrsnet-basis.git
+[submodule "data/model-dist"]
+	path = data/model-dist
+	url = git@qyber.black:mrs/data-mrsnet-model-dist.git
