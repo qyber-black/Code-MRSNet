@@ -47,7 +47,7 @@ def main():
   p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate standard datasets.',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_gen_ds)
-  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (single_source-sampler-noise, mixed-1; see mrsnet.dataset.Collection)')
+  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (single_source-sampler-noise, multi_source-linewidth; see mrsnet.dataset.Collection)')
   p_gen_ds.set_defaults(func=generate_datasets)
 
   # Train

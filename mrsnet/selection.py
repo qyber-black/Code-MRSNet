@@ -336,7 +336,6 @@ class Select:
     var_keys.sort()
     fix_keys.sort()
     # Results folder
-    # FIXME: folder name more carefully for different modes/repeats?
     folder = os.path.join(self.dataset,collection_name+"-"+str(self.epochs))
     if not os.path.exists(folder):
       os.makedirs(folder)
@@ -700,7 +699,7 @@ Collections = {
   # FIXME: check models trained with one dataset on another dataset
   # FIXME: train on MIXED datasets (basis, linewidth)
   # FIXME: optimise over model parameters
-  'optim-1': Grid({
+  'optimise': Grid({
     'norm':             ['sum'],
     'acquisitions':     [['difference','edit_on']],
     'datatype':         [['magnitude','phase']],
