@@ -1,11 +1,10 @@
 # MRSNet
 
-MRSNet is aimed at MR spectral quantification using convolutional neural networks. It is main aimed at MEGAPRESS spectra. It also provides methods to generate datasets from loaded LCModel ".BASIS" files or simulated by [FID-A](https://github.com/CIC-methods/FID-A) or
-[PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma).
+MRSNet is aimed at MR spectral quantification using convolutional neural networks. It is main aimed at MEGAPRESS spectra. It also provides methods to generate datasets from loaded LCModel ".BASIS" files or simulated by [FID-A](https://github.com/CIC-methods/FID-A) or [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma).
 
 More information can be found in the associated paper
 
-M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural Network. Preprint, 2019. [arxiv:1909.03836] https://langbein.org/mrsnet-paper/
+M Chandler, C Jenkins, SM Shermer, FC Langbein. MRSNet: Metabolite Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural Network. Preprint, 2019. [arxiv:1909.03836] https://langbein.org/mrsnet-paper/
 
 ## Built With
 
@@ -15,7 +14,6 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 * [Tensorflow](https://www.tensorflow.org/) - Underlying Machine Learning library
 * [FID-A](https://github.com/CIC-methods/FID-A) - MRS simulation toolbox
 * [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS simulation toolbox
-* [VeSPA](https://scion.duhs.duke.edu/vespa/project) - Versatile Simulation, Pulses and Analysis
 
 ### Data sources
 
@@ -26,23 +24,35 @@ M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quant
 
 ### Prerequisites
 
-* Python 3.9 for main MRSNet.
-* MATLAB - Only required if you plan to simulate new FID-A spectra. (basis sets we used are in the git data/basis submodule)
-* Linux system packages:
-    * Git-lfs for git submodule support: `git-lfs`
-    * Install these using your package manager with root privileges. E.g. Debian based distributions: `sudo apt update && sudo apt install git-lfs`.
+* Tested mostly on Linux and may not work on any other platform without some adjustments.
+* In particular for training, but also for quantification, a GPU (with tensorflow support) is strongly recommended.
+
+* Standard packages:
+  * Git with git-lfs for git submodule support.
+  * Python 3.9 for main MRSNet.
+  * Install these using your package manager with root privileges. E.g. Debian based distributions: `sudo apt update && sudo apt install git git-lfs python3.9`.
+* MATLAB - Only required if you plan to simulate new FID-A spectra (the basis sets we used in the paper are in the git data/basis submodule).
 
 ### Install instructions (Linux)
 
 1. Clone the repository: `git clone https://qyber.black/MRIS/mrsnet.git`
 2. Navigate to the directory: `cd mrsnet`
 3. Update submodules: `git submodule update --init --recursive`.
-6. Install the requirements (CPU or GPU): `pip3 install -r requirements.txt` (GPU support requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu))
-7. Download the additional required data: `python3 setup.py` (currenlty not needed as basis is in the data/basis git submodule!)
+4. Install the requirements: `pip3 install -r requirements.txt`
+
+FIXME: test
 
 Call `mrsnet.py --help` to get further information about all its sub-commands and `mrsnet.py COMMAND --help` for details for each sub-command.
 
+FIXME: brief overview of all commands
+
+#### Folders and git submodules
+
+By default, networks are stored in `data/models/` along with some basic analytics. The benchmark dataset is in `data/bechmark/` and the basis sets in `data/basis`.
+
 ## Training a network
+
+FIXME: adjust/update commands with simulation
 
 To train a model run
 ```
@@ -59,11 +69,9 @@ This simulates spectra and trains a model with:
 * 10,000 Spectra are evenly split (3,333) over the linewidths (0.75, 1, 1.25)
 * For the network architecture called "mrsnet_small_kernel" (found in [cnns.py](cnns.py))
 
-#### Folders
-
-By default, networks are stored in `data/models/` along with some basic analytics. The benchmark dataset is in `data/bechmark/` and the basis sets in `data/basis`.
-
 ## Quantifying Spectra
+
+FIXME: adjust
 
 To quantify spectra run:
 ```
@@ -77,6 +85,8 @@ python2 mrsnet.py quantify --model data/model/some_model_dir --spectra some/spec
 ```
 
 ### Quantifying your own MEGA-PRESS spectra
+
+FIXME: adjust
 
 The code will attempt to analyse all of the spectra contained in the provided directory. There are a couple of caveats to enable this to work correctly:
 
@@ -115,7 +125,7 @@ We use [SemVer](http://semver.org/) for versioning.
 
 Released versions:
 * v1.0 - first release, tensorflow 1 and python2.
-* v1.1 - update to python3 and tensorflow 2, some code and interface cleanups.
+* v1.1 - update to python3 and tensorflow 2, code, api and ui cleanups, extended dataset generation and model selection.
 
 ## Locations
 
