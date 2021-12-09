@@ -1,12 +1,12 @@
 # MRSNet
 
 MRSNet is aimed at MR spectral quantification using convolutional neural
-networks. It is main aimed at MEGAPRESS spectra. It also provides methods to
+networks. It is mainly aimed at MEGAPRESS spectra. It also provides methods to
 generate datasets from loaded LCModel ".BASIS" files or simulated by
 [FID-A](https://github.com/CIC-methods/FID-A) or
 [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma).
 
-More information can be found in the associated paper
+More information can be found in the associated paper:
 
 M Chandler, C Jenkins, SM Shermer, FC Langbein. MRSNet: Metabolite
 Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural
@@ -24,7 +24,7 @@ https://langbein.org/mrsnet-paper/
 * [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS
   simulation toolbox
 
-### Data sources
+### Data Sources
 
 * [Swansea Benchmark Dataset](https://langbein.org/gabaphantoms_20190815) -
   Benchmark phantom datasets collected at Swansea University's 3T Siemens
@@ -43,21 +43,23 @@ https://langbein.org/mrsnet-paper/
 
 * Standard packages:
   * Git with git-lfs for git submodule support.
-  * Python 3.9 for main MRSNet.
+  * Python 3.9 with pip (recent python3 versions should be OK).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
-    `sudo apt update && sudo apt install git git-lfs python3.9`.
+    `sudo apt update && sudo apt install git git-lfs python3.9 pip`.
 * MATLAB - Only required if you plan to simulate new FID-A spectra (the basis
   sets we used in the paper are in the git data/basis submodule).
 
-### Install instructions (Linux)
+### Install Instructions (Linux)
 
-1. Clone the repository: `git clone https://qyber.black/MRIS/mrsnet.git`
+1. Clone the repository: `git clone git@qyber.black:mrs/code-mrsnet.git mrsnet`
+   (check the clone url, as this  may be different if you use a different
+   repository, e.g. from a mirror or alternative versions for development, etc).
 2. Navigate to the directory: `cd mrsnet`
+   (make sure to select a branch or tag with `git checkout BRANCH_OR_TAG` for a
+   specific version instead of the master branch).
 3. Update submodules: `git submodule update --init --recursive`.
-4. Install the requirements: `pip3 install -r requirements.txt`
-
-FIXME: test
+4. Install the requirements: `pip3 install -r requirements.txt`.
 
 Call `mrsnet.py --help` to get further information about all its sub-commands
 and `mrsnet.py COMMAND --help` for details for each sub-command. The
@@ -71,7 +73,7 @@ sub-commands available are:
 * quantify:           Quantify spectra in dicoms.
 * benchmark:          Run benchmark on model.
 
-#### Folders and git submodules
+#### Folders and Git Submodules
 
 The benchmark dataset is in `data/bechmark/` and the basis sets in `data/basis`
 and the best models for distribution in `data/model-dist`. All these folders are
@@ -96,11 +98,11 @@ will not be searched for them (this will change in a later version). The paths
 can also be specified in a config file `~/.config/mrsnet.json` (currently also
 not fully supported, but should be working).
 
-## Simulating spectra
+## Simulating Spectra
 
 To generate a simualted spectra dataset with the standard set of metabolites use
 ```
-python3 mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10
+./mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10
 ```
 This uses the lcmodel basis set (see basis subcommand for other basis sets and
 how to generate them, if needed) to generate 10 spectra, sampling the
@@ -111,33 +113,33 @@ generate them. The above would be stored in
 `data/sim-spectra/lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10-1`
 where the folder `10-1` indicates that this is the 1st set of 10 spectra generated.
 
-## Training a network
+## Training a Network
 
 To train a model run, e.g.,
 ```
-python3 mrsnet.py train -d TRAIN-DATA-PATH -e 100 --validate 5 -m cnn_small_softmax -vv
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 --validate 5 -m cnn_small_softmax -vv
 ```
 This trains a model based on the simulated spectra in the TRAIN-DATA-PATH (see
 previous section of how to generate these and what these paths are) for 100
 epochs using 5-fold cross validating on the cnn_small_softmax model with some
 verbosity.
 
-## Runing the Benchmark
+## Running the Benchmark
 
 To run the benchmark dataset on a model run
 ```
-python3 mrsnet.py benchmark --model MODEL
+./mrsnet.py benchmark --model MODEL
 ```
 where MODEL is the path to the trained tensorflow model in the `data/model-dist`
 or `data/model` folders (the path indicates the parameters used for the model
 architecture and the training/testing data).
 
-## Quantifying your own MEGA-PRESS spectra
+## Quantifying your own MEGA-PRESS Spectra
 
 Quantifying your own spectra in dicom files or spectra joblib files (from
 simulate) is done via
 ```
-python3 mrsnet.py quantify -d DATASET -m MODEL
+./mrsnet.py quantify -d DATASET -m MODEL
 ```
 DATASET is either a joblib file or a folder with dicom spectra. The MODEL is the
 folder with the trained tensorflow model.
