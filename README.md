@@ -85,8 +85,10 @@ analytics and the simulated spectra are stored in `data/sim-spectra`. Usually
 these folders are empty on installation. There are two git repistories on
 qyber.black with some data for these folders, generated for the publications,
 etc.:
+
 * [Data - MRSNet Models](https://qyber.black/mrs/data-mrsnet-model)
 * [Data - MRSNet Simulated Spectra](https://qyber.black/mrs/data-mrsnet-simulated-spectra)
+
 These can be cloned into those folders, if you wish to explore this data and use
 it for your own analysis.
 
