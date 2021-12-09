@@ -1,92 +1,159 @@
 # MRSNet
 
-MRSNet is aimed at MR spectral quantification using convolutional neural networks. It is main aimed at MEGAPRESS spectra. It also provides methods to generate datasets from loaded LCModel ".BASIS" files or simulated by [FID-A](https://github.com/CIC-methods/FID-A) or
+MRSNet is aimed at MR spectral quantification using convolutional neural
+networks. It is mainly aimed at MEGAPRESS spectra. It also provides methods to
+generate datasets from loaded LCModel ".BASIS" files or simulated by
+[FID-A](https://github.com/CIC-methods/FID-A) or
 [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma).
 
-More information can be found in the associated paper
+More information can be found in the associated paper:
 
-M. Chandler, C. Jenkins, S. M. Shermer, F. C. Langbein. MRSNet: Metabolite Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural Network. Preprint, 2019. [arxiv:1909.03836] https://langbein.org/mrsnet-paper/
+M Chandler, C Jenkins, SM Shermer, FC Langbein. MRSNet: Metabolite
+Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural
+Network. Preprint, 2019. [arXiv:1909.03836](https://arxiv.org/abs/1909.03836)
+https://langbein.org/mrsnet-paper/
 
 ## Built With
 
 ### Software
 
 * [Keras](https://keras.io/) - The Deep Learning framework used
-* [Tensorflow](https://www.tensorflow.org/) - Underlying Machine Learning library
+* [Tensorflow](https://www.tensorflow.org/) - Underlying Machine Learning
+  library
 * [FID-A](https://github.com/CIC-methods/FID-A) - MRS simulation toolbox
-* [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS simulation toolbox
-* [VeSPA](https://scion.duhs.duke.edu/vespa/project) - Versatile Simulation, Pulses and Analysis
+* [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS
+  simulation toolbox
 
-### Data sources
+### Data Sources
 
-* [Swansea Benchmark Dataset](https://langbein.org/gabaphantoms_20190815) - Benchmark phantom datasets collected at Swansea University's 3T Siemens scanner.
-* [Purdue LCModel basis sets](http://purcell.healthsciences.purdue.edu/mrslab/basis_sets.html) - Data source for the LCModel basis sets
+* [Swansea Benchmark Dataset](https://langbein.org/gabaphantoms_20190815) -
+  Benchmark phantom datasets collected at Swansea University's 3T Siemens
+  scanner.
+* [Purdue LCModel basis sets](http://purcell.healthsciences.purdue.edu/mrslab/basis_sets.html)
+  - Data source for the LCModel basis sets
 
 ## Getting Started
 
 ### Prerequisites
 
-* Python 3.9 for main MRSNet.
-* Python 2.7 for pygamma basis set simulations. Unfortunately, PyGamma still requires Python 2.7 to run. It is not essential if you do not intend to use pygamma basis sets and we do provide the basis sets used in our experiments as a download.
-* MATLAB - Only required if you plan to simulate new FID-A spectra. Similar to PyGamma, the basis sets we used are in the the basis sets downloaded.
-* Linux system packages:
-    * Git-lfs for git submodule support: `git-lfs`
-    * Install these using your package manager with root privileges. E.g. Debian based distributions: `sudo apt update && sudo apt install git-lfs`.
+* Tested mostly on Linux and may not work on any other platform without some
+  adjustments.
+* In particular for training, but also for quantification, a GPU (with
+  tensorflow support) is strongly recommended.
 
-### Install instructions (Linux)
+* Standard packages:
+  * Git with git-lfs for git submodule support.
+  * Python 3.9 with pip (recent python3 versions should be OK).
+  * Install these using your package manager with root privileges. E.g. Debian
+    based distributions:
+    `sudo apt update && sudo apt install git git-lfs python3.9 pip`.
+* MATLAB - Only required if you plan to simulate new FID-A spectra (the basis
+  sets we used in the paper are in the git data/basis submodule).
 
-1. Clone the repository: `git clone https://qyber.black/MRIS/mrsnet.git`
+### Install Instructions (Linux)
+
+1. Clone the repository: `git clone git@qyber.black:mrs/code-mrsnet.git mrsnet`
+   (check the clone url, as this  may be different if you use a different
+   repository, e.g. from a mirror or alternative versions for development, etc).
 2. Navigate to the directory: `cd mrsnet`
-3. Update submodules: `git submodule init && git submodule update`
-6. Install the requirements (CPU or GPU):
-    1. MRSNet python3 requirements: `pip3 install -r requirements.txt` (GPU support requires [CUDA](https://developer.nvidia.com/cuda-zone): There's a good guide available [here](https://www.tensorflow.org/install/gpu))
-    2. Optionally, for PyGamma support `pip3 install -r requirements-pygamma.txt`
-7. Download the additional required data: `python3 setup.py`
+   (make sure to select a branch or tag with `git checkout BRANCH_OR_TAG` for a
+   specific version instead of the master branch).
+3. Update submodules: `git submodule update --init --recursive`.
+4. Install the requirements: `pip3 install -r requirements.txt`.
 
-Call `mrsnet.py --help` to get further information about all its sub-commands and `mrsnet.py COMMAND --help` for details for each sub-command.
+Call `mrsnet.py --help` to get further information about all its sub-commands
+and `mrsnet.py COMMAND --help` for details for each sub-command. The
+sub-commands available are:
 
-## Training a network
+* basis:              Generate basis, if it does not exist.
+* simulate:           Generate simulated spectra dataset.
+* generate_datasets:  Generate standard datasets.
+* train:              Train model on dataset.
+* select:             Model selection on dataset.
+* quantify:           Quantify spectra in dicoms.
+* benchmark:          Run benchmark on model.
 
-To train a model run
+#### Folders and Git Submodules
+
+The benchmark dataset is in `data/bechmark/` and the basis sets in `data/basis`
+and the best models for distribution in `data/model-dist`. All these folders are
+git submodules and installed with the procedure above. They are generally
+required to run MRSNet.
+
+By default, networks are stored in `data/models/` along with some basic
+analytics and the simulated spectra are stored in `data/sim-spectra`. Usually
+these folders are empty on installation. There are two git repistories on
+qyber.black with some data for these folders, generated for the publications,
+etc.:
+* [Data - MRSNet Models](https://qyber.black/mrs/data-mrsnet-model)
+* [Data - MRSNet Simulated Spectra](https://qyber.black/mrs/data-mrsnet-simulated-spectra)
+These can be cloned into those folders, if you wish to explore this data and use
+it for your own analysis.
+
+Generally it is best to run `mrsnet.py` from the base-folder of the git
+repository. If not, MRSNet searches default folders defined in the class `Cfg`
+in `mrsnet.py`. These would, however, not be populated with any data (in
+particular basis sets and the benchmark) at this stage and the repository folder
+will not be searched for them (this will change in a later version). The paths
+can also be specified in a config file `~/.config/mrsnet.json` (currently also
+not fully supported, but should be working).
+
+## Simulating Spectra
+
+To generate a simualted spectra dataset with the standard set of metabolites use
 ```
-python3 mrsnet.py train
+./mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10
 ```
+This uses the lcmodel basis set (see basis subcommand for other basis sets and
+how to generate them, if needed) to generate 10 spectra, sampling the
+concentrations randomly, adding normal distributed noise with a standard
+deviation of 0.1 to the time domain signal. The spectra are stored in a joblib
+datafile under `data/sim-spectra` according to the parameters that were used to
+generate them. The above would be stored in
+`data/sim-spectra/lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/random/1.0-0.0-0.1/10-1`
+where the folder `10-1` indicates that this is the 1st set of 10 spectra generated.
 
-An example of a more complex training call:
+## Training a Network
+
+To train a model run, e.g.,
 ```
-python3 mrsnet.py train -n 10000 -e 200 -b 16 --basis_source fida --linewidths 0.75 1 1.25 --omega 900 --model_name mrsnet_small_kernel
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 --validate 5 -m cnn_small_softmax -vv
 ```
-This simulates spectra and trains a model with:
-* 200 epochs, with a mini-batch size of 16
-* Spectra are sourced from FID-A, with a scanner B0 field of 900MHz
-* 10,000 Spectra are evenly split (3,333) over the linewidths (0.75, 1, 1.25)
-* For the network architecture called "mrsnet_small_kernel" (found in [cnns.py](cnns.py))
+This trains a model based on the simulated spectra in the TRAIN-DATA-PATH (see
+previous section of how to generate these and what these paths are) for 100
+epochs using 5-fold cross validating on the cnn_small_softmax model with some
+verbosity.
 
-#### Folders
+## Running the Benchmark
 
-By default, networks are stored in `data/models/` along with some basic analytics. The benchmark dataset is in `data/bechmark/` and the basis sets in `data/basis`.
-
-## Quantifying Spectra
-
-To quantify spectra run:
+To run the benchmark dataset on a model run
 ```
-python3 mrsnet.py quantify
+./mrsnet.py benchmark --model MODEL
 ```
-Defaults are to use the E1 MEGA-PRESS benchmark spectra, with the best model from MRSNet. The default behaviour of quantify is to use the best network from the MRSNet paper to quantify the bundled E1 dataset.
+where MODEL is the path to the trained tensorflow model in the `data/model-dist`
+or `data/model` folders (the path indicates the parameters used for the model
+architecture and the training/testing data).
 
-Quantifying spectra and specifying the model and spectra directory:
+## Quantifying your own MEGA-PRESS Spectra
+
+Quantifying your own spectra in dicom files or spectra joblib files (from
+simulate) is done via
 ```
-python2 mrsnet.py quantify --model data/model/some_model_dir --spectra some/spectra/directory
+./mrsnet.py quantify -d DATASET -m MODEL
 ```
+DATASET is either a joblib file or a folder with dicom spectra. The MODEL is the
+folder with the trained tensorflow model.
 
-### Quantifying your own MEGA-PRESS spectra
+The code will attempt to analyse all of the spectra contained in the provided
+directory. There are a couple of caveats to enable this to work correctly:
 
-The code will attempt to analyse all of the spectra contained in the provided directory. There are a couple of caveats to enable this to work correctly:
-
-1. All three acquisitions for each MEGA-PRESS scan must be present (edit on, edit off, difference).
-2. Spectra that belong to the same scan must have a unique ID of your choice added to their filename (e.g. SCAN_001).
-	1. If you know the ground truth of the scan, it should be added to the dictionary located in utilities/constants.py. This enables the code to analyse the performance of the quantification.
-3. Spectra of the different acquisition types must be labelled, by adding either "EDIT_OFF", "EDIT_ON" or "DIFF" to anywhere after the unique ID from 2 in their filename.
+1. All three acquisitions for each MEGA-PRESS scan must be present (edit on,
+   edit off, difference).
+2. Spectra that belong to the same scan must have a unique ID of your choice
+   added to their filename (e.g. SCAN_001).
+3. Spectra of the different acquisition types must be labelled, by adding either
+   "EDIT_OFF", "EDIT_ON" or "DIFF" to anywhere after the unique ID from 2 in
+   their filename.
 
 An example for two MEGA-PRESS scan would be six files:
 ```
@@ -98,19 +165,7 @@ SCAN_001_EDIT_ON.ima
 SCAN_001_DIFF.ima
 ```
 
-### Non-Siemens DICOM files
-
-Loading of non-Siemens DICOM files has not been tested.
-
-### Training and testing
-
-The `run_test.py` script is setup to generate various datasets for training and testing MRSNet and produce the data for the associated papers. Use it as
-
-```
-python3 run_test.py DATASET REPEATS
-```
-
-to generate the DATASET with REPEATS repetition for each parameter set. Use `-help` for more information and a list of all datasets.
+Note, loading of non-Siemens DICOM files has not been tested.
 
 ## Versioning
 
@@ -118,7 +173,8 @@ We use [SemVer](http://semver.org/) for versioning.
 
 Released versions:
 * v1.0 - first release, tensorflow 1 and python2.
-* v1.1 - update to python3 and tensorflow 2, some code and interface cleanups.
+* v1.1 - update to python3 and tensorflow 2; code, api and ui cleanups; extended
+  dataset generation and model selection.
 
 ## Locations
 

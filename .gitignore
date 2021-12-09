@@ -1,4 +1,6 @@
 *.pyc
-/data/
 /venv/
 __pycache__
+data/model
+data/sim-spectra
+data/OLD
