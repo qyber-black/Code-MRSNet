@@ -8,29 +8,29 @@ generate datasets from loaded LCModel ".BASIS" files or simulated by
 
 More information can be found in the associated paper:
 
-M Chandler, C Jenkins, SM Shermer, FC Langbein. MRSNet: Metabolite
+M Chandler, C Jenkins, SM Shermer, FC Langbein. **MRSNet: Metabolite
 Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural
-Network. Preprint, 2019. [arXiv:1909.03836](https://arxiv.org/abs/1909.03836)
+Network**. Preprint, 2019. [arXiv:1909.03836](https://arxiv.org/abs/1909.03836)
 https://langbein.org/mrsnet-paper/
 
 ## Built With
 
 ### Software
 
-* [Keras](https://keras.io/) - The Deep Learning framework used
+* [Keras](https://keras.io/) - The Deep Learning framework used.
 * [Tensorflow](https://www.tensorflow.org/) - Underlying Machine Learning
-  library
-* [FID-A](https://github.com/CIC-methods/FID-A) - MRS simulation toolbox
+  library.
+* [FID-A](https://github.com/CIC-methods/FID-A) - MRS simulation toolbox.
 * [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS
-  simulation toolbox
+  simulation toolbox.
 
 ### Data Sources
 
 * [Swansea Benchmark Dataset](https://langbein.org/gabaphantoms_20190815) -
   Benchmark phantom datasets collected at Swansea University's 3T Siemens
   scanner.
-* [Purdue LCModel basis sets](http://purcell.healthsciences.purdue.edu/mrslab/basis_sets.html)
-  - Data source for the LCModel basis sets
+* [Purdue LCModel basis sets](http://purcell.healthsciences.purdue.edu/mrslab/basis_sets.html) -
+  Data source for the LCModel basis sets
 
 ## Getting Started
 
@@ -40,8 +40,7 @@ https://langbein.org/mrsnet-paper/
   adjustments.
 * In particular for training, but also for quantification, a GPU (with
   tensorflow support) is strongly recommended.
-
-* Standard packages:
+* Standard packages
   * Git and git-lfs for git with submodules and LFS support.
   * Python 3.9 with pip (recent python3 versions should be OK).
   * Install these using your package manager with root privileges. E.g. Debian
