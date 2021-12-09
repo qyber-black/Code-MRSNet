@@ -578,7 +578,10 @@ class Cfg:
     except:
       return Cfg.val['default_screen_dpi']
     from math import hypot
-    return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
+    try:
+      return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
+    except:
+      return Cfg.val['default_screen_dpi']
 
 if __name__ == '__main__':
   # Only print warnings and errors for tf (set before importing tf)
