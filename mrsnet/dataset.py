@@ -16,6 +16,7 @@ from tqdm import tqdm
 from itertools import combinations
 
 from .grid import Grid
+from .cfg import Cfg
 
 class Dataset(object):
   # A dataset is a collection of spectra for training, tesing or predicting.
@@ -303,7 +304,7 @@ class Dataset(object):
     return None
 
   def export(self, metabolites=None, norm='sum', acquisitions=['edit_off','difference'],
-             datatype='magnitude', verbose=0):
+             datatype='magnitude', mean_center=True, normalise=True, verbose=0):
     if metabolites is None:
       metabolites = self.metabolites
 
@@ -311,7 +312,8 @@ class Dataset(object):
       if verbose > 0:
         print("Converting input spectra to tensor")
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
-                    acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts)
+                    acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts,
+                    mean_center, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
       d_inp = np.array(d_inp, dtype=np.float64)
       if verbose > 0:
@@ -334,27 +336,126 @@ class Dataset(object):
       if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != self.n_fft_pts:
         raise Exception("Unexpected input/output tensor shape(s)")
 
+    if "check_dataset_export" in Cfg.dev:
+      self._check_export(d_inp,d_out,metabolites, norm, acquisitions, datatype, mean_center, normalise)
+
     return d_inp, d_out
+
+  def _check_export(self,d_inp,d_out,metabolites,norm,acquisitions,datatype,mean_center,normalise):
+    # Test mrsnet.dataset.export
+    from colorama import Fore, Style
+    print("# Testing mrsnet.dataset.export")
+    if len(self.spectra) > 0:
+      # Check if spectra tensor d_inp lists acquisitions and datatypes in
+      # order of spectra and order given by acquisitions and datatype
+      res = True
+      for s in range(len(self.spectra)):
+        print(f"## Spectra tensor export test: {s: 10d}", end='\r', flush=True)
+        nl="\n"
+        fft = np.ndarray((len(acquisitions),self.n_fft_pts),dtype=np.complex64)
+        a_idx = 0
+        for a in acquisitions:
+          fft[a_idx,:], _ = self.spectra[s][a].rescale_fft(high_ppm=self.high_ppm,
+                                                           low_ppm=self.low_ppm,
+                                                           npts=self.n_fft_pts)
+          a_idx += 1
+        if normalise:
+          m = np.abs(fft)
+          p = np.angle(fft)
+          if normalise:
+            no = np.max(m)
+            m /= no
+          else:
+            no = 1.0
+          new_fft = np.multiply(m, np.exp(1j*p))
+          diff = np.max(np.abs(np.abs(new_fft)*no - np.abs(fft)))
+          if diff > 1e-4: # Magnitude errors can be in the 1e-5 range
+            print(f"{nl}- Max. FFT center/normalise magnitude error: {diff}")
+            nl=""
+          diff = np.max(np.abs(np.angle(new_fft) - np.angle(fft)))
+          if diff > 1e-6: # Phase errors can be in the 1e-7 range
+            print(f"{nl}- Max. FFT center/normalise phase error: {diff}")
+            nl=""
+          if 'flag_plot' in Cfg.dev:
+            for a_idx in range(len(acquisitions)):
+              figure, axes = plt.subplots(2, 3)
+              axes[0,0].plot(np.abs(fft[a_idx,:]))
+              axes[0,0].set_title(f"FFT-Magnitude-{acquisitions[a_idx]}")
+              axes[0,1].plot(np.abs(new_fft[a_idx,:]))
+              axes[0,1].set_title(f"NORMALISED_FFT-Magnitude-{acquisitions[a_idx]}")
+              axes[0,2].plot(np.abs(new_fft[a_idx,:])*no - np.abs(fft[a_idx,:]))
+              axes[0,2].set_title(f"DIFF-Magnitude-{acquisitions[a_idx]}")
+              axes[1,0].plot(np.angle(fft[a_idx,:]))
+              axes[1,0].set_title(f"FFT-Phase-{acquisitions[a_idx]}")
+              axes[1,1].plot(np.angle(new_fft[a_idx,:]))
+              axes[1,1].set_title(f"NORMALISED-FFT-Phase-{acquisitions[a_idx]}")
+              axes[1,2].plot(np.angle(new_fft[a_idx,:]) - np.angle(fft[a_idx,:]))
+              axes[1,2].set_title(f"DIFF-Phase-{acquisitions[a_idx]}")
+              plt.show()
+              plt.close()
+          fft = new_fft
+        for a in range(len(acquisitions)):
+          for d in range(len(datatype)):
+            if datatype[d] == 'real':
+              inp = np.real(fft[a,:])
+            elif datatype[d] == 'imaginary':
+              inp = np.imag(fft[a,:])
+            elif datatype[d] == 'magnitude':
+              inp = np.abs(fft[a,:])
+            elif datatype[d] == 'phase':
+              inp = np.angle(fft[a,:])
+              if normalise:
+                inp /= np.pi
+            if mean_center and datatype[d] != 'phase':
+              inp = 2.0 * inp - 1.0
+            diff = np.max(np.abs(inp - d_inp[s,a,d,:]))
+            if diff > 1e-6: # Careful with narrower error margin, due to fft/exp.
+              print(f"{nl}- Spectrum {s}-{acquisitions[a]}-{datatype[d]} export error {diff}")
+              nl=""
+              res = False
+      if res:
+        print(f"## Spectra tensor export test: {Fore.GREEN}OK        {Style.RESET_ALL}")
+      else:
+        print(f"## Spectra tensor export test: {Fore.RED}FAILED    {Style.RESET_ALL}")
+    if len(self.concentrations) > 0:
+      # Check if concentration tensor d_out lists concentrations in order of
+      # spectra and order given by metabolite
+      res = True
+      for c in range(len(self.concentrations)):
+        print(f"## Concentration tensor export test: {c: 10d}", end='\r', flush=True)
+        if norm == 'max':
+          nf = np.max([self.concentrations[c][m] for m in metabolites])
+        elif norm == 'sum':
+          nf = np.sum([self.concentrations[c][m] for m in metabolites])
+        else:
+          nf = 1.0
+        diff = np.max(np.abs([ self.concentrations[c][metabolites[m]] - d_out[c,m]*nf \
+                               for m in range(len(metabolites)) ]))
+        if diff > 1e-10:
+          print(f"\n- Max. concentration error: {diff}")
+          res = False
+      if res:
+        print(f"## Concentration tensor export test: {Fore.GREEN}OK        {Style.RESET_ALL}")
+      else:
+        print(f"## Concentration tensor export test: {Fore.RED}FAILED    {Style.RESET_ALL}")
 
   @staticmethod
   def _export_spectra(s, acquisitions, datatypes, high_ppm, low_ppm, n_fft_pts,
-                      mean_center=True,normalise=True):
+                      mean_center,normalise):
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
-    mean = []
-    max = []
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
     for a in acquisitions:
       fft[a_idx,:], _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
       a_idx += 1
-    if mean_center or normalise:
+    if normalise:
       m = np.abs(fft)
       p = np.angle(fft)
-      if mean_center:
-        m -= np.mean(m)
-      if normalise:
-        m /= np.max(m)
+      m /= np.max(m)
       fft = np.multiply(m, np.exp(1j*p))
+    else:
+      if mean_center:
+        raise Exception("Can only mean center if normalised")
     for a_idx in range(0,fft.shape[0]):
       d_idx = 0
       for d in datatypes:
@@ -365,9 +466,13 @@ class Dataset(object):
         elif d == 'magnitude':
           inp[a_idx,d_idx,:] = np.abs(fft[a_idx,:])
         elif d == 'phase':
-          inp[a_idx,d_idx,:] = np.angle(fft[a_idx,:]) / np.pi # Normalise to (-1,1]
+          inp[a_idx,d_idx,:] = np.angle(fft[a_idx,:])
+          if normalise:
+            inp[a_idx,d_idx,:] /= np.pi # Normalise to (-1,1]
         else:
           raise Exception("Unknown datatype %s" % d)
+        if mean_center and d != 'phase': # Phase centered, if normalised (and must be normalised to center)
+          inp[a_idx,d_idx,:] = 2.0 * inp[a_idx,d_idx,:] - 1.0
         d_idx += 1
     return inp
 
