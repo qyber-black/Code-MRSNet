@@ -95,9 +95,13 @@ Generally it is best to run `mrsnet.py` from the base-folder of the git
 repository. The folder locations in data are determined by the real location of
 the `mrsnet.py` file (not symbolic links). These and other configuration values
 can be overwritten by providing a `~/.config/mrsnet.json` file (see `Cfg` class
-in `mrsnet.py` for details; generally this is not needed). If you change the
+in `mrsnet/cfg.py` for details; generally this is not needed). If you change the
 location of the folders in data, you do have to make sure the submodule data
 is available in the new location. MRSNet does not search multiple paths.
+
+MRSNet uses a MRSNET_DEV environment variable for activating test and development
+code. It's values are explained in `mrsnet/cfg.py`, but this is only relevant
+for development and not the general operation.
 
 ## Simulating Spectra
 
