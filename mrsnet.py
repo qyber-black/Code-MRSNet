@@ -16,8 +16,8 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import mrsnet.molecules as molecules
-import tensorflow as tf
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+from mrsnet.cfg import Cfg
+
 def main():
   # Main function of MRSNet: parse arguments, setup basic environment and run
 
@@ -689,73 +689,6 @@ def get_std_name(name):
   id.reverse()
   return id
 
-class Cfg:
-  # Default configuration - do not overwrite here but set alternatives in file
-  # These are static variables for the class, accessed via the class. No object
-  # of this class should be used; all methods are static.
-  val = {
-    'path_basis': None,
-    'path_simulation': None,
-    'path_model': None,
-    'path_benchmark': None,
-    'figsize': (26.67,15.0),
-    'default_screen_dpi': 96,
-    'screen_dpi': None,
-    'image_dpi': [300]
-  }
-  file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
-
-  @staticmethod
-  def init():
-    # Find base folder
-    bin_path = os.path.realpath(__file__)
-    if not os.path.isfile(bin_path):
-      raise Exception("Cannot find location of mrsnet.py root folder")
-    # Load cfg file - data folders and other Cfg values can be overwritten by config file
-    if os.path.isfile(Cfg.file):
-      import json
-      with open(Cfg.file, "r") as fp:
-        js = json.load(fp)
-        for k in js.keys():
-          if k in Cfg.val:
-            Cfg.val[k] = js[k]
-          else:
-            raise Exception("Unknown config file entry %s in %s" % (k,Cfg.file))
-    # Check data folders and create as needed
-    data_dir = os.path.join(os.path.dirname(bin_path),'data')
-    paths = {
-      "path_basis": "basis",
-      "path_simulation": "sim-spectra",
-      "path_model": "model",
-      "path_benchmark": "benchmark"
-    }
-    for p in paths:
-      if Cfg.val[p] == None:
-        Cfg.val[p] = os.path.join(data_dir,paths[p])
-      if not os.path.isdir(Cfg.val[p]):
-        os.makedirs(os.path.isdir(Cfg.val[p]))
-    # Setup plot defaults
-    if Cfg.val["screen_dpi"] == None:
-      Cfg.val["screen_dpi"] = Cfg._screen_dpi()
-    plt.rcParams["figure.figsize"] = Cfg.val['figsize']
-
-  @staticmethod
-  def _screen_dpi():
-    # DPI for plots on screen
-    try:
-      from screeninfo import get_monitors
-    except ModuleNotFoundError:
-      return Cfg.val['default_screen_dpi']
-    try:
-      m = get_monitors()[0]
-    except:
-      return Cfg.val['default_screen_dpi']
-    from math import hypot
-    try:
-      return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
-    except:
-      return Cfg.val['default_screen_dpi']
-
 if __name__ == '__main__':
   # Only print warnings and errors for tf (set before importing tf)
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
@@ -765,7 +698,9 @@ if __name__ == '__main__':
   if not "DISPLAY" in os.environ:
     print(os.environ["DISPLAY"])
     use("Agg")
-  else:
-    use("Qt5Agg")
-  Cfg.init()
+  # Find base folder
+  bin_path = os.path.realpath(__file__)
+  if not os.path.isfile(bin_path):
+    raise Exception("Cannot find location of mrsnet.py root folder")
+  Cfg.init(bin_path)
   main()
