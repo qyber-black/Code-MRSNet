@@ -297,7 +297,7 @@ class Dataset(object):
     return None
 
   def export(self, metabolites=None, norm='sum', acquisitions=['edit_off','difference'],
-             datatype='magnitude', mean_center=True, normalise=True, verbose=0):
+             datatype='magnitude', normalise=True, verbose=0):
     if metabolites is None:
       metabolites = self.metabolites
 
@@ -305,8 +305,7 @@ class Dataset(object):
       if verbose > 0:
         print("Converting input spectra to tensor")
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
-                    acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts,
-                    mean_center, normalise)
+                    acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
       d_inp = np.array(d_inp, dtype=np.float64)
       if verbose > 0:
@@ -330,11 +329,11 @@ class Dataset(object):
         raise Exception("Unexpected input/output tensor shape(s)")
 
     if "check_dataset_export" in Cfg.dev:
-      self._check_export(d_inp,d_out,metabolites, norm, acquisitions, datatype, mean_center, normalise)
+      self._check_export(d_inp,d_out,metabolites, norm, acquisitions, datatype, normalise)
 
     return d_inp, d_out
 
-  def _check_export(self,d_inp,d_out,metabolites,norm,acquisitions,datatype,mean_center,normalise):
+  def _check_export(self,d_inp,d_out,metabolites,norm,acquisitions,datatype,normalise):
     # Test mrsnet.dataset.export
     from colorama import Fore, Style
     print("# Testing mrsnet.dataset.export")
@@ -355,11 +354,8 @@ class Dataset(object):
         if normalise:
           m = np.abs(fft)
           p = np.angle(fft)
-          if normalise:
-            no = np.max(m)
-            m /= no
-          else:
-            no = 1.0
+          no = np.max(m)
+          m /= no
           new_fft = np.multiply(m, np.exp(1j*p))
           diff = np.max(np.abs(np.abs(new_fft)*no - np.abs(fft)))
           if diff > 1e-4: # Magnitude errors can be in the 1e-5 range
@@ -399,8 +395,6 @@ class Dataset(object):
               inp = np.angle(fft[a,:])
               if normalise:
                 inp /= np.pi
-            if mean_center and datatype[d] != 'phase':
-              inp = 2.0 * inp - 1.0
             diff = np.max(np.abs(inp - d_inp[s,a,d,:]))
             if diff > 1e-6: # Careful with narrower error margin, due to fft/exp.
               print(f"{nl}- Spectrum {s}-{acquisitions[a]}-{datatype[d]} export error {diff}")
@@ -433,8 +427,7 @@ class Dataset(object):
         print(f"## Concentration tensor export test: {Fore.RED}FAILED    {Style.RESET_ALL}")
 
   @staticmethod
-  def _export_spectra(s, acquisitions, datatypes, high_ppm, low_ppm, n_fft_pts,
-                      mean_center,normalise):
+  def _export_spectra(s, acquisitions, datatypes, high_ppm, low_ppm, n_fft_pts, normalise):
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
@@ -446,9 +439,6 @@ class Dataset(object):
       p = np.angle(fft)
       m /= np.max(m)
       fft = np.multiply(m, np.exp(1j*p))
-    else:
-      if mean_center:
-        raise Exception("Can only mean center if normalised")
     for a_idx in range(0,fft.shape[0]):
       d_idx = 0
       for d in datatypes:
@@ -464,8 +454,6 @@ class Dataset(object):
             inp[a_idx,d_idx,:] /= np.pi # Normalise to (-1,1]
         else:
           raise Exception("Unknown datatype %s" % d)
-        if mean_center and d != 'phase': # Phase centered, if normalised (and must be normalised to center)
-          inp[a_idx,d_idx,:] = 2.0 * inp[a_idx,d_idx,:] - 1.0
         d_idx += 1
     return inp
 
