@@ -15,10 +15,7 @@ import matplotlib.pyplot as plt
 
 from .grid import Grid
 from .dataset import Dataset
-
-# FIXME: on run where data is actually computed, not everyting seems to be plotted!
-#        Re-run fixed this (tested for grid), but not sure what is going on.
-#        Looks like not all values are stored for the variable keys
+from .cfg import Cfg
 
 class Select:
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose):
@@ -164,7 +161,8 @@ class Select:
     counter = 1
     remote_run = []
     for t in self.tasks:
-      print("# Task %d / %d %s" % (counter,len(self.tasks)," - only loading" if load_only else ""))
+      if not load_only and self.verbose > 0:
+        print("# Task %d / %d" % (counter,len(self.tasks)))
       val_p = None
       if os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")):
         if self.verbose > 0:
@@ -177,7 +175,7 @@ class Select:
       if val_p is None and not load_only:
         # Train
         if t['args']['model'] == 'cnn':
-          # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]
+          # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
           model_str = ('cnn_' + str(t['args']['model_S1']) +
                           '_' + str(t['args']['model_S2']) +
                           '_' + str(t['args']['model_C1']) +
@@ -190,8 +188,6 @@ class Select:
                           '_' + str(t['args']['model_F2']) +
                           '_' + str(t['args']['model_D']) +
                           '_' + t['args']['model_ACTIVATION'])
-          if t['args']['model_POOL'] == True:
-            model_str += "_pool"
         elif t['args']['model'][0:4] == 'cnn_':
           model_str = t['args']['model']
         else:
@@ -324,9 +320,10 @@ class Select:
             data = json.load(f)
           val_p.append(data['wasserstein_distance_error'])
           f_cnt += 1
-    except:
+    except Exception as e:
       if self.verbose > 0:
         print("# WARNING: %s - model broken" % (model_path))
+        print(e)
       return None, None
     return val_p, train_p
 
@@ -428,7 +425,7 @@ class Select:
         bp['boxes'][0].set_facecolor("#A1C9F4")
         ax[k].scatter(x=[X[ki]+offset]*len(train_per), y=train_per, color="#000000", s=5.0, zorder=2)
       ax[k].set_xlim(X[0]-1,X[-1]+1)
-      ax[k].set_ylabel("Wasserstein Dist. Error")
+      ax[k].set_ylabel("WDE")
       ax[k].set_xticks(X)
       ax[k].set_xticklabels([group_id+": "+v+" (val.,train)" for v in key_vals]+[""]*(x_max-len(key_vals)))
     fig.tight_layout()
@@ -510,7 +507,6 @@ class SelectGPO(Select):
     keys = [k for k in models.values.keys()]
     var_keys = [k for k in keys if len(models.values[k]) > 1]
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
-    path_model = path_model
     total = np.prod([len(models.values[k]) for k in keys])
     if self.verbose > 0:
       print("Search space size: %d" % total)
@@ -524,7 +520,7 @@ class SelectGPO(Select):
         type = 'categorical'
       domain.append({
           'name': k,
-          'type': type, # 'categorical', # FIXME: discrete for integer ranges
+          'type': type,
           'domain': np.arange(0,len(models.values[k])),
           'dimensionality': 1
         })
@@ -537,16 +533,19 @@ class SelectGPO(Select):
     key_vals = {}
     for k in fix_keys:
       key_vals[k] = models.values[k][0]
-    # Load Existing - disabled, so we can run repeatedly and use existing results
-    ###for model in models:
-    ###  for ki,k in enumerate(var_keys):
-    ###    key_vals[k] = model[ki]
-    ###  self._add_task(key_vals, path_model)
-    ###self._run_tasks(load_only=True)
+    # Load Existing - can be disabled, so we can run repeatedly and use existing results
+    if 'feature_selectgpo_optimse_noload' not in Cfg.dev:
+      for model in models:
+        for ki,k in enumerate(keys):
+          if k in var_keys:
+            key_vals[k] = models.values[k][models.values[k].index(model[ki])]
+        self._add_task(key_vals, path_model)
+        self._run_tasks(load_only=True)
     # Evaluate first, if none available so far
     if len(self.key_vals) < 1:
-      for ki,k in enumerate(var_keys):
-        key_vals[k] = models.values[k][0]
+      for ki,k in enumerate(keys):
+        if k in var_keys:
+          key_vals[k] = models.values[k][0]
       self._add_task(key_vals, path_model)
       self._run_tasks()
     # Convert eval. data to GPO format
@@ -677,19 +676,21 @@ def _get_std_name(name):
   return id
 
 Collections = {
-  # Parameter lists (i.e. lists for single arguments) must be sorted!
+  # Parameter lists (i.e. lists for single arguments) must be sorted (same as mrsnet.py sort)!
   #
-  # simple-all: select over all simple model parameters.
   # ./mrsnet.py select -d PATH -e 100 --validate 0.8 --method grid simple-all -vv --remote ./scheduler/run_scw.sh:USER:10:15
-  # Tested with dataset (PATH):
+  #
   # FIXME:
-  #   -lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   -fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   +pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
+  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   -> dirichlet, random
   #   -> noise effect: 0.05, 0.1, 0.2
   #   -> benchmark
-  'simple-all': Grid({
+  # FIXME: check models trained with one dataset on another dataset
+  # FIXME: train on MIXED datasets (basis, linewidth)
+  # FIXME: optimise over model parameters
+  'cnn-simple-all': Grid({
     'norm':         ['sum', 'max'],
     'acquisitions': [['difference','edit_off'], ['difference','edit_on'],
                      ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
@@ -698,22 +699,19 @@ Collections = {
                      'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
     'batch_size':   [16, 32, 64]
   }),
-  # FIXME: check models trained with one dataset on another dataset
-  # FIXME: train on MIXED datasets (basis, linewidth)
-  # FIXME: optimise over model parameters
-  'optimise': Grid({
+  'cnn-para-all': Grid({
     'norm':             ['sum', 'max'],
-    'acquisitions':     [['diference','edit_off','edit_on'],['difference','edit_on'],
+    'acquisitions':     [['difference','edit_off','edit_on'],['difference','edit_on'],
                          ['difference','edit_off'],['edif_off','edit_on']],
-    'datatype':         [['magnitude'],['magnitude','phase'],['real','imaginary'],
-                         ['real'],['imagiary']],
+    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],
+                         ['real'],['imaginary']],
     'model':            ['cnn'],
-    'model_S1':         [-3,-2,2,3],
+    'model_S1':         [-2,2],
     'model_S2':         [-3,-2,2,3],
     'model_C1':         [3, 5, 7, 9, 11],
-    'model_C2':         [3, 5, 7, 9, 11],
-    'model_C3':         [3, 5, 7, 9, 11],
-    'model_C4':         [3, 5, 7, 9, 11],
+    'model_C2':         [3, 5, 7, 9],
+    'model_C3':         [3, 5, 7],
+    'model_C4':         [3, 5],
     'model_O1':         [0.0,0.3],
     'model_O2':         [0.0,0.3],
     'model_F1':         [256],

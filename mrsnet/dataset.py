@@ -372,7 +372,7 @@ class Dataset(object):
           if diff > 1e-6: # Phase errors can be in the 1e-7 range
             print(f"{nl}- Max. FFT center/normalise phase error: {diff}")
             nl=""
-          if 'flag_plot' in Cfg.dev:
+          if 'flag_plots' in Cfg.dev:
             for a_idx in range(len(acquisitions)):
               figure, axes = plt.subplots(2, 3)
               axes[0,0].plot(np.abs(fft[a_idx,:]))
