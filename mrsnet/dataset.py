@@ -401,7 +401,7 @@ class Dataset(object):
             elif datatype[d] == 'phase':
               inp = np.angle(fft[a,:])
               if normalise:
-                inp /= np.pi
+                inp = (inp/np.pi+1.0)/2.0
             diff = np.max(np.abs(inp - d_inp[s,a,d,:]))
             if diff > 1e-6: # Careful with narrower error margin, due to fft/exp.
               print(f"{nl}- Spectrum {s}-{acquisitions[a]}-{datatype[d]} export error {diff}")
@@ -458,7 +458,7 @@ class Dataset(object):
         elif d == 'phase':
           inp[a_idx,d_idx,:] = np.angle(fft[a_idx,:])
           if normalise:
-            inp[a_idx,d_idx,:] /= np.pi # Normalise to (-1,1]
+            inp[a_idx,d_idx,:] = (inp[a_idx,d_idx,:]/np.pi+1.0)/2.0 # Normalise to (0..1]
         else:
           raise Exception("Unknown datatype %s" % d)
         d_idx += 1
@@ -487,7 +487,7 @@ Collections = {
     'num': [10000],
     'sample': ['random', 'sobol', 'dirichlet'],
     'noise_p': [1.0],
-    'noise_sigma': [0.05,0.1,0.2],
+    'noise_sigma': [0.05,0.1],
     'noise_mu': [0.0]
   }),
   'multi_source-linewidth': Grid({

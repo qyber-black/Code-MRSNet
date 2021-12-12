@@ -150,21 +150,21 @@ def add_arguments_train_select(p):
   p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
                  help='Number of training epochs.')
-  p.add_argument('--validate', type=float, default=5,
+  p.add_argument('-k', '--validate', type=float, default=5,
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
 
 def add_arguments_train(p):
   # Add training arguments
   p.add_argument('--norm', choices=['sum', 'max'], default='sum',
                  help='Concentration normalisation: sum or max equal to 1')
-  p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
+  p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'edit_on', 'difference'],
                  help='Acquisitions from pulse sequence used (megapress: edit_off, edit_on, difference).')
   p.add_argument('--datatype', type=lambda s : s.lower(), nargs='+',
-                 choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude'],
+                 choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
-  p.add_argument('-m', '--model', type=str, default='cnn_medium_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]- see mrsnet/models.py for details.')
-  p.add_argument('-b', '--batch-size', type=int, default=32,
+  p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details.')
+  p.add_argument('-b', '--batch-size', type=int, default=16,
                  help='Batch size.')
 
 def add_arguments_aetrain(p):
