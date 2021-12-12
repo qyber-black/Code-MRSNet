@@ -42,11 +42,26 @@ class CNN:
     self.cnn = None
     self.train_dataset_name = None
 
+  def _freq_conv_layer(self, filter, c, s, dropout):
+    if s < 0:
+      self.cnn.add(Conv2D(filter, c))
+    elif s > 0:
+      self.cnn.add(Conv2D(filter, c, strides=(1,s)))
+    else:
+      raise Exception("s cannot be 0")
+    if dropout == 0.0:
+      self.cnn.add(BatchNormalization())
+      self.cnn.add(Activation('relu'))
+    elif dropout > 0.0:
+      self.cnn.add(Dropout(dropout))
+    if s < 0:
+      self.cnn.add(MaxPool2D((1,-s)))
+
   def _construct(self, input_shape, output_shape):
     self.cnn = Sequential(name=self.model)
     vals = self.model.split("_")
     if vals[0] != 'cnn':
-      return Exception("Unknown model %s" % vals[0])
+      raise Exception("Unknown model %s" % vals[0])
     if vals[1] == 'small' or vals[1] == 'medium' or vals[1] == 'large':
       # cnn_[small,medium,large]_[softmax,sigmoid][_pool]
       if vals[1] == 'small':
@@ -58,20 +73,24 @@ class CNN:
         freq_convolution2 = 7
         freq_convolution3 = 5
       elif vals[1] == 'large':
-        freq_convolution1 = 16
-        freq_convolution2 = 8
+        freq_convolution1 = 11
+        freq_convolution2 = 9
         freq_convolution3 = 7
       freq_convolution4 = 3
-      dropout1 = 0.4
-      dropout2 = 0.25
+      dropout1 = 0.0
+      dropout2 = 0.0 # 0.3?
       output_act = vals[2]
-      strides1 = 2
-      strides2 = 3
+      if vals[-1] == 'pool':
+        strides1 = -2
+        strides2 = -3
+      else:
+        strides1 = 2
+        strides2 = 3
       filter1 = 256
       filter2 = 512
       dense = 1024
     else:
-      # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]
+      # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       strides1 = int(vals[1])
       strides2 = int(vals[2])
       freq_convolution1 = int(vals[3])
@@ -84,39 +103,25 @@ class CNN:
       filter2 = int(vals[10])
       dense = int(vals[11])
       output_act = vals[12]
-    pooling = True if vals[-1] == 'pool' else False
 
-    self.cnn.add(Conv2D(filter1, (1,freq_convolution1), strides=(1, strides1),
-                 input_shape=input_shape, activation='relu'))
-    self.cnn.add(BatchNormalization())
-    self.cnn.add(Dropout(dropout1))
-
-    self.cnn.add(Conv2D(filter1, (1,freq_convolution2), strides=(1, strides1),
-                 activation='relu'))
-    self.cnn.add(Dropout(dropout1))
+    self.cnn.add(InputLayer(input_shape=input_shape))
+    self._freq_conv_layer(filter1, (1,freq_convolution1), strides1, dropout1)
+    self._freq_conv_layer(filter1, (1,freq_convolution2), strides1, dropout1)
 
     while self.cnn.layers[-1].output.shape[1] != 1:
-      if self.cnn.layers[-1].output.shape[1] > 3:
-        conv_size = 3
-      else:
-        conv_size = self.cnn.layers[-1].output.shape[1]
-      self.cnn.add(Conv2D(filter1, (conv_size, freq_convolution3), activation='relu'))
-      self.cnn.add(Dropout(dropout2))
+      self._freq_conv_layer(filter1,
+                            (min(self.cnn.layers[-1].output.shape[1],3),freq_convolution3),
+                            1, dropout1)
 
     for n_filters in [filter1, filter2]:
       for ii in range(2):
-        self.cnn.add(Conv2D(n_filters, (1, freq_convolution4), padding='same', activation='relu'))
-        self.cnn.add(Dropout(dropout2))
-        if not pooling:
-          self.cnn.add(Conv2D(n_filters, (1, freq_convolution4), strides=(1, strides2), activation='relu'))
-          self.cnn.add(Dropout(dropout2))
-        else:
-          self.cnn.add(Conv2D(n_filters, (1, freq_convolution4), activation='relu'))
-          self.cnn.add(Dropout(dropout2))
-          self.cnn.add(MaxPool2D((1, strides2)))
+        self._freq_conv_layer(n_filters, (1, freq_convolution4), 1,        dropout1)
+        self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
 
     self.cnn.add(Flatten())
     self.cnn.add(Dense(dense))
+    if dropout2 != None:
+      self.cnn.add(Dropout(dropout2))
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
 
   def train(self, d_inp, d_out, v_inp, v_out, epochs, batch_size,

@@ -194,7 +194,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
                             np.ones(1))
   info["wasserstein_distance_error"] = wd
   if verbose > 0:
-    print("  Wasserstein distance error: %f" % wd)
+    print("  Wasserstein distance error (%s): %f" % (prefix,wd))
 
   with open(os.path.join(folder, prefix+"_concentration_errors.json"), 'w') as f:
     print(json.dumps(info, indent=2, sort_keys=True), file=f)

@@ -78,7 +78,7 @@ class Select:
     if na['model'][0] == 'cnn':
       # Model fully parameterised
       from .model import CNN
-      # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid][_pool]
+      # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = ('cnn_' + na['model_S1'][0] +
                       '_' + na['model_S2'][0] +
                       '_' + na['model_C1'][0] +
@@ -91,8 +91,6 @@ class Select:
                       '_' + na['model_F2'][0] +
                       '_' + na['model_D'][0] +
                       '_' + na['model_ACTIVATION'][0])
-      if na['model_POOL'][0] == True:
-        model_str += "_pool"
       model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     elif na['model'][0][0:4] == 'cnn_':
@@ -520,9 +518,13 @@ class SelectGPO(Select):
     domain = []
     self.values = {}
     for k in var_keys:
+      if isinstance(models.values[k][0],int) or isinstance(models.values[k][0],float):
+        type = 'discrete'
+      else:
+        type = 'categorical'
       domain.append({
           'name': k,
-          'type': 'categorical', # FIXME: discrete for integer ranges
+          'type': type, # 'categorical', # FIXME: discrete for integer ranges
           'domain': np.arange(0,len(models.values[k])),
           'dimensionality': 1
         })
@@ -700,23 +702,24 @@ Collections = {
   # FIXME: train on MIXED datasets (basis, linewidth)
   # FIXME: optimise over model parameters
   'optimise': Grid({
-    'norm':             ['sum'],
-    'acquisitions':     [['difference','edit_on']],
-    'datatype':         [['magnitude','phase']],
+    'norm':             ['sum', 'max'],
+    'acquisitions':     [['diference','edit_off','edit_on'],['difference','edit_on'],
+                         ['difference','edit_off'],['edif_off','edit_on']],
+    'datatype':         [['magnitude'],['magnitude','phase'],['real','imaginary'],
+                         ['real'],['imagiary']],
     'model':            ['cnn'],
-    'model_S1':         [2],
-    'model_S2':         [3],
-    'model_C1':         [4, 8, 16],
-    'model_C2':         [7],
-    'model_C3':         [5],
-    'model_C4':         [3],
-    'model_O1':         [0.4, 0.25],
-    'model_O2':         [0.25],
+    'model_S1':         [-3,-2,2,3],
+    'model_S2':         [-3,-2,2,3],
+    'model_C1':         [3, 5, 7, 9, 11],
+    'model_C2':         [3, 5, 7, 9, 11],
+    'model_C3':         [3, 5, 7, 9, 11],
+    'model_C4':         [3, 5, 7, 9, 11],
+    'model_O1':         [0.0,0.3],
+    'model_O2':         [0.0,0.3],
     'model_F1':         [256],
     'model_F2':         [512],
     'model_D':          [1024],
-    'model_ACTIVATION': ['softmax'],
-    'model_POOL':       [False],
-    'batch_size':       [32]
+    'model_ACTIVATION': ['softmax','sigmoid'],
+    'batch_size':       [16, 32, 64]
   })
 }
