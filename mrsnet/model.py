@@ -43,12 +43,10 @@ class CNN:
     self.train_dataset_name = None
 
   def _freq_conv_layer(self, filter, c, s, dropout):
-    if s < 0:
+    if s <= 0:
       self.cnn.add(Conv2D(filter, c))
     elif s > 0:
       self.cnn.add(Conv2D(filter, c, strides=(1,s)))
-    else:
-      raise Exception("s cannot be 0")
     if dropout == 0.0:
       self.cnn.add(BatchNormalization())
       self.cnn.add(Activation('relu'))

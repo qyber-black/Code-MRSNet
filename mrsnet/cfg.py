@@ -25,8 +25,9 @@ class Cfg:
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),
   # but all in use should be in the comments here for reference.
   dev = set()
-  # check_dataset_export  - Test if exporting dataset to tensors is correct in train
-  # flag_plots            - Show some test graphs for the activated checks
+  # check_dataset_export - Test if exporting dataset to tensors is correct in train
+  # flag_plots - Show some test graphs for the activated checks
+  # feature_selectgpo_optimse_noload - do not load existing results for SelectGPO
   file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod
