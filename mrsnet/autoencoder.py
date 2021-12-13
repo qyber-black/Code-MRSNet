@@ -19,7 +19,7 @@ from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import load_model
 
-from .model import TimeHistory
+from .cnn import TimeHistory
 
 # Helper to construct convolutional encoder layer
 def _enc_conv_layer(m, filter, c, s, pooling, dropout):
@@ -58,7 +58,7 @@ class ConvAutoEnc(Model):
     # Encoder
     self.encoder = tf.keras.Sequential(name='Encoder')
     re_r = ae_shape[0]//2             # reshape for decoder (divide by row strides in encoder)
-    re_c = ae_shape[1]//(4*4*2*2*4*4) # reshape for decoder (divide by column strides in encoder)
+    re_c = ae_shape[1]//(4*4*2*4*4)   # reshape for decoder (divide by column strides in encoder)
     re_f = 512                        # last filter size, reshape in decoder
     # Encoder Layers: filter, convolution_kernel, strides, pooling, dropout
     # pooling: Pooling or strides for up/downsampling?
@@ -83,9 +83,9 @@ class ConvAutoEnc(Model):
     _dec_convt_layer(self.decoder, re_f, (1,5), (1,4), False, -1.0)
     _dec_convt_layer(self.decoder, 512, (1,5), (1,4), False, -1.0)
     #
-    _dec_convt_layer(self.decoder, 512, (2,3), (2,2), False, -1.0)
     _dec_convt_layer(self.decoder, 512, (2,3), (1,1), False, -1.0)
-    _dec_convt_layer(self.decoder, 256, (2,3), (1,1), False, -1.0)
+    _dec_convt_layer(self.decoder, 512, (2,3), (1,1), False, -1.0)
+    _dec_convt_layer(self.decoder, 256, (2,3), (2,2), False, -1.0)
     _dec_convt_layer(self.decoder, 256, (2,3), (1,1), False, -1.0)
     #
     _dec_convt_layer(self.decoder, 256, (1,5), (1,4), False, -1.0)
