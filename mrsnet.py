@@ -173,7 +173,12 @@ def add_arguments_aetrain(p):
   p.add_argument('-e', '--epochs', type=int, default=500, help='Number of training epochs.')
   p.add_argument('-b', '--batch_size', type=int, default=32, help='Batch size.')
   p.add_argument('-r', '--run', type=str, default='default', help='Currently only one selection')
-
+  p.add_argument('--noise_p', type=float, default=1.0,
+                   help='Probability of ADC noise applied to spectrum.')
+  p.add_argument('--noise_sigma', type=float, default=0.1,
+                   help='Maximum sigma for simulated ADC noise (uniform distribution).')
+  p.add_argument('--noise_mu', type=float, default=0.0,
+                   help='Maximum mu for simulated ADC noise (uniform distribution).')
   p.add_argument('--norm', choices=['sum', 'max'], default='sum',
                    help='Concentration normalisation: sum or max equal to 1')
   p.add_argument('--acquisitions', type=str, nargs='+', default=['edit_off', 'difference'],
@@ -422,28 +427,47 @@ def aetrain(args):
     print("# Loading dataset %s : %s" % (name,ds_rest))
   dataset1 = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
+  print('metabolites:',args.metabolites)
   args.acquisitions.sort()
+  print('acquisitions:',args.acquisitions)
   args.datatype.sort()
+  print('datatype:', args.datatype)
 
   d_inp, d_out= dataset1.export(metabolites=args.metabolites, norm=args.norm,
                                 acquisitions=args.acquisitions, datatype=args.datatype,
                                 verbose=args.verbose)
   #d_inp_noise = dataset.Dataset.noise(d_inp)
   #print('d_inp_type:', type(d_inp))
-  d_inp_noise = dataset.Dataset.noise(dataset1,0,0.001)
+  d_inp_noise = dataset1.add_noise(args.noise_p,args.noise_mu,args.noise_sigma,verbose=args.verbose)
   #print((d_inp_noise))
   d_inp_noise, d_out_noise = d_inp_noise.export(metabolites=args.metabolites, norm=args.norm,
                                    acquisitions=args.acquisitions, datatype=args.datatype,
                                    verbose=args.verbose)
+
   import mrsnet.aetrain as aetrain
-  n = 5
-  for i in range(n):
 
-   aetrain.autoencoder.plot_spectra(d_inp[i, 0, 0],"Clean_edit-off")
-   aetrain.autoencoder.plot_spectra(d_inp[i, 1, 0], "Clean_difference")
-   aetrain.autoencoder.plot_spectra(d_inp_noise[i, 0, 0],"With_Noise_edit-off")
-   aetrain.autoencoder.plot_spectra(d_inp_noise[i, 1, 0], "With_Noise_difference")
+  a = 'LCModel'
+  b = 'FID-A'
+  c = 'PyGamma'
+  basis = a
+  starter = a + '_MEGAPRESS @123.23Hz Linewidth:1.0 '
+  C_eo="Clean_edit-off "
+  C_diff="Clean_difference "
+  N_eo="With_Noise_edit-off "
+  N_diff="With_Noise_difference "
+  dp_n=4
 
+
+  dp_list = ['imaginary','magnitude', 'phase', 'real']
+  #for i in range(n):
+  #for d in range(dp):
+  #aetrain.autoencoder.plot_spectra(d_inp[0, 0, 0], starter, C_eo, '0.0', '0.0', '0.0', dp_list[0])
+  for dp in range(dp_n):
+   aetrain.autoencoder.plot_spectra(d_inp[0, 0, dp], basis,starter,C_diff,'0.0','0.0','0.0',dp_list[dp])
+   aetrain.autoencoder.plot_spectra(d_inp[0, 1, dp], basis,starter,C_eo,'0.0','0.0','0.0',dp_list[dp])
+   aetrain.autoencoder.plot_spectra(d_inp_noise[0, 0, dp], basis,starter,N_diff,args.noise_p,args.noise_mu,args.noise_sigma,dp_list[dp])
+   aetrain.autoencoder.plot_spectra(d_inp_noise[0, 1, dp], basis,starter,N_eo,args.noise_p,args.noise_mu,args.noise_sigma,dp_list[dp])
+  exit()
   #print('d_inp_noise_header[0]',d_inp_noise[0,0,0])
   print('d_inp_noise_len:', len(d_inp_noise))
   print('______________________________________')
@@ -471,16 +495,16 @@ def aetrain(args):
   x_train_noise=d_inp_noise[0:split_point]
   x_test_noise=d_inp_noise[split_point:]
   print(x_test_noise.shape)
-  x_train_plot = tf.reshape(x_train,(4000,2,1,2048))
-  x_test_plot = tf.reshape(x_test,(1000,2,1,2048))
+  x_train_plot = tf.reshape(x_train,(x_train.shape[0],2,1,2048))
+  x_test_plot = tf.reshape(x_test,(x_test.shape[0],2,1,2048))
 
-  x_train_noise_plot = tf.reshape(x_train_noise,(4000,2,1,2048))
-  x_test_noise_plot = tf.reshape(x_test_noise,(1000,2,1,2048))
+  x_train_noise_plot = tf.reshape(x_train_noise,(x_train_noise.shape[0],2,1,2048))
+  x_test_noise_plot = tf.reshape(x_test_noise,(x_test_noise.shape[0],2,1,2048))
 
-  aetrain.autoencoder.plot_spectra(x_train_plot[0, 0, 0], "tf.Clean_edit-off")
+  '''aetrain.autoencoder.plot_spectra(x_train_plot[0, 0, 0], "tf.Clean_edit-off")
   aetrain.autoencoder.plot_spectra(x_train_plot[0, 1, 0], "tf.Clean_difference")
   aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 0, 0], "tf.With_Noise_edit-off")
-  aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 1, 0], "tf.With_Noise_difference")
+  aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 1, 0], "tf.With_Noise_difference")'''
 
   import mrsnet.aetrain as aetrain
   #aetrain.autoencoder.plot_spectra(x_train_noise)
@@ -495,6 +519,7 @@ def aetrain(args):
                             Cfg.val['path_model'], dataset.name+"_"+ds_rest,
                             Cfg.val['image_dpi'], Cfg.val['screen_dpi'],
                             args.no_show, args.verbose)'''
+
   # ...and execute trainer (to be implemented - FIXME)
   #trainer.train()
   aetrain.autoencoder.Encoder()
