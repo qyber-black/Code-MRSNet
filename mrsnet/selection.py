@@ -11,6 +11,7 @@ import json
 import csv
 import numpy as np
 import sobol_seq
+import random
 import matplotlib.pyplot as plt
 
 from .grid import Grid
@@ -545,7 +546,7 @@ class SelectGPO(Select):
     if len(self.key_vals) < 1:
       for ki,k in enumerate(keys):
         if k in var_keys:
-          key_vals[k] = models.values[k][0]
+          key_vals[k] = models.values[k][random.randrange(len(models.values[k]))]
       self._add_task(key_vals, path_model)
       self._run_tasks()
     # Convert eval. data to GPO format
