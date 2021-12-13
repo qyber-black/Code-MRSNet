@@ -175,8 +175,9 @@ class CNN:
 
     timer = TimeHistory(epochs)
     callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                               min_delta=1e-12,
-                                               patience=50,
+                                               min_delta=1e-8,
+                                               patience=25,
+                                               mode='min',
                                                verbose=(verbose > 0),
                                                restore_best_weights=True),
                  timer]

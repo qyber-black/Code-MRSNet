@@ -483,15 +483,14 @@ Collections = {
     'noise_sigma': [0.05,0.1],
     'noise_mu': [0.0]
   }),
-  'multi_source-linewidth': Grid({
+  'multi_source-linewidths': Grid({
     'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
-    'source': [['lcmodel', 'fid-a', 'pygamma'], ['lcmodel', 'fid-a'],
-               ['fid-a', 'pygamma'], ['lcmodel', 'pygamma']],
+    'source': [['lcmodel', 'fid-a', 'pygamma']],
     'manufacturer': ['siemens'],
     'omega': [123.23],
-    'linewidth': [1.0, [0.75, 1.0, 1.25]],
+    'linewidth': [[0.75, 1.0, 1.25]],
     'pulse_sequence': ['megapress'],
-    'num': [100000],
+    'num': [30000],
     'sample': ['sobol'],
     'noise_p': [1.0],
     'noise_sigma': [0.1],
