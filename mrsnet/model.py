@@ -118,7 +118,7 @@ class CNN:
 
     self.cnn.add(Flatten())
     self.cnn.add(Dense(dense))
-    if dropout2 != None:
+    if dropout2 > 0.0:
       self.cnn.add(Dropout(dropout2))
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
 
