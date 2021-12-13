@@ -177,8 +177,16 @@ class Autoencoder:
                     metrics=['mae'])
 
     for dpi in image_dpi:
-      plot_model(self.ae,
-                 to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
+      plot_model(self.ae.encoder,
+                 to_file=os.path.join(folder,'architecture-encoder@'+str(dpi)+'.png'),
+                 show_shapes=True,
+                 show_dtype=True,
+                 show_layer_names=True,
+                 rankdir='TB',
+                 expand_nested=True,
+                 dpi=dpi)
+      plot_model(self.ae.decoder,
+                 to_file=os.path.join(folder,'architecture-decoder@'+str(dpi)+'.png'),
                  show_shapes=True,
                  show_dtype=True,
                  show_layer_names=True,
