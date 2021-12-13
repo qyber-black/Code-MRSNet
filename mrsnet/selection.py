@@ -74,7 +74,7 @@ class Select:
     # Get model info
     if na['model'][0] == 'cnn':
       # Model fully parameterised
-      from .model import CNN
+      from .cnn import CNN
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = ('cnn_' + na['model_S1'][0] +
                       '_' + na['model_S2'][0] +
@@ -92,7 +92,7 @@ class Select:
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     elif na['model'][0][0:4] == 'cnn_':
       # CNN standard models
-      from .model import CNN
+      from .cnn import CNN
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     else:

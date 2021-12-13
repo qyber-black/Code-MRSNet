@@ -1,4 +1,4 @@
-# mrsnet/model.py - MRSNet - models
+# mrsnet/cnn.py - MRSNet - CNN models
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -45,12 +45,12 @@ class CNN:
   def _freq_conv_layer(self, filter, c, s, dropout):
     if s <= 0:
       self.cnn.add(Conv2D(filter, c))
-    elif s > 0:
+    else:
       self.cnn.add(Conv2D(filter, c, strides=(1,s)))
     if dropout == 0.0:
       self.cnn.add(BatchNormalization())
-      self.cnn.add(Activation('relu'))
-    elif dropout > 0.0:
+    self.cnn.add(Activation('relu'))
+    if dropout > 0.0:
       self.cnn.add(Dropout(dropout))
     if s < 0:
       self.cnn.add(MaxPool2D((1,-s)))
