@@ -1,4 +1,4 @@
- # mrsnet/selection.py - MRSNet - selection
+# mrsnet/selection.py - MRSNet - selection
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -25,6 +25,9 @@ class Train:
 
   def _plot_distributions(self,d_out,folder,image_dpi,screen_dpi,no_show):
     # Plot distributions
+    if len(d_out.shape) != 2:
+      return # Nothing to plot, d_out is not a concentration tensor
+             # FIXME: has to be adapted for autoencoders to process concentrations, once used for quantification
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if self.k > 1:

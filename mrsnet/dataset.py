@@ -253,7 +253,6 @@ class Dataset(object):
             self.spectra[idx]['difference'] = diff
       if verbose > 1:
         print("  Added noise to %d of %d spectra" % (n_cnt,num))
-    return self
 
   def save(self, path):
     from .getfolder import get_folder
@@ -298,7 +297,7 @@ class Dataset(object):
     return None
 
   def export(self, metabolites=None, norm='sum', acquisitions=['edit_off','difference'],
-             datatype='magnitude', normalise=True, verbose=0):
+             datatype='magnitude', normalise=True, export_concentrations=True, verbose=0):
     if metabolites is None:
       metabolites = self.metabolites
 
@@ -313,7 +312,7 @@ class Dataset(object):
         print("  Shape: " + str(d_inp.shape) + " - [spectrum, acquisition, datatype, frequency]")
     else:
       d_inp = np.ndarray((0,0))
-    if len(self.concentrations) > 0:
+    if export_concentrations and len(self.concentrations) > 0:
       if verbose > 0:
         print("Converting output concentrations to tensor")
       d_out = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,

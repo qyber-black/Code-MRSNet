@@ -18,6 +18,11 @@ from scipy.stats import wasserstein_distance
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False,
                   no_show=False, verbose=0, image_dpi=[300], screen_dpi=96):
+  pred_op = getattr(model, "predict", None)
+  if not callable(pref_op):
+    if verbose > 0:
+      print("# Warning, model cannot be analysed as it has no prediction method")
+    return None, None, None
   # Analyse data (assumed to be exported from dataset in format as used by model for train call)
   if not os.path.exists(folder):
     os.makedirs(folder)
