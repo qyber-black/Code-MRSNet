@@ -495,13 +495,13 @@ def aetrain(args):
   x_train_noise=d_inp_noise[0:split_point]
   x_test_noise=d_inp_noise[split_point:]
   print(x_test_noise.shape)
-  x_train_plot = tf.reshape(x_train,(x_train.shape[0],2,1,2048))
+  '''x_train_plot = tf.reshape(x_train,(x_train.shape[0],2,1,2048))
   x_test_plot = tf.reshape(x_test,(x_test.shape[0],2,1,2048))
 
   x_train_noise_plot = tf.reshape(x_train_noise,(x_train_noise.shape[0],2,1,2048))
   x_test_noise_plot = tf.reshape(x_test_noise,(x_test_noise.shape[0],2,1,2048))
 
-  '''aetrain.autoencoder.plot_spectra(x_train_plot[0, 0, 0], "tf.Clean_edit-off")
+  aetrain.autoencoder.plot_spectra(x_train_plot[0, 0, 0], "tf.Clean_edit-off")
   aetrain.autoencoder.plot_spectra(x_train_plot[0, 1, 0], "tf.Clean_difference")
   aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 0, 0], "tf.With_Noise_edit-off")
   aetrain.autoencoder.plot_spectra(x_train_noise_plot[0, 1, 0], "tf.With_Noise_difference")'''
