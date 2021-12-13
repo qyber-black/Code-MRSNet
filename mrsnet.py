@@ -347,7 +347,7 @@ def train(args):
                                 verbose=args.verbose)
 
   if args.model[0:4] == 'cnn_':
-    from mrsnet.model import CNN
+    from mrsnet.cnn import CNN
     model = CNN(args.model, args.metabolites, dataset.pulse_sequence,
                 args.acquisitions, args.datatype, args.norm)
   else:
@@ -432,7 +432,7 @@ def quantify(args):
   if args.verbose > 0:
     print("# Loading model %s : %s : %s %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
   if name[0:4] == "cnn_":
-    from mrsnet.model import CNN
+    from mrsnet.cnn import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
@@ -489,7 +489,7 @@ def benchmark(args):
   if args.verbose > 0:
     print("# Model %s : %s : %s : %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
   if name[0:4] == "cnn_":
-    from mrsnet.model import CNN
+    from mrsnet.cnn import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)

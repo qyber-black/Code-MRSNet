@@ -1,4 +1,4 @@
-# mrsnet/model.py - MRSNet - models
+# mrsnet/cnn.py - MRSNet - CNN models
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
