@@ -702,7 +702,7 @@ Collections = {
   'cnn-para-all': Grid({
     'norm':             ['sum', 'max'],
     'acquisitions':     [['difference','edit_off','edit_on'],['difference','edit_on'],
-                         ['difference','edit_off'],['edif_off','edit_on']],
+                         ['difference','edit_off'],['edit_off','edit_on']],
     'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],
                          ['real'],['imaginary']],
     'model':            ['cnn'],
