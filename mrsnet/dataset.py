@@ -71,16 +71,16 @@ class Dataset(object):
     # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
     # Does not add noise, but only generates clean combined ADC signal.
     if num <= 0:
-      raise Exception('n_samples must be greater than 0, not %d!' % num)
+      raise Exception(f"n_samples must be greater than 0, not {num}!")
     if self.metabolites == None:
       self.metabolites = basis.metabolites
     else:
       for m in basis.metabolites:
         if m not in self.metabolites:
-          raise Exception("Basis metabolite not in dataset: %s" % m)
+          raise Exception(f"Basis metabolite not in dataset: {m}")
       for m in self.metabolites:
         if m not in basis.metabolites:
-          raise Exception("Dataset metabolite not in basis: %s" % m)
+          raise Exception(f"Dataset metabolite not in basis: {m}")
 
     if self.pulse_sequence == None:
       self.pulse_sequence = basis.pulse_sequence
@@ -91,9 +91,9 @@ class Dataset(object):
       for a in basis.spectra[s].keys():
         nu = basis.spectra[s][a].nu()
         if np.min(nu) > self.high_ppm:
-          raise Exception('Spectra do not reach the required max frequency axis (%.2f) for export: %.2f' % (np.min(spectra.nu()), self.high_ppm))
+          raise Exception(f"Spectra do not reach the required max frequency axis ({np.min(spectra.nu()):.2f}) for export: {self.high_ppm:.2f}")
         elif np.max(nu) < self.low_ppm:
-          raise Exception('Spectra do not reach the required min frequency axis (%.2f) for export: %.2f' % (np.max(spectra.nu()), self.low_ppm))
+          raise Exception(f"Spectra do not reach the required min frequency axis ({np.max(spectra.nu()):.2f}) for export: {self.low_ppm:.2f}")
 
     n0 = num // len(samplers)
     n1 = num % len(samplers)
@@ -103,7 +103,7 @@ class Dataset(object):
       n = n0 + (1 if n1 > 0 else 0)
       n1 -= 1
       if verbose > 0:
-        print("Generating %d concentrations with %s sampling" % (n,sampler))
+        print(f"Generating {n} concentrations with {sampler} sampling")
       if sampler == 'random':
         # Random uniform concentrations
         concentrations = np.random.ranf((n, n_metabolites))
@@ -125,9 +125,9 @@ class Dataset(object):
           combs = list(combinations(list(range(0,n_metabolites)), n_excited))
           n_per_group = n_per_combs // len(combs)
           if verbose > 0:
-            print("  For %d excited: %d samples per %d combinations" % (n_excited, n_per_group, len(combs)))
+            print(f"  For {n_excited} excited: {n_per_group} samples per {len(combs)} combinations")
           if n_per_group < 1:
-            raise Exception('Insufficient samples for *-zeros with %d groups' % len(groups))
+            raise Exception(f"Insufficient samples for *-zeros with {len(groups)} groups")
           for comb in combs:
             groups.append(comb)
             groups_n.append(n_per_group)
@@ -153,7 +153,7 @@ class Dataset(object):
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
             skip += n_g # Get differnt samples for the groups
           else:
-            raise Exception('Unknown concentration generation method: ' + sampler)
+            raise Exception(f"Unknown concentration generation method: {sampler}")
           idx += n_g
       elif sampler[-4:] == '-one':
         # Set one concentration to one
@@ -161,9 +161,9 @@ class Dataset(object):
         combs = list(combinations(list(range(0,n_metabolites)), n_metabolites-1))
         n_per_group = n // len(combs)
         if verbose > 0:
-          print("  %d samples for %d combinations with one 1.0" % (n_per_group, len(combs)))
+          print(f"  {n_per_group} samples for {len(combs)} combinations with one 1.0")
         if n_per_group < 1:
-          raise Exception('Insufficient samples for *-one with %d combinations' % len(combs))
+          raise Exception(f"Insufficient samples for *-one with {len(combs)} combinations")
         n_total = 0
         groups = []
         groups_n = []
@@ -213,8 +213,7 @@ class Dataset(object):
       raise Exception("Noise added twice to dataset")
     if noise_p > 0.0:
       if verbose > 0:
-        print("Adding noise Normal(mu=%f,sigma=%f) with probability %f to time signal"
-              % (noise_mu,noise_sigma,noise_p))
+        print(f"Adding noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
       self.noise_added = True
       num = len(self.spectra)
       n_add = np.random.uniform(0.0,1.0,num)
@@ -252,7 +251,7 @@ class Dataset(object):
             diff.acquisition = 'difference'
             self.spectra[idx]['difference'] = diff
       if verbose > 1:
-        print("  Added noise to %d of %d spectra" % (n_cnt,num))
+        print(f"  Added noise to {n_cnt} of {num} spectra")
 
   def save(self, path):
     from .getfolder import get_folder
@@ -274,10 +273,8 @@ class Dataset(object):
         n_row += 1
       fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
       axes = axes.flatten()
-      plt.suptitle('Concentrations %s of %s; %d spectra; %f - %f ppm @ %d pts'
-                   % ('' if norm == 'none' else ("("+norm+" normalised)"),
-                      self.name, len(self.spectra), self.low_ppm,
-                      self.high_ppm, self.n_fft_pts))
+      norm_str = "" if norm == 'none' else ("("+norm+" normalised)"),
+      plt.suptitle(f"Concentrations {norm_str} of {self.name}; {len(self.spectra)} spectra; {self.low_ppm} - {self.high_ppm} ppm @ {self.n_fft_pts} pts")
       cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
       k = 0
       for c in self.concentrations:
@@ -453,7 +450,7 @@ class Dataset(object):
           if normalise:
             inp[a_idx,d_idx,:] = (inp[a_idx,d_idx,:]/np.pi+1.0)/2.0 # Normalise to (0..1]
         else:
-          raise Exception("Unknown datatype %s" % d)
+          raise Exception(f"Unknown datatype {d}")
         d_idx += 1
     return inp
 
@@ -466,7 +463,7 @@ class Dataset(object):
     elif norm == 'sum':
       out /= np.sum(out)
     elif norm != 'none':
-      raise Exception("Unknown norm %s" % norm)
+      raise Exception(f"Unknown norm {norm}")
     return out
 
 Collections = {

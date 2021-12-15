@@ -265,7 +265,7 @@ class Spectrum(object):
       super_title += "-".join(self.metabolites[0]) + ' '
     super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + " @ " + str(self.omega) + "Hz Linewidth: " + str(self.linewidth)
     if self.adc_noise_mu != 0.0 or self.adc_noise_sigma != 0.0:
-      super_title += (" - Noise mu: %f sigma: %f" % (self.adc_noise_mu,self.adc_noise_sigma))
+      super_title += f" - Noise mu: {self.adc_noise_mu} sigma: {self.adc_noise_sigma}"
 
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
@@ -321,7 +321,7 @@ class Spectrum(object):
     adc_noise_mu = next(iter(adc_noise_mu))
     adc_noise_sigma = next(iter(adc_noise_sigma))
     if adc_noise_mu != 0.0 or adc_noise_sigma != 0.0:
-      super_title += (" - Noise mu: %f sigma: %f" % (adc_noise_mu,adc_noise_sigma))
+      super_title += f" - Noise mu: {adc_noise_mu} sigma: {adc_noise_sigma}"
 
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:

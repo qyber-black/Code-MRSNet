@@ -96,7 +96,7 @@ def main():
   if hasattr(args,"func"):
     args.func(args)
   else:
-    print("%s: illegal sub-command or sub-command not specified, see help [-h]" % sys.argv[0], file=sys.stderr)
+    print(f"{sys.argv[0]}: illegal sub-command or sub-command not specified, see help [-h]", file=sys.stderr)
 
 def add_arguments_default(p):
   # Add argumnets for all sub-commands
@@ -204,7 +204,7 @@ def basis(args):
     for d in ['magnitude','phase','real','imaginary']:
       fig = b.plot(data=d, type='fft')
       if args.verbose > 0:
-        print("Saving figure %s" % b.name())
+        print(f"Saving figure {b.name()}")
       for dpi in Cfg.val['image_dpi']:
         plt.savefig(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"-"+d+"@"+str(dpi)+".png"), dpi=dpi)
       if not args.no_show:
@@ -254,22 +254,22 @@ def simulate(args):
     n = n0 + (1 if n1 > 0 else 0)
     n1 -= 1
     if args.verbose > 0:
-      print("Generating %d spectra for %s" % (n,b))
+      print(f"Generating {n} spectra for {b}")
     dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
     dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
   if args.verbose > 0:
-    print("Saving dataset %s" % dataset.name)
+    print(f"Saving dataset {dataset.name}")
   path = dataset.save(Cfg.val["path_simulation"])
   if args.verbose > 0:
     print("Plotting concentrations")
   for norm in ['none', 'sum', 'max']:
     fig = dataset.plot_concentrations(norm=norm)
     if args.verbose > 0:
-      print("Saving %s-normalised concentration figure" % norm)
-    for f in glob.glob(os.path.join(path,"concentrations-%s@*.png" % norm)):
+      print(f"Saving {norm}-normalised concentration figure")
+    for f in glob.glob(os.path.join(path,f"concentrations-{norm}@*.png")):
       os.remove(f)
     for dpi in Cfg.val['image_dpi']:
-      plt.savefig(os.path.join(path,"concentrations-%s@%d.png" % (norm,dpi)), dpi=dpi)
+      plt.savefig(os.path.join(path,f"concentrations-{norm}@{dpi}.png"), dpi=dpi)
     if not args.no_show:
       fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
@@ -305,7 +305,7 @@ def generate_datasets(args):
                       na['noise_p'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
     if os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra.joblib")):
       if args.verbose > 0:
-        print("Exists: %s:%s" % (name,na['num'][0]))
+        print(f"Exists: {name}:{na['num'][0]}")
     else:
       # Create
       cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
@@ -342,7 +342,7 @@ def train(args):
   name = os.path.join(*id[-9:-1])
   ds_rest = id[-1]
   if args.verbose > 0:
-    print("# Loading dataset %s : %s" % (name,ds_rest))
+    print(f"# Loading dataset {name} : {ds_rest}")
   dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
@@ -356,9 +356,9 @@ def train(args):
     model = CNN(args.model, args.metabolites, dataset.pulse_sequence,
                 args.acquisitions, args.datatype, args.norm)
   else:
-    raise Exception("Unknown model %s" % args.model)
+    raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
-    print("# Model setup:\n  %s" % str(model))
+    print(f"# Model setup:\n  {str(model)}")
 
   if args.validate > 1.0:
     from mrsnet.train import KFold
@@ -376,7 +376,7 @@ def train(args):
     from mrsnet.train import NoValidation
     trainer = NoValidation()
   else:
-    raise Exception("Unknown validation %f" % args.validate)
+    raise Exception(f"Unknown validation {args.validate}")
   trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
                 Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
@@ -405,7 +405,7 @@ def model_selection(args):
     selector = SelectEvo(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
   else:
-    raise Exception("Unknown model selection method %s" % args.method)
+    raise Exception(f"Unknown model selection method {args.method}")
   selector.optimise(args.collection, models, Cfg.val['path_model'])
 
 def quantify(args):
@@ -417,7 +417,7 @@ def quantify(args):
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
     if args.verbose > 0:
-      print("# Loading dataset %s : %s" % (name,ds_rest))
+      print(f"# Loading dataset {name} : {ds_rest}")
     ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   else:
     ds = None # Load later, as dicom and we don't know metabolites
@@ -435,7 +435,7 @@ def quantify(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print("# Loading model %s : %s : %s %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
+    print(f"# Loading model {name} : {batch_size} : {epochs} {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
@@ -443,7 +443,7 @@ def quantify(args):
     raise Exception("Unknown model "+name)
   if ds is None:
     if args.verbose > 0:
-      print("# Loading dicom data %s" % args.dataset)
+      print(f"# Loading dicom data {args.dataset}")
     ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                   metabolites=quantifier.metabolites)
     store_in_data = True
@@ -477,7 +477,7 @@ def quantify(args):
 def benchmark(args):
   # Benchmark sub-command
   if args.verbose > 0:
-    print("# Loading model %s" % args.model)
+    print(f"# Loading model {args.model}")
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
@@ -492,7 +492,7 @@ def benchmark(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print("# Model %s : %s : %s : %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
+    print(f"# Model {name} : {batch_size} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
@@ -501,7 +501,7 @@ def benchmark(args):
   import mrsnet.dataset as dataset
   for id in ['E1', 'E2', 'E3', 'E4a', 'E4b', 'E4c', 'E4d']:
     if args.verbose > 0:
-      print("# Loading Benchmark %s" % id)
+      print(f"# Loading Benchmark {id}")
     bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
                                          concentrations=os.path.join(Cfg.val['path_benchmark'],
                                                                      id, 'concentrations.json'),

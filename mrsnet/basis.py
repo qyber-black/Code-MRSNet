@@ -31,7 +31,7 @@ class BasisCollection:
                   linewidth=linewidth, pulse_sequence=pulse_sequence).setup(path_basis)
     idx = basis.name()
     if idx in self._bases:
-      raise Exception("Basis %s already in basis collection" % idx)
+      raise Exception(f"Basis {idx} already in basis collection")
     self._bases[idx] = basis
 
   def get(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence):
@@ -106,11 +106,11 @@ class Basis(object):
     # Check for consistency
     for m in self.metabolites:
       if m not in self.spectra.keys():
-        raise Exception("Metabolite %s not in basis" % m)
+        raise Exception(f"Metabolite {m}not in basis")
     acqs = []
     for m in self.spectra.keys():
       if m not in self.metabolites:
-        raise Exception("Basis spectra contains additional spectrum for %s" % m)
+        raise Exception(f"Basis spectra contains additional spectrum for {m}")
       if len(acqs) == 0:
         acqs = sorted(self.spectra[m].keys())
         if len(acqs) == 0:
@@ -265,7 +265,7 @@ class Basis(object):
           eon.acquisition = 'edit_on'
           self.spectra[m]['edit_on'] = eon
         else:
-          raise Exception("Incomplete megapress spectrum for %s" % m)
+          raise Exception(f"Incomplete megapress spectrum for {m}")
 
   def _normalise(self):
     # All spectra are normalised against the maximum absolute adc signal in the basis set.

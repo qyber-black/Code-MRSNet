@@ -26,7 +26,7 @@ class Select:
       name = os.path.join(*id[-9:-1])
       self.ds_rest = id[-1]
       if verbose > 0:
-        print("# Loading dataset %s : %s" % (name,self.ds_rest))
+        print(f"# Loading dataset {name} : {self.ds_rest}")
       ds = Dataset.load(dataset)
       self.pulse_sequence = ds.pulse_sequence
     else:
@@ -97,7 +97,7 @@ class Select:
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     else:
-      raise Exception("Unknown model %s" % na['model'])
+      raise Exception(f"Unknown model {na['model']}")
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
     fold=""
     if self.validate > 1.0:
@@ -113,7 +113,7 @@ class Select:
     elif self.validate == 0.0:
       trainer = "NoValidation"
     else:
-      raise Exception("Unknown validation %f" % args.validate)
+      raise Exception(f"Unknown validation {args.validate}")
     # Check if sane, delete otherwise
     base_path = os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
                              train_model)
@@ -142,10 +142,10 @@ class Select:
               selected_id = repeat_id
           else:
             if self.verbose > 0:
-              print("# WARNING: %s - broken/incomplete model" % fn)
+              print(f"# WARNING: {fn} - broken/incomplete model")
         else:
           if self.verbose > 0:
-            print("# WARNING: %s - this file should not be there" % ffn)
+            print(f"# WARNING: {ffn} - this file should not be there")
     if selected_id < 0:
       selected_id = 1
     return os.path.join(base_path,trainer+"-"+str(selected_id)), fold
@@ -163,11 +163,11 @@ class Select:
     remote_run = []
     for t in self.tasks:
       if not load_only and self.verbose > 0:
-        print("# Task %d / %d" % (counter,len(self.tasks)))
+        print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
       if os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")):
         if self.verbose > 0:
-          print("Exists %s:%s" % (t['model_path'],t['fold']))
+          print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
         if val_p is not None:
           self.key_vals.append(t['args'])
@@ -192,7 +192,7 @@ class Select:
         elif t['args']['model'][0:4] == 'cnn_':
           model_str = t['args']['model']
         else:
-          raise Exception("Unknown model string %s" % t['args']['model'])
+          raise Exception(f"Unknown model string {t['args']['model']}")
         if self.remote == 'local':
           self._run(t['args']['norm'],t['args']['acquisitions'],t['args']['datatype'],
                     model_str,t['args']['batch_size'])
@@ -223,7 +223,7 @@ class Select:
         all_done = True
         for k in range(0,len(remote_run)):
           if remote_run[k][0] != 'complete':
-            print("## Job %d / %d" % (k+1,len(remote_run)))
+            print(f"## Job {k+1} / {len(remote_run)}")
             status = self._run_remote(k,remote_run)
             if status == 'done':
               val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
@@ -239,7 +239,7 @@ class Select:
         running = len([l for l in remote_run if l[0] == 'run'])
         waiting = len([l for l in remote_run if l[0] == 'wait'])
         if self.verbose > 0:
-          print("  %d running; %d waiting" % (running,waiting))
+          print(f"  {running} running; {waiting} waiting")
         if running >= self.remote_tasks or (waiting < 1 and running > 0):
           time.sleep(self.remote_wait*60)
 
@@ -323,7 +323,7 @@ class Select:
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
-        print("# WARNING: %s - model broken" % (model_path))
+        print(f"# WARNING: {model_path} - model broken")
         print(e)
       return None, None
     return val_p, train_p
@@ -339,7 +339,7 @@ class Select:
     idx = [l[0] for l in sorted(enumerate(self.val_performance), key=lambda x:np.mean(x[1]))]
     with open(os.path.join(folder,"model_performance.csv"), "w") as f:
       writer = csv.writer(f, delimiter=",")
-      writer.writerow(["Results from %s" % self.__class__.__name__])
+      writer.writerow([f"Results from {self.__class__.__name__}"])
       writer.writerow([])
       writer.writerow(["Dataset", self.dataset])
       writer.writerow(["Epochs", self.epochs])
@@ -451,7 +451,7 @@ class SelectGrid(Select):
     counter = 1
     for model in models:
       if self.verbose > 0:
-        print("# Model %d / %d" % (counter,total))
+        print(f"# Model {counter} / {total}")
       key_vals = {}
       for l in range(0,len(keys)):
         key_vals[keys[l]] = model[l]
@@ -481,7 +481,7 @@ class SelectQMC(Select):
     select = sobol_seq.i4_sobol_generate(dim, self.repeats+skip)[skip:,:]
     while counter <= self.repeats:
       if self.verbose > 0:
-        print("# Sample %d / %d in space of size %d" % (counter,self.repeats,total))
+        print(f"# Sample {counter} / {self.repeats} in space of size {total}")
       # Sample from parameter space
       key_vals = {}
       for k in keys:
@@ -510,7 +510,7 @@ class SelectGPO(Select):
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
     total = np.prod([len(models.values[k]) for k in keys])
     if self.verbose > 0:
-      print("Search space size: %d" % total)
+      print(f"Search space size: {total}")
     import GPyOpt as gpo
     domain = []
     self.values = {}
@@ -572,7 +572,7 @@ class SelectGPO(Select):
     XDiff = [0]
     XLast = Xdata[-1,:]
     if self.verbose > 0:
-      print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
+      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n)} samples")
 
     # Optimisation iterations
     current_iter = len(self.key_vals)
@@ -587,8 +587,7 @@ class SelectGPO(Select):
         # Switch to avoid posterior sampling bias
         evaluator = 'thompson_sampling' if current_iter % 2 == 0 else 'random'
       if self.verbose > 0:
-        print("### Iteration %d / %d - samples remaining: %d [eval: %s]"
-              % (current_iter+1,self.repeats,remaining_samples,evaluator))
+        print(f"### Iteration {current_iter+1} / {self.repeats} - samples remaining: {remaining_samples} [eval: {evaluator}]")
       # Optimiser to get next evaluations
       bop = gpo.methods.BayesianOptimization(f=None, domain=domain,
                                              X=Xdata, Y=Ydata,
@@ -624,7 +623,7 @@ class SelectGPO(Select):
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
       XLast = Xdata[-1,:]
       if self.verbose > 0:
-        print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
+        print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
         for l in range(0,len(var_keys)):
           key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[idx_best,l])]
         print("   "+str([str(key_vals[k]) for k in var_keys]))

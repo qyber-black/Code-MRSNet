@@ -41,7 +41,7 @@ class Cfg:
           if k in Cfg.val:
             Cfg.val[k] = js[k]
           else:
-            raise Exception("Unknown config file entry %s in %s" % (k,Cfg.file))
+            raise Exception(f"Unknown config file entry {k} in {Cfg.file}")
     # Check data folders and create as needed
     data_dir = os.path.join(os.path.dirname(bin_path),'data')
     paths = {
