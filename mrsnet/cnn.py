@@ -117,7 +117,7 @@ class CNN:
         self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
 
     self.cnn.add(Flatten())
-    self.cnn.add(Dense(dense,activation="sigmoid")) # FIXME: size of dense layer?
+    self.cnn.add(Dense(dense,activation="sigmoid"))
     if dropout2 > 0.0:
       self.cnn.add(Dropout(dropout2))
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
