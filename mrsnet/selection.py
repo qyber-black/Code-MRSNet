@@ -686,39 +686,38 @@ Collections = {
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   -> dirichlet, random
-  #   -> noise effect: 0.05, 0.1, 0.2
+  #   -> noise effect: 0.05, 0.1
   #   -> benchmark
   # FIXME: check models trained with one dataset on another dataset
   # FIXME: train on MIXED datasets (basis, linewidth)
   # FIXME: optimise over model parameters
   'cnn-simple-all': Grid({
-    'norm':         ['sum', 'max'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'],
-                     ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
-    'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
-    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
-                     'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
-    'batch_size':   [16, 32, 64]
+    'norm':         ['sum','max'],
+    'acquisitions': [['difference','edit_off'],['difference','edit_on'],
+                     ['edit_off','edit_on'],['difference','edit_off','edit_on']],
+    'datatype':     [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
+    'model':        ['cnn_small_softmax','cnn_medium_softmax','cnn_large_softmax',
+                     'cnn_small_sigmoid_pool','cnn_medium_sigmoid_pool','cnn_large_sigmoid_pool'],
+    'batch_size':   [16,32,64]
   }),
   'cnn-para-all': Grid({
     'norm':             ['sum', 'max'],
     'acquisitions':     [['difference','edit_off','edit_on'],['difference','edit_on'],
                          ['difference','edit_off'],['edit_off','edit_on']],
-    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],
-                         ['real'],['imaginary']],
+    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
     'model':            ['cnn'],
     'model_S1':         [-2,2],
     'model_S2':         [-3,-2,2,3],
-    'model_C1':         [3, 5, 7, 9, 11],
-    'model_C2':         [3, 5, 7, 9],
-    'model_C3':         [3, 5, 7],
-    'model_C4':         [3, 5],
+    'model_C1':         [3,5,7,9,11],
+    'model_C2':         [3,5,7,9],
+    'model_C3':         [3,5,7],
+    'model_C4':         [3,5],
     'model_O1':         [0.0,0.3],
     'model_O2':         [0.0,0.3],
     'model_F1':         [256],
     'model_F2':         [512],
     'model_D':          [1024],
     'model_ACTIVATION': ['softmax','sigmoid'],
-    'batch_size':       [16, 32, 64]
+    'batch_size':       [16,32,64]
   })
 }

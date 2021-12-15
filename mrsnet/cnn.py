@@ -49,7 +49,7 @@ class CNN:
       self.cnn.add(Conv2D(filter, c, strides=(1,s)))
     if dropout == 0.0:
       self.cnn.add(BatchNormalization())
-    self.cnn.add(Activation('relu'))
+    self.cnn.add(ReLU())
     if dropout > 0.0:
       self.cnn.add(Dropout(dropout))
     if s < 0:
@@ -76,7 +76,7 @@ class CNN:
         freq_convolution3 = 7
       freq_convolution4 = 3
       dropout1 = 0.0
-      dropout2 = 0.0 # 0.3?
+      dropout2 = 0.3
       output_act = vals[2]
       if vals[-1] == 'pool':
         strides1 = -2
@@ -117,7 +117,7 @@ class CNN:
         self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
 
     self.cnn.add(Flatten())
-    self.cnn.add(Dense(dense))
+    self.cnn.add(Dense(dense,activation="sigmoid")) # FIXME: size of dense layer?
     if dropout2 > 0.0:
       self.cnn.add(Dropout(dropout2))
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
