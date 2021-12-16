@@ -67,6 +67,7 @@ sub-commands available are:
 * basis:              Generate basis, if it does not exist.
 * simulate:           Generate simulated spectra dataset.
 * generate_datasets:  Generate standard datasets.
+* compare:            Compare spectra.
 * train:              Train model on dataset.
 * select:             Model selection on dataset.
 * quantify:           Quantify spectra in dicoms.

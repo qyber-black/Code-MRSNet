@@ -50,6 +50,13 @@ def main():
   p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (single_source-sampler-noise, multi_source-linewidth; see mrsnet.dataset.Collection)')
   p_gen_ds.set_defaults(func=generate_datasets)
 
+  # Compare spectra
+  p_compare = subparsers.add_parser('compare', help='Compare spectra.',
+                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  add_arguments_default(p_compare)
+  add_arguments_compare(p_compare)
+  p_compare.set_defaults(func=compare)
+
   # Train
   p_train = subparsers.add_parser('train', help='Train model on dataset.',
                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -114,7 +121,7 @@ def add_arguments_basis(p):
   p.add_argument('--source', type=lambda s : s.lower(),
                  choices=['lcmodel', 'fid-a', 'pygamma'], default=['lcmodel'],
                  nargs='+',
-                 help='Data source(s) for the basis spectra (fid-a required Matlab).')
+                 help='Data source(s) for the basis spectra (fid-a requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default=['siemens'],
                  nargs='+',
@@ -141,6 +148,26 @@ def add_arguments_simulate(p):
   p.add_argument('--show-spectra', action='store_true', default=False,
                  help='Shows plots of all generated spectra.')
 
+def add_arguments_compare(p):
+  # Add compare arguments
+  p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
+  p.add_argument('--metabolites', type=lambda s : molecules.short_name(s), nargs='+',
+                 default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
+                 help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
+  p.add_argument('--source', type=lambda s : s.lower(),
+                 choices=['lcmodel', 'fid-a', 'pygamma'], default='lcmodel',
+                 help='Data source for the basis spectra (fid-a requires Matlab).')
+  p.add_argument('--manufacturer', type=lambda s : s.lower(),
+                 choices=['siemens', 'ge', 'phillips'], default='siemens',
+                 help='Scanner manufacturer (fid-a and pygamma only support siemens).')
+  p.add_argument('--omega', type=float, default=123.23, nargs=1,
+                 help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
+  p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
+                 help='Linewidths to be used for simulation (not possible for lcmodel).')
+  p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
+                 choices=['megapress'], default="megapress",
+                 help='Pulse sequence (placeholder).')
+
 def add_arguments_train_select(p):
   # Add training/selection arguments
   p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
@@ -165,7 +192,7 @@ def add_arguments_train(p):
 
 def add_arguments_quantify(p):
   # Add quantification arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID)')
+  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
   p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
 
@@ -338,6 +365,46 @@ def generate_datasets(args):
       else:
         if args.verbose > 0:
           print("Skipping non-1.0 linewidth for lcmodel")
+
+def compare(args):
+  # Compare sub-command
+  import mrsnet.dataset as dataset
+  import numpy as np
+  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+    id = get_std_name(args.dataset)
+    name = os.path.join(*id[-9:-1])
+    ds_rest = id[-1]
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  else:
+    if args.verbose > 0:
+      print(f"# Loading dicom data {args.dataset}")
+    concentrations = os.path.join(args.dataset,"concentrations.json")
+    if not os.path.isfile(concentrations):
+      concentrations = os.path.join(os.path.dirname(args.dataset),"concentrations.json")
+      if not os.path.isfile(concentrations):
+        concentrations = os.path.join(os.path.dirname(os.path.dirname(args.dataset)),"concentrations.json")
+        if not os.path.isfile(concentrations):
+          concentrations = None
+    ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
+                                                  concentrations=concentrations,
+                                                  metabolites=args.metabolites)
+  if len(ds.concentrations) > 0:
+    # Get basis
+    import mrsnet.basis as basis
+    if args.verbose > 0:
+      print("# Setting up basis")
+    basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
+                        manufacturer=args.manufacturer, omega=args.omega,
+                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence).setup(Cfg.val['path_basis'])
+    # Analyse with given concentrations
+    from mrsnet.compare import compare_basis
+    compare_basis(ds, basis,
+                  verbose=args.verbose, image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
+  else:
+    if args.verbose > 0:
+      print("Nothing to compare, as no concentrations available/found")
 
 def train(args):
   # Train sub-command

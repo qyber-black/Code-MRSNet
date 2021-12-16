@@ -39,16 +39,22 @@ class Dataset(object):
     specs = {}
     concs = {}
     concs_ok = True
+    if self.metabolites == None:
+      self.metabolites = []
     for dir, subdirs, files in os.walk(folder):
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
           s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites)
+          for m in s.metabolites:
+            if m not in self.metabolites:
+              self.metabolites.append(m)
           if s.id not in specs:
             specs[s.id] = {}
           specs[s.id][s.acquisition] = s
           concs[s.id] = c
           if len(c) == 0:
             concs_ok = False
+    self.metabolites.sort()
     for id in sorted(specs.keys()):
       b0_shift = []
       # b0 correction as average over all acquisitions and peaks
@@ -300,7 +306,7 @@ class Dataset(object):
 
     if len(self.spectra) > 0:
       if verbose > 0:
-        print("Converting input spectra to tensor")
+        print("Converting spectra to tensor")
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
@@ -311,7 +317,7 @@ class Dataset(object):
       d_inp = np.ndarray((0,0))
     if len(self.concentrations) > 0:
       if verbose > 0:
-        print("Converting output concentrations to tensor")
+        print("Converting concentrations to tensor")
       d_out = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
                     metabolites, norm)
                 for c in tqdm(self.concentrations, disable=(verbose<1)))

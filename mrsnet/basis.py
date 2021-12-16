@@ -308,10 +308,14 @@ class Basis(object):
       raise Exception("Concentrations do not match number of spectra in basis")
     spectra = {}
     con = {}
-    l = 0
-    for m in self.metabolites:
-      con[m] = concentrations[l]
-      l += 1
+    if type(concentrations) is dict:
+      for m in self.metabolites:
+        con[m] = concentrations[m]
+    else:
+      l = 0
+      for m in self.metabolites:
+        con[m] = concentrations[l]
+        l += 1
     for a in self.acquisitions:
       adc = None
       lw = None
