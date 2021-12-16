@@ -105,7 +105,7 @@ for development and not the general operation.
 
 ## Simulating Spectra
 
-To generate a simualted spectra dataset with the standard set of metabolites use
+To generate a simulated spectra dataset with the standard set of metabolites use
 ```
 ./mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10
 ```
@@ -137,7 +137,8 @@ To run the benchmark dataset on a model run
 ```
 where MODEL is the path to the trained tensorflow model in the `data/model-dist`
 or `data/model` folders (the path indicates the parameters used for the model
-architecture and the training/testing data).
+architecture and the training/testing data). Results are stored in the model
+folder.
 
 ## Quantifying your own MEGA-PRESS Spectra
 
@@ -147,7 +148,10 @@ simulate) is done via
 ./mrsnet.py quantify -d DATASET -m MODEL
 ```
 DATASET is either a joblib file or a folder with dicom spectra. The MODEL is the
-folder with the trained tensorflow model.
+folder with the trained tensorflow model. Results are stored in the data folder
+specified, as csv file. If there is a `concentrations.json` file at the top-level
+in the data folder, this is assumed to contain the ground truth and quantification
+results are compared to it.
 
 The code will attempt to analyse all of the spectra contained in the provided
 directory. There are a couple of caveats to enable this to work correctly:
@@ -155,7 +159,8 @@ directory. There are a couple of caveats to enable this to work correctly:
 1. All three acquisitions for each MEGA-PRESS scan must be present (edit on,
    edit off, difference).
 2. Spectra that belong to the same scan must have a unique ID of your choice
-   added to their filename (e.g. SCAN_001).
+   added to their filename (e.g. SCAN_001 or be in separate folders where the
+   folder becomes the ID).
 3. Spectra of the different acquisition types must be labelled, by adding either
    "EDIT_OFF", "EDIT_ON" or "DIFF" to anywhere after the unique ID from 2 in
    their filename.
@@ -169,6 +174,12 @@ SCAN_001_EDIT_OFF.ima
 SCAN_001_EDIT_ON.ima
 SCAN_001_DIFF.ima
 ```
+Also see the folders in the benchmark dataset (`data/benchmark`), which you
+can use as an example structure where folders separate the spectra (e.g.
+`data/benchmark/E1/MEGA_Combi_WS_ON`; note that the `concentrations.json`
+file is not at the top-level for each of the spectra collections, so would
+not be used if you run quantify on it; it is found separately by the benchmark
+sub-command only).
 
 Note, loading of non-Siemens DICOM files has not been tested.
 

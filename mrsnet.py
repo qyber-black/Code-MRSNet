@@ -146,7 +146,7 @@ def add_arguments_train_select(p):
   p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
                  help='Number of training epochs.')
-  p.add_argument('-k', '--validate', type=float, default=5,
+  p.add_argument('-k', '--validate', type=float, default=0.7,
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
 
 def add_arguments_train(p):
@@ -426,9 +426,9 @@ def quantify(args):
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
-      train_model = id[k+6]
-      batch_size = id[k+7]
-      epochs = id[k+8]
+      batch_size = id[k+6]
+      epochs = id[k+7]
+      train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
       break
@@ -444,35 +444,24 @@ def quantify(args):
   if ds is None:
     if args.verbose > 0:
       print(f"# Loading dicom data {args.dataset}")
+    concentrations = os.path.join(args.dataset,"concentrations.json")
+    if not os.path.isfile(concentrations):
+      concentrations = None
     ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
+                                                  concentrations=concentrations,
                                                   metabolites=quantifier.metabolites)
-    store_in_data = True
-  else:
-    store_in_data = False
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
                            verbose=args.verbose)
-  if np.sum(d_out.shape) == 0:
-    # No concentrations, so for analysis of data and store results with data, not model
-    store_in_data = True
   from mrsnet.analyse import analyse_model
   id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
-  if store_in_data:
-    # Store results in data repository, as dicoms or no concentrations (so for actual quantification)
-    analyse_model(quantifier, d_inp, d_out, args.dataset,
-                  id=[s[id_ref].id for s in ds.spectra],
-                  show_conc=True, save_conc=True, no_show=args.no_show,
-                  verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
-                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
-  else:
-    # Store results with model, as concentrations and dataset is for testing model
-    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size,
-                                                         epochs, train_model, trainer, rest),
-                  id=[s[id_ref].id for s in ds.spectra],
-                  show_conc=True, save_conc=True, no_show=args.no_show,
-                  verbose=args.verbose, prefix=ds.name.replace("/","_"),
-                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
+  # Store results in data repository
+  analyse_model(quantifier, d_inp, d_out, args.dataset,
+                id=[s[id_ref].id for s in ds.spectra],
+                show_conc=True, save_conc=True, no_show=args.no_show,
+                verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
+                image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
 
 def benchmark(args):
   # Benchmark sub-command

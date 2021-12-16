@@ -545,7 +545,7 @@ class Spectrum(object):
     elif pulse_sequence == 'svs_st':
       pulse_sequence = 'steam'
     else:
-      raise Exception('Unrecognised dicom pulse sequence: ' + pulse_sequence)
+      raise Exception(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
     # Acquisition
     if pulse_sequence == 'megapress':
       if 'EDIT_OFF' in file:
