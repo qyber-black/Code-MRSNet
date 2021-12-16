@@ -256,7 +256,7 @@ def simulate(args):
     if args.verbose > 0:
       print(f"Generating {n} spectra for {b}")
     dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
-    dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
+  dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
   if args.verbose > 0:
     print(f"Saving dataset {dataset.name}")
   path = dataset.save(Cfg.val["path_simulation"])
@@ -305,9 +305,11 @@ def generate_datasets(args):
                       na['noise_p'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
     if os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra.joblib")):
       if args.verbose > 0:
-        print(f"Exists: {name}:{na['num'][0]}")
+        print(f"# Exists: {name}:{na['num'][0]}")
     else:
       # Create
+      if args.verbose > 0:
+        print(f"# Creating {name}")
       cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
       if args.verbose > 0:
         cmd += ['-v']*args.verbose
@@ -333,6 +335,9 @@ def generate_datasets(args):
         except OSError as e:
           raise Exception('MRSNet simulations failed') from e
         p.wait()
+      else:
+        if args.verbose > 0:
+          print("Skipping non-1.0 linewidth for lcmodel")
 
 def train(args):
   # Train sub-command
