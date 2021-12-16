@@ -468,21 +468,21 @@ class Dataset(object):
 
 Collections = {
   'single_source-sampler-noise': Grid({
-    'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
-    'source': ['lcmodel', 'fid-a', 'pygamma'],
+    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
+    'source': ['lcmodel','fid-a','pygamma'],
     'manufacturer': ['siemens'],
     'omega': [123.23],
     'linewidth': [1.0],
     'pulse_sequence': ['megapress'],
     'num': [10000],
-    'sample': ['random', 'sobol', 'dirichlet'],
+    'sample': ['random','sobol','dirichlet'],
     'noise_p': [1.0],
     'noise_sigma': [0.05,0.1],
     'noise_mu': [0.0]
   }),
   'multi_source-linewidths': Grid({
-    'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
-    'source': [['lcmodel', 'fid-a', 'pygamma'],['fid-a', 'pygamma']],
+    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
+    'source': [['fid-a','lcmodel','pygamma'],['fid-a','pygamma']],
     'manufacturer': ['siemens'],
     'omega': [123.23],
     'linewidth': [1.0,[0.75,1.0,1.25]],
