@@ -49,10 +49,16 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
     dd = np.sum(np.abs(r_inp[l,:,:,:] - d_inp[l,:,:,:]),axis=2)
     print(f"Diff     Magnitude: {dd[0,0]:12f}")
     print(f"             Phase: {dd[0,1]:12f}")
+    print(f"              Real: {dd[0,2]:12f}")
+    print(f"         Imaginary: {dd[0,3]:12f}")
     print(f"Edit_Off Magnitude: {dd[1,0]:12f}")
     print(f"             Phase: {dd[1,1]:12f}")
+    print(f"              Real: {dd[1,2]:12f}")
+    print(f"         Imaginary: {dd[1,3]:12f}")
     print(f"Edit_On  Magnitude: {dd[2,0]:12f}")
     print(f"             Phase: {dd[2,1]:12f}")
+    print(f"              Real: {dd[2,2]:12f}")
+    print(f"         Imaginary: {dd[2,3]:12f}")
     fig = plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],
                             ref_spectra.spectra[l], ds.spectra[l], ref_spectra, ds,
                             ds.metabolites,basis.source,image_dpi,screen_dpi)

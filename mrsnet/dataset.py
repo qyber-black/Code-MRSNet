@@ -56,6 +56,7 @@ class Dataset(object):
             concs_ok = False
     self.metabolites.sort()
     for id in sorted(specs.keys()):
+      # FIXME: check
       b0_shift = []
       # b0 correction as average over all acquisitions and peaks
       for a in specs[id].keys():

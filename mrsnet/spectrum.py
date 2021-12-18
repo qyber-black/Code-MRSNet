@@ -22,8 +22,7 @@ class Spectrum(object):
   # domain when loading.
 
   def __init__(self, id, source=None, metabolites=None, pulse_sequence=None,
-               acquisition=None, omega=None, linewidth=None, dt=None,
-               center_ppm=0, sweep_width=None,
+               acquisition=None, omega=None, linewidth=None, dt=None, center_ppm=0,
                filter_fft=False, remove_water_peak=False, raw_adc=[]):
     if acquisition is None:
       raise Exception('Please set acquisition for spectrum.')
@@ -42,19 +41,18 @@ class Spectrum(object):
     self.raw_adc = np.array(raw_adc)
     if any(np.isnan(self.raw_adc)):
       raise Exception('Raw adc contains nan values')
-    self.zero_pad = 0
+    self.zero_pad = 0 # FIXME: do differently?
     self.scale = 1.0
 
-    self.filter_fft = filter_fft # this is only applied by default to dicom files
+    self.filter_fft = filter_fft # this is only applied by default to dicom files # FIXME: check
     self.fft_cache = None
 
-    self.remove_water_peak = remove_water_peak # for real spectra/read dicom
+    self.remove_water_peak = remove_water_peak # for real spectra/read dicom # FIXME: check
 
+    # FIXME: check
     self.b0_ppm_shift = 0
     self.b0_fft_pts_shift = 0 # explanation for these two can be found in correct_b0
     self.b0_nu_shift = 0
-
-    self.sw = sweep_width # if we read a dicom
 
     self.adc_noise_mu = 0
     self.adc_noise_sigma = 0
@@ -118,15 +116,7 @@ class Spectrum(object):
   def nu(self, npts=None):
     if npts is None:
       npts = self.adc_len()
-    if self.source == 'dicom':
-      ppm_range = (self.sw / self.omega) / 2
-      nu = np.linspace(-ppm_range, ppm_range, npts) + self.center_ppm
-    elif self.source in ['pygamma', 'fid-a', 'lcmodel'] or self.source[0:4] == 'sim_':
-      nu = ((np.linspace(-1, 1, npts) * (1 / self.dt / 2)) / self.omega) + self.center_ppm
-    else:
-      raise Exception('Please write custom nu routine for input source: ' + self.source)
-    # Finally apply the fine grained b0 correction, this is on the order of < delta_nu
-    nu += self.b0_nu_shift
+    nu = ((np.linspace(-1, 1, npts) * (1 / self.dt / 2)) / self.omega) + self.center_ppm + self.b0_nu_shift
     return nu
 
   def ppm_to_nu_pts(self, ppm):
@@ -142,9 +132,9 @@ class Spectrum(object):
   def fft(self):
     if self.fft_cache is None:
       # fft routines for different input sources
-      if self.source == 'dicom' or self.source == 'lcmodel' or self.source == 'sim_lcmodel':
+      if self.source == 'dicom' or self.source == 'lcmodel':
         fft = np.fft.fftshift(np.fft.fft(self.adc(), self.adc_len()))
-      elif self.source == 'pygamma' or self.source == 'fid-a'  or self.source == 'sim_pygamma' or self.source[0:10] == 'sim_fid-a':
+      elif self.source == 'pygamma' or self.source == 'fid-a':
         fft = np.flip(np.fft.fftshift(np.fft.fft(self.adc(), self.adc_len())), 0)
       else:
         raise Exception('Please write custom raw_fft routine for input source: ' + self.source)
@@ -163,6 +153,7 @@ class Spectrum(object):
     return self.fft_cache
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
+    # FIXME: something going wrong here or in the functions it calls?
     # zero pads the time domain to fill the desired window with npts
     recursion_limit = 500
     nu = self.nu()
@@ -464,7 +455,7 @@ class Spectrum(object):
             if 'PPMSEP' in metadata:
                 center_ppm = -metadata['PPMSEP']
             else:
-                center_ppm = -4.65 # defualt LCM value
+                center_ppm = -4.65 # default LCM value
             # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
             data = np.fft.ifft(np.array(data,dtype=np.complex64))
             specs.append(Spectrum(id="LCM_"+os.path.basename(basis_file),
@@ -567,8 +558,7 @@ class Spectrum(object):
       id = "/".join([x for x in file.split("/")[-4:] if x[-4:].lower() != '.ima'])
 
     omega = float(info["[CSA Image Header Info]"]["ImagingFrequency"])
-    sweep_width = 1.0 / (float(info["[CSA Image Header Info]"]["RealDwellTime"]) * 1e-9)
-    dt = (omega / sweep_width) / 1e+2
+    dt = float(info["[CSA Image Header Info]"]["RealDwellTime"]) * 1e-9
 
     cs = np.array([])
     if concentrations is not None:
@@ -601,7 +591,6 @@ class Spectrum(object):
                     linewidth=-1.0, # Unknown
                     dt=dt,
                     center_ppm=-4.7,
-                    sweep_width=sweep_width,
                     raw_adc=data,
                     remove_water_peak=True,
                     filter_fft=True)
