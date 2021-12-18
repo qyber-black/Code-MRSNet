@@ -95,7 +95,6 @@ class Basis(object):
                      str(self.omega), str(self.linewidth), self.pulse_sequence])
 
   def setup(self, path_basis=os.path.join('data','basis')):
-    # FIXME: run on init?
     if self.acquisitions is not None:
       return self
     # Load set
@@ -120,7 +119,6 @@ class Basis(object):
         if sorted(self.spectra[m].keys()) != acqs:
           raise Exception("Acquisitions between metabolite spectra for basis not consistent")
         self.acquisitions = acqs
-    # FIXME: check
     # Normalise ADC signal globally
     self._normalise()
     # B0 correction
@@ -270,7 +268,6 @@ class Basis(object):
           raise Exception(f"Incomplete megapress spectrum for {m}")
 
   def _normalise(self):
-    # FIXME: check
     # All spectra are normalised against the maximum absolute adc signal in the basis set.
     # There are a number of reasons, but it means that the noise added to the ADC has the same mu and sigma values.
     global_max = 0.0
@@ -282,7 +279,6 @@ class Basis(object):
         self.spectra[m][a].scale = 1.0/global_max
 
   def _correct_b0(self):
-    # FIXME: check
     if self.source in ['fid-a', 'lcmodel', 'pygamma']:
       # There's not going to be an individual shift per metabolite...
       # so we calibrate the entire set against Cr or Naa
@@ -323,7 +319,6 @@ class Basis(object):
     for a in self.acquisitions:
       adc = None
       lw = None
-      # FIXME: we assume dt and omega is constant for basis - check, also linewidth and center_ppm
       for m in self.spectra.keys():
         if adc is None:
           adc = self.spectra[m][a].adc() * con[m]

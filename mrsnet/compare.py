@@ -59,6 +59,7 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
     print(f"             Phase: {dd[2,1]:12f}")
     print(f"              Real: {dd[2,2]:12f}")
     print(f"         Imaginary: {dd[2,3]:12f}")
+    # FIXME: statistics on difference distribution
     fig = plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],
                             ref_spectra.spectra[l], ds.spectra[l], ref_spectra, ds,
                             ds.metabolites,basis.source,image_dpi,screen_dpi)
@@ -74,8 +75,6 @@ def plot_diff_spectra(r, d, c, rs, ds, rds, dds, metabolites, source, image_dpi,
     axes[3,3].remove()
 
     plt.suptitle(f"Difference between Data (blue) and {source.upper()} Reference (orange)")
-
-    # FIXME: something wrong here; do not align, different scale, problem with FFT conversion?
 
     axes[0,0].set_title("Difference")
     _, dx = ds['difference'].rescale_fft(high_ppm=dds.high_ppm, low_ppm=dds.low_ppm, npts=dds.n_fft_pts)

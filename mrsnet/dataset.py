@@ -56,7 +56,6 @@ class Dataset(object):
             concs_ok = False
     self.metabolites.sort()
     for id in sorted(specs.keys()):
-      # FIXME: check
       b0_shift = []
       # b0 correction as average over all acquisitions and peaks
       for a in specs[id].keys():
@@ -64,11 +63,10 @@ class Dataset(object):
           shift = specs[id][a].correct_b0()
           if shift is not None:
             b0_shift.append(shift)
-      if len(b0_shift) == 0:
-        raise Exception("B0 correction failed")
-      b0_shift = np.mean(np.array(b0_shift, dtype=np.float64))
-      for a in specs[id].keys():
-        specs[id][a].correct_b0(ppm_shift=b0_shift)
+      if len(b0_shift) != 0:
+        b0_shift = np.mean(np.array(b0_shift, dtype=np.float64))
+        for a in specs[id].keys():
+          specs[id][a].correct_b0(ppm_shift=b0_shift)
       self.spectra.append(specs[id])
       if concs_ok:
         self.concentrations.append(concs[id])
@@ -251,7 +249,7 @@ class Dataset(object):
               s12 = self.spectra[idx]['edit_on'].scale / self.spectra[idx]['edit_off'].scale
               diff.raw_adc = s12 * self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
             else:
-              # diff = s1 * ( on - s2/s1 * off)
+              # diff = s1 * (on - s2/s1 * off)
               diff.scale = self.spectra[idx]['edit_on'].scale
               s21 = self.spectra[idx]['edit_off'].scale / self.spectra[idx]['edit_on'].scale
               diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - s21 * self.spectra[idx]['edit_off'].raw_adc
@@ -262,6 +260,9 @@ class Dataset(object):
 
   def save(self, path):
     from .getfolder import get_folder
+    for s in self.spectra:
+      for a in s:
+        s[a].fft_cache = None
     folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
     joblib.dump(self, os.path.join(folder, "spectra.joblib"))
     return folder

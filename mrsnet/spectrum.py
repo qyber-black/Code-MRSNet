@@ -41,18 +41,15 @@ class Spectrum(object):
     self.raw_adc = np.array(raw_adc)
     if any(np.isnan(self.raw_adc)):
       raise Exception('Raw adc contains nan values')
-    self.zero_pad = 0 # FIXME: do differently?
+    self.zero_pad = 0
     self.scale = 1.0
 
-    self.filter_fft = filter_fft # this is only applied by default to dicom files # FIXME: check
+    self.filter_fft = filter_fft # this is only applied by default to dicom files
     self.fft_cache = None
 
-    self.remove_water_peak = remove_water_peak # for real spectra/read dicom # FIXME: check
+    self.remove_water_peak = remove_water_peak # for real spectra/read dicom
 
-    # FIXME: check
     self.b0_ppm_shift = 0
-    self.b0_fft_pts_shift = 0 # explanation for these two can be found in correct_b0
-    self.b0_nu_shift = 0
 
     self.adc_noise_mu = 0
     self.adc_noise_sigma = 0
@@ -64,12 +61,17 @@ class Spectrum(object):
   def adc_len(self):
     return len(self.raw_adc) + self.zero_pad
 
+  def nu(self, npts=None):
+    if npts is None:
+      npts = self.adc_len()
+    nu = np.linspace(-1, 1, npts) / (2.0 * self.dt * self.omega) + self.center_ppm + self.b0_ppm_shift
+    return nu
+
   def correct_b0(self, ppm_shift=None):
-    # the way this works is twofold
-    # the major B0 correction will be done by padding and trimming the fft, shifting it on the frequency axis nu
-    # the issue is that this then only has a granularity of delta_nu, so the remaining b0 shift has to be corrected
-    # by offsetting the entire nu axis by a value < delta_nu
+    # Find reference peak and adjust nu range via ppm_shift
     if ppm_shift is None:
+      if self.b0_ppm_shift != 0:
+        self.b0_ppm_shift = 0
       # No shift defined, find it
       reference_peaks = []
       if len(self.metabolites) > 0:
@@ -84,17 +86,13 @@ class Spectrum(object):
       for reference_signal in reference_peaks:
         peak = self._fft_peak_location(reference_signal, 0.25)
         if peak:
-          ppm_shift.append(self.b0_ppm_shift + (peak - reference_signal))
+          ppm_shift.append(reference_signal - peak)
       if len(ppm_shift) == 0:
         return None
       # Average over all reference peaks
       ppm_shift = np.mean(np.array(ppm_shift, dtype=np.float64))
     # Apply Shift
-    if ppm_shift != self.b0_ppm_shift:
-      self.b0_ppm_shift = ppm_shift
-      self.b0_fft_pts_shift = self.ppm_to_nu_pts(ppm_shift)
-      self.b0_nu_shift = ppm_shift - self.nu_pts_to_ppm(self.b0_fft_pts_shift)
-      self.fft_cache = None
+    self.b0_ppm_shift = ppm_shift
     return ppm_shift
 
   def _fft_peak_location(self, location, ppm_range, fft=None):
@@ -113,54 +111,27 @@ class Spectrum(object):
         return None
     return None
 
-  def nu(self, npts=None):
-    if npts is None:
-      npts = self.adc_len()
-    nu = ((np.linspace(-1, 1, npts) * (1 / self.dt / 2)) / self.omega) + self.center_ppm + self.b0_nu_shift
-    return nu
-
-  def ppm_to_nu_pts(self, ppm):
-    return int(np.floor(ppm / self.delta_nu()))
-
-  def nu_pts_to_ppm(self, nu_pts):
-    return self.delta_nu() * nu_pts
-
-  def delta_nu(self):
-    nu = self.nu()
-    return np.abs(nu[1] - nu[0])
-
   def fft(self):
     if self.fft_cache is None:
       # fft routines for different input sources
-      if self.source == 'dicom' or self.source == 'lcmodel':
-        fft = np.fft.fftshift(np.fft.fft(self.adc(), self.adc_len()))
-      elif self.source == 'pygamma' or self.source == 'fid-a':
-        fft = np.flip(np.fft.fftshift(np.fft.fft(self.adc(), self.adc_len())), 0)
-      else:
-        raise Exception('Please write custom raw_fft routine for input source: ' + self.source)
+      fft = np.fft.fftshift(np.fft.fft(self.adc(), self.adc_len()))
+      if self.source == 'pygamma' or self.source == 'fid-a':
+        fft = np.conjugate(np.flip(fft, 0))
       if self.filter_fft:
         b, a = signal.butter(1, 0.7)
         fft = signal.filtfilt(b, a, fft, padlen=150)
-      # b0 correction is required
-      if self.b0_fft_pts_shift != 0:
-        if self.b0_fft_pts_shift > 0:
-          fft = np.pad(fft, (0, self.b0_fft_pts_shift), 'constant', constant_values=np.mean(fft))[self.b0_fft_pts_shift:]
-        elif self.b0_fft_pts_shift < 0:
-          fft = np.pad(fft, (np.abs(self.b0_fft_pts_shift), 0), 'constant', constant_values=np.mean(fft))[:self.b0_fft_pts_shift]
       if self.remove_water_peak:
-        fft = self._fft_remove_water_peak(fft, ppm_range=1)
+        fft = self._fft_remove_water_peak(fft)
       self.fft_cache = fft
     return self.fft_cache
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
-    # FIXME: something going wrong here or in the functions it calls?
     # zero pads the time domain to fill the desired window with npts
     recursion_limit = 500
     nu = self.nu()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
       raise Exception('Requested ppm rescale range out of range of nu of spectrum. Max:' + str(np.min(nu)) + ' Min: ' + str(np.max(nu)))
-
-    # calculate initially how many points in that range
+    # Calculate initially how many points in that range
     index = (nu >= high_ppm) & (nu <= low_ppm)
     nu_pts = len(nu[index])
     counter = 0
@@ -169,12 +140,10 @@ class Spectrum(object):
         raise Exception('Iteration limit hit!')
       if counter > 100:
         print('Counter is getting high... ' + str(self.zero_pad) + ' : ' + str(nu_pts) + ' aiming for: ' + str(npts))
-
       # fine tune if that's not quite right
       percent_range = len(nu) / float(nu_pts)
       # random is added as there is sometimes some aliasing effects, this corrects it
       self._update_zero_pad(self.zero_pad + int(round(np.round((npts - nu_pts) * percent_range) + np.random.random())))
-
       if self.zero_pad < 0:
         raise Exception('Real data is too large to be input into the network, would have to reduce the '
                         'resolution of it. OR train a network with a higher resolution across the ppm range.')
@@ -182,7 +151,6 @@ class Spectrum(object):
       index = (nu >= high_ppm) & (nu <= low_ppm)
       nu_pts = len(nu[index])
       counter += 1
-
     return self.fft()[index], nu[index]
 
   def _update_zero_pad(self, new_zero_pad):
@@ -414,6 +382,7 @@ class Spectrum(object):
   @staticmethod
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     # FIXME: full LCModel file reader to extract relevant data
+    # FIXME: NAA peak in difference?
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
@@ -452,13 +421,9 @@ class Spectrum(object):
           # We collect a line buffer until we hit the next one, and then parse the buffer here.
           data, metabolite = Spectrum._parse_lcm_spectrum(line_buffer)
           if metabolite in req_metabolites:
-            if 'PPMSEP' in metadata:
-                center_ppm = -metadata['PPMSEP']
-            else:
-                center_ppm = -4.65 # default LCM value
             # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
             data = np.fft.ifft(np.array(data,dtype=np.complex64))
-            specs.append(Spectrum(id="LCM_"+os.path.basename(basis_file),
+            specs.append(Spectrum(id=os.path.basename(basis_file),
                                   source='lcmodel',
                                   metabolites=[molecules.short_name(metabolite)],
                                   pulse_sequence='megapress',
@@ -466,7 +431,7 @@ class Spectrum(object):
                                   omega=metadata['HZPPPM'],
                                   linewidth=1,
                                   dt=metadata['BADELT'],
-                                  center_ppm=center_ppm,
+                                  center_ppm=-4.7,
                                   raw_adc = data))
           line_buffer = []
         else:
@@ -494,8 +459,8 @@ class Spectrum(object):
             split_line = l.split('=')
             if split_line[0] == 'METABO':
               metabolite = molecules.short_name([split_line[1].replace('\'', '')])
+          area = 'spectrum'
         var_buffer = []
-        area = 'spectrum'
       else:
         # var buffer is used as some variables span multiple lines, the only break
         # is either commas or $END
@@ -531,7 +496,7 @@ class Spectrum(object):
     pulse_sequence = info["[CSA Image Header Info]"]["SequenceName"]
     if pulse_sequence in ['svs_edit', 'svs_ed', 'megapress']:
       pulse_sequence = 'megapress'
-    elif pulse_sequence == 'svs_se':
+    elif pulse_sequence == 'svs_se' or pulse_sequence == '*svs_se':
       pulse_sequence = 'press'
     elif pulse_sequence == 'svs_st':
       pulse_sequence = 'steam'
@@ -549,6 +514,13 @@ class Spectrum(object):
         raise Exception('Loaded dicom file of type MEGA-PRESS, but I can\'t figure out which acquisition this '
                         'is (Edit On, Edit Off or Difference). \n'
                         'Please manuall specifiy it (add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere).')
+    elif pulse_sequence == 'press':
+      if 'OFF' in file:
+        acquisition = 'edit_off'
+      else:
+        raise Exception('Loaded dicom file of type PRESS, but I can\'t figure out which acquisition this '
+                        'is (Edit Off?). \n'
+                        'Please manuall specifiy it (add "OFF" into the filepath anywhere).')
     else:
       acquisition = 'unknown'
       raise Exception('Non-megapress spectra not supported')
@@ -591,8 +563,6 @@ class Spectrum(object):
                     linewidth=-1.0, # Unknown
                     dt=dt,
                     center_ppm=-4.7,
-                    raw_adc=data,
-                    remove_water_peak=True,
-                    filter_fft=True)
+                    raw_adc=data)
 
     return spec, cs
