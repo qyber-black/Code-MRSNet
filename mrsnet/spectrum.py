@@ -23,7 +23,7 @@ class Spectrum(object):
 
   def __init__(self, id, source=None, metabolites=None, pulse_sequence=None,
                acquisition=None, omega=None, linewidth=None, dt=None, center_ppm=0,
-               filter_fft=False, remove_water_peak=False, raw_adc=[]):
+               filter_fft=False, remove_water_peak=False, scale=1.0, raw_adc=[]):
     if acquisition is None:
       raise Exception('Please set acquisition for spectrum.')
     if pulse_sequence == 'megapress' and acquisition not in ['edit_off', 'edit_on', 'difference']:
@@ -42,7 +42,7 @@ class Spectrum(object):
     if any(np.isnan(self.raw_adc)):
       raise Exception('Raw adc contains nan values')
     self.zero_pad = 0
-    self.scale = 1.0
+    self.scale = scale
 
     self.filter_fft = filter_fft # this is only applied by default to dicom files
     self.fft_cache = None
@@ -383,7 +383,6 @@ class Spectrum(object):
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
-    # FIXME: NAA peak in difference?
     # FIXME: basis set renders (once all fixed)
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
@@ -406,19 +405,28 @@ class Spectrum(object):
               if sl[1][-1] == ",":
                 sl[1] = sl[1][0:-1]
               v = sl[1].strip()
-              if v[0] == "\'":
-                v = v.strip("'")
-              else:
-                if '.' in v:
-                  try:
-                    v = float(v)
-                  except:
-                    pass
+              try:
+                if v[0] == "\'":
+                  v = v.strip("'")
+                elif ' ' in v:
+                  vals = v.split()
+                  v = []
+                  for vv in vals:
+                    try:
+                      if '.' in vv:
+                        vv = float(vv)
+                      else:
+                        vv = int(vv)
+                    except:
+                      pass
+                    v.append(vv)
                 else:
-                  try:
+                  if '.' in v:
+                    v = float(v)
+                  else:
                     v = int(v)
-                  except:
-                    pass
+              except:
+                pass
               metadata[area][sl[0].strip()] = v
           elif area == "spectrum":
             if np.abs(metadata['SEQPAR']['HZPPPM'] - req_omega) > (molecules.GYROMAGNETIC_RATIO/5):
@@ -450,7 +458,8 @@ class Spectrum(object):
                                     linewidth=1,
                                     dt=metadata["BASIS1"]['BADELT'],
                                     center_ppm=-4.7,
-                                    raw_adc = adc))
+                                    raw_adc = adc,
+                                    scale=1.0/metadata["BASIS"]["CONC"]))
           elif area != "":
             raise IOError(f"Unknown section in LCModel basis file {area}")
           if line[1:] == "END":
