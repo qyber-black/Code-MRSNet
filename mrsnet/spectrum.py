@@ -381,101 +381,93 @@ class Spectrum(object):
 
   @staticmethod
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
-    # FIXME: full LCModel file reader to extract relevant data
-    # FIXME: NAA peak in difference?
+    # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
+    # FIXME: NAA peak in difference?
+    # FIXME: basis set renders (once all fixed)
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
     specs = []
     with open(basis_file) as file:
       line_buffer = []
       metadata = {}
-      for count, line in enumerate(file):
-        if count == 0 and "$SEQPAR" not in line:
-          raise IOError('File does not appear to be a valid ".basis" file, no "$SEQPAR" found at start.')
-          area = "SEQPAR"
-        if '$NMUSED' in line and len(metadata) == 0:
-          # setup the metadata from the basis file - this is the first section
-          for b_line in line_buffer:
-            if '=' in b_line:
-              for to_remove in [' ', ',', '   ', '\n', '$END']:
-                b_line = b_line.replace(to_remove, '')
-              split_line = b_line.split('=')
-              if split_line[0] in ['ECHOT', 'HZPPPM', 'FWHMBA', 'BADELT']:
-                metadata[split_line[0]] = float(split_line[1])
-              elif split_line[0] in ['NDATAB']:
-                metadata[split_line[0]] = int(split_line[1])
+      area = ""
+      parse = True
+      while parse:
+        line = file.readline().strip()
+        if len(line) == 0: # Process last block, then quite
+          line="$END"
+          parse = False
+        if line[0] == '$':
+          if area == "SEQPAR" or area == "BASIS" or area == "BASIS1" or area == "NMUSED":
+            metadata[area] = {}
+            for l in line_buffer:
+              sl = l.split('=')
+              if sl[1][-1] == ",":
+                sl[1] = sl[1][0:-1]
+              v = sl[1].strip()
+              if v[0] == "\'":
+                v = v.strip("'")
               else:
-                metadata[split_line[0]] = split_line[1]
-          if np.abs(metadata['HZPPPM'] - req_omega) > (molecules.GYROMAGNETIC_RATIO/5):
-            # more than a 0.2T difference, there's an issue
-            raise Exception('LCModel basis set (%.2fT) is more than 0.2T different to prescibed '
-                            'omega (%.2fT).' % (metadata['HZPPPM']/molecules.GYROMAGNETIC_RATIO,
-                                                req_omega/molecules.GYROMAGNETIC_RATIO))
-          if metadata['SEQ'] not in ["'MEGA-'"]: # not megapress
-            raise Exception('Unrecognised LCM pulse sequence: ' + metadata['SEQ'])
-          line_buffer = []
-        elif len(line_buffer) > 1 and '$NMUSED' in line:
-          # from the second NMUSED is the marker for the start of the metabolite section
-          # I belive these sections are the same in individual ".BASIS" files.
-          # We collect a line buffer until we hit the next one, and then parse the buffer here.
-          data, metabolite = Spectrum._parse_lcm_spectrum(line_buffer)
-          if metabolite in req_metabolites:
-            # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
-            data = np.fft.ifft(np.array(data,dtype=np.complex64))
-            specs.append(Spectrum(id=os.path.basename(basis_file),
-                                  source='lcmodel',
-                                  metabolites=[molecules.short_name(metabolite)],
-                                  pulse_sequence='megapress',
-                                  acquisition=acquisition,
-                                  omega=metadata['HZPPPM'],
-                                  linewidth=1,
-                                  dt=metadata['BADELT'],
-                                  center_ppm=-4.7,
-                                  raw_adc = data))
+                if '.' in v:
+                  try:
+                    v = float(v)
+                  except:
+                    pass
+                else:
+                  try:
+                    v = int(v)
+                  except:
+                    pass
+              metadata[area][sl[0].strip()] = v
+          elif area == "spectrum":
+            if np.abs(metadata['SEQPAR']['HZPPPM'] - req_omega) > (molecules.GYROMAGNETIC_RATIO/5):
+              # more than a 0.2T difference, there's an issue
+              raise Exception('LCModel basis set (%.2fT) is more than 0.2T different to prescibed '
+                              'omega (%.2fT).' % (metadata['SEQPAR']['HZPPPM']/molecules.GYROMAGNETIC_RATIO,
+                                                  req_omega/molecules.GYROMAGNETIC_RATIO))
+            if metadata['SEQPAR']['SEQ'] != "MEGA-": # not megapress
+              raise Exception('Unrecognised LCM pulse sequence: ' + metadata['SEQ'])
+            try:
+              metabolite = molecules.short_name(metadata["BASIS"]["METABO"])
+            except:
+              metabolite = "Unknown"
+            if metabolite in req_metabolites:
+              # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
+              nums = " ".join(line_buffer).split()
+              if len(nums) % 2 != 0:
+                raise Exception('Uneven fft number, the real/imag switching does not work here or the file has been loaded in wrong!')
+              fft = []
+              for ii in range(0, len(nums), 2):
+                fft.append(float(nums[ii]) + 1j*float(nums[ii + 1]))
+              adc = np.fft.ifft(np.array(fft,dtype=np.complex64))
+              specs.append(Spectrum(id=os.path.basename(basis_file),
+                                    source='lcmodel',
+                                    metabolites=[metabolite],
+                                    pulse_sequence='megapress',
+                                    acquisition=acquisition,
+                                    omega=metadata["SEQPAR"]['HZPPPM'],
+                                    linewidth=1,
+                                    dt=metadata["BASIS1"]['BADELT'],
+                                    center_ppm=-4.7,
+                                    raw_adc = adc))
+          elif area != "":
+            raise IOError(f"Unknown section in LCModel basis file {area}")
+          if line[1:] == "END":
+            if area == "BASIS":
+              area = "spectrum"
+            else:
+              area = ""
+          else:
+            area = line[1:]
           line_buffer = []
         else:
-          line_buffer.append(line)
-      file.close()
+          if len(line_buffer) == 0 or '=' in line:
+            line_buffer.append(line)
+          else:
+            line_buffer[-1] += " " + line
+    file.close()
     return specs
-
-  @staticmethod
-  def _parse_lcm_spectrum(file_buffer):
-    # http://s-provencher.com/pub/LCModel/manual/manual.pdf
-    area = 'nmused'
-    var_buffer = []
-    metabolite = None
-    for counter, line in enumerate(file_buffer):
-      if '$NMUSED' in line:
-        area = 'nmused'
-      elif "$BASIS" in line:
-        area = 'basis'
-      elif '$END' in line:
-        if area == 'basis':
-          # find metabolite name
-          for l in var_buffer:
-            for to_remove in [' ', ',', '   ', '\n']:
-              l = l.replace(to_remove, '')
-            split_line = l.split('=')
-            if split_line[0] == 'METABO':
-              metabolite = molecules.short_name([split_line[1].replace('\'', '')])
-          area = 'spectrum'
-        var_buffer = []
-      else:
-        # var buffer is used as some variables span multiple lines, the only break
-        # is either commas or $END
-        # there's also no end marker to the spectrum in most cases
-        var_buffer.append(line)
-    if area == 'spectrum':
-      nums = " ".join(var_buffer).replace('\n', '').split()
-      if len(nums) % 2 != 0:
-        raise Exception('Uneven fft number, the real/imag switching does not work here or the file has been loaded in wrong!')
-      fft = []
-      for ii in range(0, len(nums), 2):
-        fft.append(float(nums[ii]) + 1j*float(nums[ii + 1]))
-    else:
-      raise Exception("No spectrum in LCM metabolite block")
-    return fft, metabolite[0]
 
   @staticmethod
   def load_dicom(file, concentrations=None, metabolites=[]):
@@ -563,6 +555,7 @@ class Spectrum(object):
                     linewidth=-1.0, # Unknown
                     dt=dt,
                     center_ppm=-4.7,
-                    raw_adc=data)
+                    raw_adc=data,
+                    remove_water_peak=True)
 
     return spec, cs
