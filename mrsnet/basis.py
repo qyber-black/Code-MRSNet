@@ -318,10 +318,16 @@ class Basis(object):
     for a in self.acquisitions:
       adc = None
       lw = None
+      dt = None
+      center_ppm = None
+      ppm_shift = None
       for m in self.spectra.keys():
         if adc is None:
           adc = self.spectra[m][a].adc(pad=False) * con[m]
           lw = self.spectra[m][a].linewidth
+          dt = self.spectra[m][a].dt
+          center_ppm = self.spectra[m][a].center_ppm
+          ppm_shift = self.spectra[m][a].b0_ppm_shift
         else:
           a_adc = self.spectra[m][a].adc(pad=False) * con[m]
           al = a_adc.shape[0]
@@ -333,6 +339,12 @@ class Basis(object):
           else:
             adc += a_adc
           lw += self.spectra[m][a].linewidth
+          if np.abs(dt - self.spectra[m][a].dt) > 1e-8:
+            raise("Cannot combine spectra with different dt")
+          if np.abs(center_ppm - self.spectra[m][a].center_ppm) > 1e-8:
+            raise("Cannot combine spectra with different center_ppm")
+          if np.abs(ppm_shift - self.spectra[m][a].b0_ppm_shift) > 1e-8:
+            raise("Cannot combine spectra with different b0_ppm_shift")
       lw = lw / len(self.spectra.keys()) # Linewidth should be identical, but just in case
       spectra[a] = Spectrum(id=id,
                             source=self.spectra[self.metabolites[0]][a].source,
@@ -341,8 +353,8 @@ class Basis(object):
                             acquisition=a,
                             omega=self.omega,
                             linewidth=lw,
-                            dt=self.spectra[self.metabolites[0]][a].dt,
-                            center_ppm=self.spectra[self.metabolites[0]][a].center_ppm,
+                            dt=self.spectra[self.metabolites[0]][a].dt, # should be identical
+                            center_ppm=self.spectra[self.metabolites[0]][a].center_ppm, # should be identical
                             raw_adc=adc)
     return spectra, con
 

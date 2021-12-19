@@ -189,8 +189,9 @@ class Spectrum(object):
     self.adc_noise_mu = mu
     self.adc_noise_sigma = sigma
     self.fft_cache = None
+    m = np.max(np.abs(self.raw_adc))
     self.raw_adc += (     np.random.normal(mu, sigma, len(self.raw_adc)) + \
-                     1j * np.random.normal(mu, sigma, len(self.raw_adc))) / self.scale
+                     1j * np.random.normal(mu, sigma, len(self.raw_adc))) * m / self.scale
 
   def plot(self, axes, type='fft', mode='magnitude'):
     if type == 'time':

@@ -96,7 +96,7 @@ def main():
 
   args = parser.parse_args()
   if hasattr(args,"noise_p"):
-    if args.noise_p <= 0.0:
+    if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0):
       args.noise_p = 0.0
       args.noise_sigma = 0.0
       args.noise_mu = 0.0

@@ -7,6 +7,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from .dataset import Dataset
 from . import molecules
@@ -20,7 +21,6 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
   diff = 0.0
   if verbose > 1:
     basis.plot('magnitude','fft')
-    # FIXME: plot can change dimensions of spectra and so combine does not work if plot before combine
     plt.show(block=True)
     plt.close()
   for l in range(len(ds.concentrations)):
@@ -43,26 +43,103 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
                        datatype=['magnitude','phase','real','imaginary'],
                        verbose=verbose)
 
+  all_diff = np.ndarray((r_inp.shape[1],r_inp.shape[2],r_inp.shape[3]*r_inp.shape[0]))
   for l in range(len(ds.spectra)):
+    diff = r_inp[l,:,:,:] - d_inp[l,:,:,:]
+    all_diff[:,:,l*r_inp.shape[3]:(l+1)*r_inp.shape[3]] = diff
+    print(f"## Spectra differences {l}: {ds.spectra[l][list(ds.spectra[l].keys())[0]].id}")
+    dd = np.sum(np.abs(diff),axis=2) / diff.shape[2]
+    m = np.mean(diff, axis=2)
+    s = np.std(diff, axis=2)
+    print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))
+    print(f"Diff     Magnitude: {dd[0,0]:12f} {m[0,0]:12f} {s[0,0]:12f}")
+    print(f"             Phase: {dd[0,1]:12f} {m[0,1]:12f} {s[0,1]:12f}")
+    print(f"              Real: {dd[0,2]:12f} {m[0,2]:12f} {s[0,2]:12f}")
+    print(f"         Imaginary: {dd[0,3]:12f} {m[0,3]:12f} {s[0,3]:12f}")
+    print(f"Edit_Off Magnitude: {dd[1,0]:12f} {m[1,0]:12f} {s[1,0]:12f}")
+    print(f"             Phase: {dd[1,1]:12f} {m[1,1]:12f} {s[1,1]:12f}")
+    print(f"              Real: {dd[1,2]:12f} {m[1,2]:12f} {s[1,2]:12f}")
+    print(f"         Imaginary: {dd[1,3]:12f} {m[1,3]:12f} {s[1,3]:12f}")
+    print(f"Edit_On  Magnitude: {dd[2,0]:12f} {m[2,0]:12f} {s[2,0]:12f}")
+    print(f"             Phase: {dd[2,1]:12f} {m[2,1]:12f} {s[2,1]:12f}")
+    print(f"              Real: {dd[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f}")
+    print(f"         Imaginary: {dd[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f}")
     if verbose > 1:
-      print(f"## Spectra differences {l}: {ds.spectra[l][list(ds.spectra[l].keys())[0]].id}")
-    dd = np.sum(np.abs(r_inp[l,:,:,:] - d_inp[l,:,:,:]),axis=2)
-    print(f"Diff     Magnitude: {dd[0,0]:12f}")
-    print(f"             Phase: {dd[0,1]:12f}")
-    print(f"              Real: {dd[0,2]:12f}")
-    print(f"         Imaginary: {dd[0,3]:12f}")
-    print(f"Edit_Off Magnitude: {dd[1,0]:12f}")
-    print(f"             Phase: {dd[1,1]:12f}")
-    print(f"              Real: {dd[1,2]:12f}")
-    print(f"         Imaginary: {dd[1,3]:12f}")
-    print(f"Edit_On  Magnitude: {dd[2,0]:12f}")
-    print(f"             Phase: {dd[2,1]:12f}")
-    print(f"              Real: {dd[2,2]:12f}")
-    print(f"         Imaginary: {dd[2,3]:12f}")
-    # FIXME: statistics on difference distribution
-    fig = plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],
-                            ref_spectra.spectra[l], ds.spectra[l], ref_spectra, ds,
-                            ds.metabolites,basis.source,image_dpi,screen_dpi)
+      fig = plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],
+                              ref_spectra.spectra[l], ds.spectra[l], ref_spectra, ds,
+                              ds.metabolites,basis.source,image_dpi,screen_dpi)
+      plt.show(block=True)
+      plt.close()
+
+  print("# Differences over all spectra (max normalised to 1)")
+  dd = np.sum(np.abs(all_diff),axis=2) / all_diff.shape[2]
+  m = np.mean(all_diff, axis=2)
+  s = np.std(all_diff, axis=2)
+  print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))
+  print(f"Diff     Magnitude: {dd[0,0]:12f} {m[0,0]:12f} {s[0,0]:12f}")
+  print(f"             Phase: {dd[0,1]:12f} {m[0,1]:12f} {s[0,1]:12f}")
+  print(f"              Real: {dd[0,2]:12f} {m[0,2]:12f} {s[0,2]:12f}")
+  print(f"         Imaginary: {dd[0,3]:12f} {m[0,3]:12f} {s[0,3]:12f}")
+  print(f"Edit_Off Magnitude: {dd[1,0]:12f} {m[1,0]:12f} {s[1,0]:12f}")
+  print(f"             Phase: {dd[1,1]:12f} {m[1,1]:12f} {s[1,1]:12f}")
+  print(f"              Real: {dd[1,2]:12f} {m[1,2]:12f} {s[1,2]:12f}")
+  print(f"         Imaginary: {dd[1,3]:12f} {m[1,3]:12f} {s[1,3]:12f}")
+  print(f"Edit_On  Magnitude: {dd[2,0]:12f} {m[2,0]:12f} {s[2,0]:12f}")
+  print(f"             Phase: {dd[2,1]:12f} {m[2,1]:12f} {s[2,1]:12f}")
+  print(f"              Real: {dd[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f}")
+  print(f"         Imaginary: {dd[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f}")
+  if verbose > 0:
+    fig, axs = plt.subplots(4,3,sharey=True)
+    fig.suptitle("Differences over all Spectra")
+    for l in range(3):
+      for k in range(4):
+        sns.histplot(all_diff[l,k,:], kde=True, ax=axs[k,l])
+    axs[0,0].set_ylabel("Magnitude - Count")
+    axs[1,0].set_ylabel("Phase - Count")
+    axs[2,0].set_ylabel("Real - Count")
+    axs[3,0].set_ylabel("Imaginary - Count")
+    axs[3,0].set_xlabel("Difference - Error")
+    axs[3,1].set_xlabel("Edit Off - Error")
+    axs[3,2].set_xlabel("Edif On - Error")
+    plt.show(block=True)
+    plt.close()
+
+  print("# Time Domain Differences over all Spectra (max amplitude normalised to 1)")
+  adc_l = ds.spectra[0]['edit_off'].adc_len(pad=False)
+  spc_l = len(ds.spectra)
+  all_diff = np.ndarray((3,2,spc_l*adc_l))
+  for s in range(len(ref_spectra.spectra)):
+    for l,a in enumerate(["difference","edit_off","edit_on"]):
+      r_data = ref_spectra.spectra[s][a].adc(pad=False)
+      r_data /= np.max(np.abs(r_data))
+      d_data = ds.spectra[s][a].adc(pad=False)
+      d_data /= np.max(np.abs(d_data))
+      r_data = np.interp(np.arange(0,len(d_data),1)*ds.spectra[s][a].dt,
+                         np.arange(0,len(r_data),1)*ref_spectra.spectra[s][a].dt,
+                         r_data)
+      all_diff[l,0,s*adc_l:(s+1)*adc_l] = np.abs(r_data) - np.abs(d_data)
+      all_diff[l,1,s*adc_l:(s+1)*adc_l] = np.angle(r_data) - np.angle(d_data)
+  dd = np.sum(np.abs(all_diff),axis=2) / all_diff.shape[2]
+  m = np.mean(all_diff, axis=2)
+  s = np.std(all_diff, axis=2)
+  print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))
+  print(f"Diff     Magnitude: {dd[0,0]:12f} {m[0,0]:12f} {s[0,0]:12f}")
+  print(f"             Phase: {dd[0,1]:12f} {m[0,1]:12f} {s[0,1]:12f}")
+  print(f"Edit_Off Magnitude: {dd[1,0]:12f} {m[1,0]:12f} {s[1,0]:12f}")
+  print(f"             Phase: {dd[1,1]:12f} {m[1,1]:12f} {s[1,1]:12f}")
+  print(f"Edit_On  Magnitude: {dd[2,0]:12f} {m[2,0]:12f} {s[2,0]:12f}")
+  print(f"             Phase: {dd[2,1]:12f} {m[2,1]:12f} {s[2,1]:12f}")
+  if verbose > 0:
+    fig, axs = plt.subplots(2,3,sharey=True)
+    fig.suptitle("Time Domain Differences over all Spectra (max amplitude normalised to 1)")
+    for l in range(3):
+      for k in range(2):
+        sns.histplot(all_diff[l,k,:], kde=True, ax=axs[k,l])
+    axs[0,0].set_ylabel("Magnitude - Count")
+    axs[1,0].set_ylabel("Phase - Count")
+    axs[1,0].set_xlabel("Difference - Error")
+    axs[1,1].set_xlabel("Edit Off - Error")
+    axs[1,2].set_xlabel("Edif On - Error")
     plt.show(block=True)
     plt.close()
 
