@@ -18,6 +18,11 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
     print("# Preparing reference spectra from basis")
   ref_spectra = Dataset("Basis Spectra")
   diff = 0.0
+  if verbose > 1:
+    basis.plot('magnitude','fft')
+    # FIXME: plot can change dimensions of spectra and so combine does not work if plot before combine
+    plt.show(block=True)
+    plt.close()
   for l in range(len(ds.concentrations)):
     s,c = basis.combine(ds.concentrations[l],"ref_"+ds.spectra[l]["edit_off"].id)
     ref_spectra.spectra.append(s)
@@ -26,11 +31,6 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
       diff += np.abs(c[m] - ds.concentrations[l][m])
   if diff > 1e-12:
     print("Warning, difference in concentrations between dataset and reference: {diff}")
-  if verbose > 1:
-    basis.plot('magnitude','fft')
-    # FIXME: plot can change dimensions of spectra and so combine does not work if plot before combine
-    plt.show(block=True)
-    plt.close()
 
   if verbose > 0:
     print("# Converting reference and dataset spectra")

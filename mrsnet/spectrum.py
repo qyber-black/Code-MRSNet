@@ -41,25 +41,29 @@ class Spectrum(object):
     self.raw_adc = np.array(raw_adc)
     if any(np.isnan(self.raw_adc)):
       raise Exception('Raw adc contains nan values')
-    self.zero_pad = 0
     self.scale = scale
 
-    self.filter_fft = filter_fft # this is only applied by default to dicom files
-    self.fft_cache = None
-
-    self.remove_water_peak = remove_water_peak # for real spectra/read dicom
-
     self.b0_ppm_shift = 0
+    self.zero_pad = 0
+    self.remove_water_peak = remove_water_peak
+    self.filter_fft = filter_fft
 
     self.adc_noise_mu = 0
     self.adc_noise_sigma = 0
 
-  def adc(self):
-    adc = np.append(self.raw_adc * self.scale, np.zeros(self.zero_pad))
+    self.fft_cache = None
+
+  def adc(self, pad=True):
+    if pad:
+      adc = np.append(self.raw_adc * self.scale, np.zeros(self.zero_pad))
+    else:
+      adc = self.raw_adc * self.scale
     return adc
 
-  def adc_len(self):
-    return len(self.raw_adc) + self.zero_pad
+  def adc_len(self, pad=True):
+    if pad:
+      return len(self.raw_adc) + self.zero_pad
+    return len(self.raw_adc)
 
   def nu(self, npts=None):
     if npts is None:
@@ -126,7 +130,7 @@ class Spectrum(object):
     return self.fft_cache
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
-    # zero pads the time domain to fill the desired window with npts
+    # Zero pads the time domain to fill the desired window with npts
     recursion_limit = 500
     nu = self.nu()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
@@ -383,7 +387,6 @@ class Spectrum(object):
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
-    # FIXME: basis set renders (once all fixed)
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
     specs = []
@@ -448,7 +451,12 @@ class Spectrum(object):
               fft = []
               for ii in range(0, len(nums), 2):
                 fft.append(float(nums[ii]) + 1j*float(nums[ii + 1]))
+              fft = np.roll(fft,-metadata["BASIS"]["ISHIFT"])
               adc = np.fft.ifft(np.array(fft,dtype=np.complex64))
+              if "PPMSEP" in metadata["NMUSED"]:
+                center_ppm = -metadata["NMUSED"]["PPMSEP"]
+              else:
+                center_ppm = -4.65
               specs.append(Spectrum(id=os.path.basename(basis_file),
                                     source='lcmodel',
                                     metabolites=[metabolite],
@@ -457,9 +465,9 @@ class Spectrum(object):
                                     omega=metadata["SEQPAR"]['HZPPPM'],
                                     linewidth=1,
                                     dt=metadata["BASIS1"]['BADELT'],
-                                    center_ppm=-4.7,
+                                    center_ppm=center_ppm,
                                     raw_adc = adc,
-                                    scale=1.0/metadata["BASIS"]["CONC"]))
+                                    scale=metadata["BASIS"]["TRAMP"]/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])))
           elif area != "":
             raise IOError(f"Unknown section in LCModel basis file {area}")
           if line[1:] == "END":

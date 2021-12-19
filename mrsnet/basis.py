@@ -281,14 +281,13 @@ class Basis(object):
   def _correct_b0(self):
     if self.source in ['fid-a', 'lcmodel', 'pygamma']:
       # There's not going to be an individual shift per metabolite...
-      # so we calibrate the entire set against Cr or Naa
+      # so we calibrate the entire set against Cr or NAA
       b0_shift = []
       for m in self.spectra.keys():
         for a in self.spectra[m].keys():
-          if 'NAA' in self.spectra[m][a].metabolites or 'Cr' in self.spectra[m][a].metabolites:
-            shift = self.spectra[m][a].correct_b0()
-            if shift is not None:
-              b0_shift.append(shift)
+          shift = self.spectra[m][a].correct_b0()
+          if shift is not None:
+            b0_shift.append(shift)
       if len(b0_shift) == 0:
         raise Exception("B0 correction for basis failed")
       # Take average of shifts from peak locations
@@ -321,10 +320,18 @@ class Basis(object):
       lw = None
       for m in self.spectra.keys():
         if adc is None:
-          adc = self.spectra[m][a].adc() * con[m]
+          adc = self.spectra[m][a].adc(pad=False) * con[m]
           lw = self.spectra[m][a].linewidth
         else:
-          adc += self.spectra[m][a].adc() * con[m]
+          a_adc = self.spectra[m][a].adc(pad=False) * con[m]
+          al = a_adc.shape[0]
+          adcl = adc.shape[0]
+          if al > adcl:
+            adc = np.append(adc, np.zeros(al-adcl)) + a_adc
+          elif al < adcl:
+            adc += np.append(a_adc, np.zeros(adcl-al))
+          else:
+            adc += a_adc
           lw += self.spectra[m][a].linewidth
       lw = lw / len(self.spectra.keys()) # Linewidth should be identical, but just in case
       spectra[a] = Spectrum(id=id,
