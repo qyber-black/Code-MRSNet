@@ -127,6 +127,13 @@ class Basis(object):
     return self
 
   def _load(self,path_basis):
+    glx = False
+    if 'GlX' in self.metabolites:
+      self.metabolites.remove("GlX")
+      self.metabolites.append("Glu")
+      self.metabolites.append("Gln")
+      self.metabolites.sort()
+      glx = True
     if self.source == 'lcmodel':
       if self.linewidth != 1.0:
         raise Exception('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
@@ -143,6 +150,34 @@ class Basis(object):
         raise Exception('No PyGamma simulator for ' + self.manufacturer + ' scanner.')
     else:
       raise Exception('Unknown basis source: ' + self.source)
+    if glx:
+      if 'Glu' not in self.spectra or 'Gln' not in self.spectra:
+        raise Exception("Cannot use GlX as Glu/Gln not in basis")
+      spec = {}
+      for a in self.spectra['Gln'].keys():
+        if a in self.spectra['Glu']:
+          spec[a] = Spectrum(self.spectra['Gln'][a].id+":Gln_+_Glu:"+self.spectra['Glu'][a].id,
+                             source=self.spectra['Gln'][a].source, # should be identical to Glu
+                             metabolites=["GlX"],
+                             pulse_sequence=self.spectra['Gln']['edit_off'].pulse_sequence, # should be identical to Glu
+                             acquisition=a,
+                             omega=self.spectra['Gln'][a].omega, # should be identical to Glu
+                             linewidth=self.spectra['Gln'][a].linewidth, # should be identical to Glu
+                             dt=self.spectra['Gln'][a].dt, # should be identical to Glu
+                             center_ppm=self.spectra['Gln'][a].center_ppm, # should be identical to Glu
+                             filter_fft=self.spectra['Gln'][a].filter_fft,
+                             remove_water_peak=self.spectra['Gln'][a].remove_water_peak,
+                             scale=1.0)
+          spec[a].adc_noise_mu = self.spectra['Gln'][a].adc_noise_mu # should be identical to Glu
+          spec[a].adc_noise_sigma = self.spectra['Gln'][a].adc_noise_sigma # should be identical to Glu
+          spec[a].set_adc(self.spectra['Gln'][a].adc(pad=False) + self.spectra['Glu'][a].adc(pad=False))
+      self.spectra['GlX'] = spec
+      del self.spectra['Gln']
+      del self.spectra['Glu']
+      self.metabolites.remove("Glu")
+      self.metabolites.remove("Gln")
+      self.metabolites.append("GlX")
+      self.metabolites.sort()
 
   def _load_fida(self, path_basis, second_call=False):
     if not os.path.join(path_basis,'basis_files'):

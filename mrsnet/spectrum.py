@@ -558,6 +558,11 @@ class Spectrum(object):
               ms = molecules.short_name(m)
               if ms in metabolites:
                 cs[ms] = float(js[ids[l]][m])
+            if "GlX" in metabolites:
+              for m in js[ids[l]].keys():
+                ms = molecules.short_name(m)
+                if ms == "Gln" or ms == "Glu":
+                  cs["GlX"] += float(js[ids[l]][m])
 
     spec = Spectrum(id=id,
                     source='dicom',

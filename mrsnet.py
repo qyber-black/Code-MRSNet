@@ -95,11 +95,15 @@ def main():
   p_benchmark.set_defaults(func=benchmark)
 
   args = parser.parse_args()
+  if hasattr(args,"metabolites"):
+    if "GlX" in args.metabolites and ("Gln" in args.metabolites or "Glu" in args.metabolites):
+      raise Exception("GlX with Gln or Glu is not possible")
   if hasattr(args,"noise_p"):
     if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0):
       args.noise_p = 0.0
       args.noise_sigma = 0.0
       args.noise_mu = 0.0
+
   if hasattr(args,"func"):
     args.func(args)
   else:

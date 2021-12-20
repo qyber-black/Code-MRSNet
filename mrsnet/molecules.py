@@ -14,6 +14,7 @@ NAMES = {
   'Choline-truncated': ['Cho'],
   'Glutamate': ['Glu'],
   'Glutamine': ['Gln'],
+  'GLutaX': ['GlX'],
   'Glutathione': ['gsh'],
   'Glycine': ['Gly'],
   'Lactate': ['Lac'],
