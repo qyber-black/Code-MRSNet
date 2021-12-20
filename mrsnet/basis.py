@@ -316,7 +316,7 @@ class Basis(object):
           shift = self.spectra[m][a].correct_b0()
           if shift is not None:
             b0_shift.append(shift)
-      if b0_shift is None:
+      if len(b0_shift) == 0:
         raise Exception("B0 correction for basis failed")
       # Shift all by mean
       b0_shift = np.mean(b0_shift)
