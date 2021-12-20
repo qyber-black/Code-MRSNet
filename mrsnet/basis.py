@@ -76,7 +76,7 @@ class Basis(object):
   def __init__(self, metabolites=[], source=None, manufacturer=None,
                omega=None, linewidth=None, pulse_sequence=None):
     self.metabolites = sorted(metabolites)
-    # FIXME: GLX
+    # FIXME: Check GLX pseudo-spectrum
     self.source = source
     self.manufacturer = manufacturer
     self.omega = omega
