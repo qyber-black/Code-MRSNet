@@ -11,10 +11,12 @@ import subprocess
 import json
 import numpy as np
 from scipy.io import loadmat
+from scipy.interpolate import interp1d
 from scipy import signal
 import matplotlib.pyplot as plt
 
 from . import molecules
+from .cfg import Cfg
 
 class Spectrum(object):
   # Spectrum is a class that contains information about one single spectrum
@@ -38,13 +40,12 @@ class Spectrum(object):
     self.dt = dt
     self.center_ppm = center_ppm
 
-    self.raw_adc = np.array(raw_adc)
-    if any(np.isnan(self.raw_adc)):
-      raise Exception('Raw adc contains nan values')
+    self.raw_adc = None
+    self.zero_pad = None
+    self.set_adc(raw_adc)
     self.scale = scale
 
     self.b0_ppm_shift = 0
-    self.zero_pad = 0
     self.remove_water_peak = remove_water_peak
     self.filter_fft = filter_fft
 
@@ -53,12 +54,17 @@ class Spectrum(object):
 
     self.fft_cache = None
 
+  def set_adc(self, adc):
+    if any(np.isnan(adc)):
+      raise Exception('ADC contains nan values')
+    self.raw_adc = adc
+    self.fft_cache = None
+    self.zero_pad = len(adc) * max(Cfg.val['fft_oversample']-1,0)
+
   def adc(self, pad=True):
     if pad:
-      adc = np.append(self.raw_adc * self.scale, np.zeros(self.zero_pad))
-    else:
-      adc = self.raw_adc * self.scale
-    return adc
+      return np.append(self.raw_adc * self.scale, np.zeros(self.zero_pad))
+    return self.raw_adc * self.scale
 
   def adc_len(self, pad=True):
     if pad:
@@ -74,30 +80,30 @@ class Spectrum(object):
   def correct_b0(self, ppm_shift=None):
     # Find reference peak and adjust nu range via ppm_shift
     if ppm_shift is None:
-      if self.b0_ppm_shift != 0:
-        self.b0_ppm_shift = 0
-      # No shift defined, find it
-      reference_peaks = []
-      if len(self.metabolites) > 0:
-        if 'NAA' in self.metabolites:
-          reference_peaks.append(molecules.NAA_REFERENCE)
-        if 'Cr' in self.metabolites:
-          reference_peaks.append(molecules.CR_REFERENCE)
-      if len(reference_peaks) == 0:
-        # no ref metabolites found, try them anyway.
-        reference_peaks = [molecules.NAA_REFERENCE, molecules.CR_REFERENCE]
-      ppm_shift = []
-      for reference_signal in reference_peaks:
-        peak = self._fft_peak_location(reference_signal, 0.25)
-        if peak:
-          ppm_shift.append(reference_signal - peak)
-      if len(ppm_shift) == 0:
-        return None
-      # Average over all reference peaks
-      ppm_shift = np.mean(np.array(ppm_shift, dtype=np.float64))
+      ppm_shift, _ = self._find_b0_shift()
     # Apply Shift
     self.b0_ppm_shift = ppm_shift
     return ppm_shift
+
+  def _find_b0_shift(self):
+    # Pick shift from largest peak for NAA, Cr reference
+    self.b0_ppm_shift = 0
+    reference_peaks = []
+    if len(self.metabolites) > 0:
+      if 'NAA' in self.metabolites:
+        reference_peaks.append(molecules.NAA_REFERENCE)
+      if 'Cr' in self.metabolites:
+        reference_peaks.append(molecules.CR_REFERENCE)
+    if len(reference_peaks) == 0:
+      return None, None
+    ppm_shift = None
+    peak_v = 0.0
+    for reference_signal in reference_peaks:
+      peak, val, _ = self._fft_peak_location(reference_signal, Cfg.val['b0_correct_ppm_range'])
+      if peak and val > peak_v:
+        ppm_shift = reference_signal - peak
+        peak_v = val
+    return ppm_shift, peak_v
 
   def _fft_peak_location(self, location, ppm_range, fft=None):
     nu = self.nu()
@@ -105,15 +111,15 @@ class Spectrum(object):
       fft_abs = -np.abs(self.fft())
     else:
       fft_abs = -np.abs(fft) # Avoids loop if already called from fft (for remove_water_peak)
-    median = np.median(fft_abs)
+    mean = np.mean(fft_abs)
     # finds the highest peak from location +- ppm_range
     peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:
       if abs(location - nu[idx]) < ppm_range:
-        return nu[idx]
-      if fft_abs[idx] < median:
-        return None
-    return None
+        return nu[idx], -fft_abs[idx], idx
+      if fft_abs[idx] < mean:
+        break
+    return None, None, None
 
   def fft(self):
     if self.fft_cache is None:
@@ -130,42 +136,24 @@ class Spectrum(object):
     return self.fft_cache
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
-    # Zero pads the time domain to fill the desired window with npts
-    recursion_limit = 500
+    # Interpolate oversampled (see Cfg and set_adc) spectrum to get fixed fft bins
+    # (avoids issues with b0 correction and simpler than zero padding)
     nu = self.nu()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
       raise Exception('Requested ppm rescale range out of range of nu of spectrum. Max:' + str(np.min(nu)) + ' Min: ' + str(np.max(nu)))
-    # Calculate initially how many points in that range
-    index = (nu >= high_ppm) & (nu <= low_ppm)
-    nu_pts = len(nu[index])
-    counter = 0
-    while nu_pts != npts:
-      if counter > recursion_limit:
-        raise Exception('Iteration limit hit!')
-      if counter > 100:
-        print('Counter is getting high... ' + str(self.zero_pad) + ' : ' + str(nu_pts) + ' aiming for: ' + str(npts))
-      # fine tune if that's not quite right
-      percent_range = len(nu) / float(nu_pts)
-      # random is added as there is sometimes some aliasing effects, this corrects it
-      self._update_zero_pad(self.zero_pad + int(round(np.round((npts - nu_pts) * percent_range) + np.random.random())))
-      if self.zero_pad < 0:
-        raise Exception('Real data is too large to be input into the network, would have to reduce the '
-                        'resolution of it. OR train a network with a higher resolution across the ppm range.')
-      nu = self.nu()
-      index = (nu >= high_ppm) & (nu <= low_ppm)
-      nu_pts = len(nu[index])
-      counter += 1
-    return self.fft()[index], nu[index]
 
-  def _update_zero_pad(self, new_zero_pad):
-    if new_zero_pad != self.zero_pad:
-      self.fft_cache = None
-      self.zero_pad = new_zero_pad
-      self.correct_b0(self.b0_ppm_shift)
+    fft = self.fft()
+    freq_step = (low_ppm-high_ppm)/(npts-1)
+    fp = interp1d(nu, np.angle(fft), "cubic")
+    fm = interp1d(nu, np.abs(fft), "cubic")
+    int_fft = np.multiply(fm(np.arange(high_ppm,low_ppm+freq_step,freq_step)),
+                          np.exp(1j*fp(np.arange(high_ppm,low_ppm+freq_step,freq_step))))
+
+    return int_fft, np.arange(high_ppm,low_ppm+freq_step,freq_step)
 
   def _fft_remove_water_peak(self, fft, ppm_range=0.6):
     # find the peak then set the range centered around it to the median signal of the fft
-    water_peak_loc = self._fft_peak_location(molecules.WATER_REFERENCE, 0.5, fft=fft)
+    water_peak_loc, _, _ = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'], fft=fft)
     if water_peak_loc is not None:
       nu = self.nu()
       abs_fft = np.abs(fft)
@@ -180,7 +168,7 @@ class Spectrum(object):
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
             if under_mean > 5:
-              return fft
+              break
     return fft
 
   def add_noise(self, mu=0, sigma=0):
@@ -388,6 +376,7 @@ class Spectrum(object):
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
+    # FIXME: lcmodel GABA spectrum - unusual?
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
     specs = []
@@ -452,8 +441,14 @@ class Spectrum(object):
               fft = []
               for ii in range(0, len(nums), 2):
                 fft.append(float(nums[ii]) + 1j*float(nums[ii + 1]))
-              fft = np.roll(fft,-metadata["BASIS"]["ISHIFT"])
-              adc = np.fft.ifft(np.array(fft,dtype=np.complex64))
+              ishift = -metadata["BASIS"]["ISHIFT"]
+              fft = np.roll(fft,ishift)
+              if ishift > 0:
+                fft[:ishift] = 0.0
+              elif ishift < 0:
+                fft[fft.shape[0]-ishift:] = 0.0
+              fft_scale = metadata["BASIS"]["TRAMP"]/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
+              adc = np.fft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
                 center_ppm = -metadata["NMUSED"]["PPMSEP"]
               else:
@@ -467,8 +462,8 @@ class Spectrum(object):
                                     linewidth=1,
                                     dt=metadata["BASIS1"]['BADELT'],
                                     center_ppm=center_ppm,
-                                    raw_adc = adc,
-                                    scale=metadata["BASIS"]["TRAMP"]/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])))
+                                    raw_adc=adc,
+                                    scale=1.0))
           elif area != "":
             raise IOError(f"Unknown section in LCModel basis file {area}")
           if line[1:] == "END":

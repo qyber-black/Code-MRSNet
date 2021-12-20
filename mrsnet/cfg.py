@@ -17,6 +17,9 @@ class Cfg:
     'path_model': None,
     'path_benchmark': None,
     'figsize': (26.67,15.0),
+    'fft_oversample': 2,
+    'b0_correct_ppm_range': 0.25,
+    'water_peak_ppm_range': 0.5,
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]

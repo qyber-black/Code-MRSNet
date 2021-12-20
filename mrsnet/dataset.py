@@ -7,7 +7,6 @@
 
 import os
 import math
-import copy
 import sobol_seq
 import numpy as np
 import joblib
@@ -15,6 +14,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from itertools import combinations
 
+from .spectrum import Spectrum
 from .grid import Grid
 from .cfg import Cfg
 
@@ -56,17 +56,18 @@ class Dataset(object):
             concs_ok = False
     self.metabolites.sort()
     for id in sorted(specs.keys()):
-      b0_shift = []
-      # b0 correction as average over all acquisitions and peaks
+      # B0 correction per spectrum
+      shifts = []
       for a in specs[id].keys():
-        if 'NAA' in specs[id][a].metabolites or 'Cr' in self.specs[id][a].metabolites:
-          shift = specs[id][a].correct_b0()
-          if shift is not None:
-            b0_shift.append(shift)
-      if len(b0_shift) != 0:
-        b0_shift = np.mean(np.array(b0_shift, dtype=np.float64))
+        shift = specs[id][a].correct_b0()
+        if shift is not None:
+          shifts.append(shift)
+      # Shift spectra by mean b0 shift, if we have one
+      if len(shifts) > 0:
+        mean = np.mean(shifts)
         for a in specs[id].keys():
-          specs[id][a].correct_b0(ppm_shift=b0_shift)
+          specs[id][a].correct_b0(mean)
+      # Add to dataset
       self.spectra.append(specs[id])
       if concs_ok:
         self.concentrations.append(concs[id])
@@ -236,25 +237,33 @@ class Dataset(object):
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
               raise Exception("Difference spectrum without edit_off or edit_on")
-            diff = copy.deepcopy(self.spectra[idx]['edit_off'])
-            diff.fft_cache = None
-            # https: // www.ncbi.nlm.nih.gov / pmc / articles / PMC3825742 /
-            # diff = s1 * on - s2 * off
-            if np.abs(self.spectra[idx]['edit_on'].scale - self.spectra[idx]['edit_off'].scale) < 1e-8:
-              diff.scale = (self.spectra[idx]['edit_on'].scale + self.spectra[idx]['edit_off'].scale) / 2.0
-              diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
-            elif self.spectra[idx]['edit_on'].scale > self.spectra[idx]['edit_off'].scale:
-              # diff = s2 * (s1/s2 * on - off)
-              diff.scale = self.spectra[idx]['edit_off'].scale
-              s12 = self.spectra[idx]['edit_on'].scale / self.spectra[idx]['edit_off'].scale
-              diff.raw_adc = s12 * self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
-            else:
-              # diff = s1 * (on - s2/s1 * off)
-              diff.scale = self.spectra[idx]['edit_on'].scale
-              s21 = self.spectra[idx]['edit_off'].scale / self.spectra[idx]['edit_on'].scale
-              diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - s21 * self.spectra[idx]['edit_off'].raw_adc
-            diff.acquisition = 'difference'
+            diff = Spectrum(self.spectra[idx]['edit_on'].id+":ON_-_OFF:"+self.spectra[idx]['edit_off'].id,
+                            source=self.spectra[idx]['edit_off'].source,
+                            metabolites=self.spectra[idx]['edit_off'].metabolites,
+                            pulse_sequence=self.spectra[idx]['edit_off'].pulse_sequence,
+                            acquisition="difference",
+                            omega=self.spectra[idx]['edit_off'].omega,
+                            linewidth=self.spectra[idx]['edit_off'].linewidth,
+                            dt=self.spectra[idx]['edit_off'].dt,
+                            center_ppm=self.spectra[idx]['edit_off'].center_ppm,
+                            filter_fft=self.spectra[idx]['edit_off'].filter_fft,
+                            remove_water_peak=self.spectra[idx]['edit_off'].remove_water_peak,
+                            scale=1.0)
+            diff.adc_noise_mu = self.spectra[idx]['edit_off'].adc_noise_mu
+            diff.adc_noise_sigma = self.spectra[idx]['edit_off'].adc_noise_sigma
+            diff.set_adc(self.spectra[idx]['edit_on'].adc(pad=False) - self.spectra[idx]['edit_off'].adc(pad=False))
             self.spectra[idx]['difference'] = diff
+          # B0 correction per spectrum
+          shifts = []
+          for a in self.spectra[idx]:
+            shift = self.spectra[idx][a].correct_b0()
+            if shift is not None:
+              shifts.append(shift)
+          # Shift spectra by mean b0 shift if we have one
+          if len(shifts) > 0:
+            shift_mean = np.mean(shifts)
+            for a in self.spectra[idx]:
+              self.spectra[idx][a].correct_b0(shift_mean)
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
@@ -351,7 +360,10 @@ class Dataset(object):
         nl="\n"
         fft = np.ndarray((len(acquisitions),self.n_fft_pts),dtype=np.complex64)
         a_idx = 0
+        a_norm = None
         for a in acquisitions:
+          if a == "edit_off":
+            a_norm = a_idx
           fft[a_idx,:], _ = self.spectra[s][a].rescale_fft(high_ppm=self.high_ppm,
                                                            low_ppm=self.low_ppm,
                                                            npts=self.n_fft_pts)
@@ -359,7 +371,10 @@ class Dataset(object):
         if normalise:
           m = np.abs(fft)
           p = np.angle(fft)
-          no = np.max(m)
+          if a_norm == None:
+            no = np.max(m)
+          else:
+            no = np.max(m[a_norm,:])
           m /= no
           new_fft = np.multiply(m, np.exp(1j*p))
           diff = np.max(np.abs(np.abs(new_fft)*no - np.abs(fft)))
@@ -436,13 +451,19 @@ class Dataset(object):
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
+    a_norm = None
     for a in acquisitions:
+      if a == "edit_off":
+        a_norm = a_idx
       fft[a_idx,:], _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
       a_idx += 1
     if normalise:
       m = np.abs(fft)
       p = np.angle(fft)
-      m /= np.max(m)
+      if a_norm == None:
+        m /= np.max(m)
+      else:
+        m /= np.max(m[a_norm,:])
       fft = np.multiply(m, np.exp(1j*p))
     for a_idx in range(0,fft.shape[0]):
       d_idx = 0
