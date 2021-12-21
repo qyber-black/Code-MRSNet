@@ -1,12 +1,13 @@
-#/usr/bin/env python3
-#
+#!/usr/bin/env python3
 # simulators/pygamma/pygamma_simulator.py - MRSNet - basis simulation with pygamma
 #
-# Pulse sequence simulation code has been taken from VeSPA and implemented here with minor modifications.
-# https://scion.duhs.duke.edu/vespa/
+# SPDX-FileCopyrightText: Copyright (c) 2010, Brian J. Soher
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: BSD-3-Clause
 #
-# Modifications by Max Chandler, PhD student at Cardiff University, 2019
-#                  Frank C Langbein <frank@langbein.org>, Cardiff University, 2020-2021
+# Pulse sequence simulation code has been taken from VeSPA and implemented here with minor modifications.
+# https://github.com/vespa-mrs/vespa/
 
 from __future__ import division
 

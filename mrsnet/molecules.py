@@ -1,9 +1,8 @@
 # mrsnet/metabolites.py - MRSNet - metabolites
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 # Molecule names understood by MRNet; mapping long-name to range of short-names.
 # Preferred short name is the first in the array, e.g. for myo-inositol 'MyI' will be chosen over 'mi'

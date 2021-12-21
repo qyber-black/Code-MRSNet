@@ -1,8 +1,7 @@
 # mrsnet/getfolder.py - MRSNet - get unique sub-folder for data storage
 #
+# SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import time

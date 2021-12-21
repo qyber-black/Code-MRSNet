@@ -1,5 +1,9 @@
 # MRSNet
 
+> SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University  
+> SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University  
+> SPDX-License-Identifier: AGPL-3.0-or-later  
+
 MRSNet is aimed at MR spectral quantification using convolutional neural
 networks. It is mainly aimed at MEGAPRESS spectra. It also provides methods to
 generate datasets from loaded LCModel ".BASIS" files or simulated by
@@ -186,12 +190,10 @@ Note, loading of non-Siemens DICOM files has not been tested.
 
 ## Versioning
 
-We use [SemVer](http://semver.org/) for versioning.
-
 Released versions:
 * v1.0 - first release, tensorflow 1 and python2.
-* v1.1 - update to python3 and tensorflow 2; code, api and ui cleanups; extended
-  dataset generation and model selection.
+* v1.1-dev1 - update to python3 and tensorflow 2; code, api and ui cleanups.
+* v1.1-dev2 - updates to spectra processing; extended dataset generation and model selection.
 
 ## Locations
 
@@ -224,21 +226,3 @@ M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 1.0. 
 [[10.6084/m9.figshare.9824417.v1]](https://doi.org/10.6084/m9.figshare.9824417.v1)
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/MaxChandler/MRSNet)
-
-## License
-
-Copyright (C) 2019, M Chandler.
-Copyright (C) 2020-2021, FC Langbein.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.

@@ -1,9 +1,8 @@
 # mrsnet/spectrum.py - MRSNet - individual spectrum
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import random
@@ -361,7 +360,7 @@ class Spectrum(object):
             acq = 'edit_on'
           else:
             raise Exception('More than 2 mx objects for megapress? Something is wrong here.')
-        specs.append(Spectrum(id=filename.split("/")[-2:], source='pygamma',
+        specs.append(Spectrum(id=filename, source='pygamma',
                               metabolites=[molecules.short_name(metabolite)],
                               pulse_sequence=pulse_sequence,
                               acquisition=acq,

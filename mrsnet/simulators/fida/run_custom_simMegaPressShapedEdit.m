@@ -1,5 +1,9 @@
 % run_simMegaPressShapedEdit.m
-% Jamie Near, McGill University 2014.
+%
+% SPDX-FileCopyrightText: Jamie Near, McGill University 2014.
+% SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+% SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+% SPDX-License-Identifier: BSD-3-Clause
 %
 % USAGE:
 % This script is run simply by editing the input parameters and then
