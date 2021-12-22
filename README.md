@@ -1,5 +1,9 @@
 # MRSNet
 
+> SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University  
+> SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University  
+> SPDX-License-Identifier: AGPL-3.0-or-later  
+
 MRSNet is aimed at MR spectral quantification using convolutional neural
 networks. It is mainly aimed at MEGAPRESS spectra. It also provides methods to
 generate datasets from loaded LCModel ".BASIS" files or simulated by
@@ -67,6 +71,7 @@ sub-commands available are:
 * basis:              Generate basis, if it does not exist.
 * simulate:           Generate simulated spectra dataset.
 * generate_datasets:  Generate standard datasets.
+* compare:            Compare spectra.
 * train:              Train model on dataset.
 * select:             Model selection on dataset.
 * quantify:           Quantify spectra in dicoms.
@@ -105,7 +110,7 @@ for development and not the general operation.
 
 ## Simulating Spectra
 
-To generate a simualted spectra dataset with the standard set of metabolites use
+To generate a simulated spectra dataset with the standard set of metabolites use
 ```
 ./mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10
 ```
@@ -137,7 +142,8 @@ To run the benchmark dataset on a model run
 ```
 where MODEL is the path to the trained tensorflow model in the `data/model-dist`
 or `data/model` folders (the path indicates the parameters used for the model
-architecture and the training/testing data).
+architecture and the training/testing data). Results are stored in the model
+folder.
 
 ## Quantifying your own MEGA-PRESS Spectra
 
@@ -147,7 +153,10 @@ simulate) is done via
 ./mrsnet.py quantify -d DATASET -m MODEL
 ```
 DATASET is either a joblib file or a folder with dicom spectra. The MODEL is the
-folder with the trained tensorflow model.
+folder with the trained tensorflow model. Results are stored in the data folder
+specified, as csv file. If there is a `concentrations.json` file at the top-level
+in the data folder, this is assumed to contain the ground truth and quantification
+results are compared to it.
 
 The code will attempt to analyse all of the spectra contained in the provided
 directory. There are a couple of caveats to enable this to work correctly:
@@ -155,7 +164,8 @@ directory. There are a couple of caveats to enable this to work correctly:
 1. All three acquisitions for each MEGA-PRESS scan must be present (edit on,
    edit off, difference).
 2. Spectra that belong to the same scan must have a unique ID of your choice
-   added to their filename (e.g. SCAN_001).
+   added to their filename (e.g. SCAN_001 or be in separate folders where the
+   folder becomes the ID).
 3. Spectra of the different acquisition types must be labelled, by adding either
    "EDIT_OFF", "EDIT_ON" or "DIFF" to anywhere after the unique ID from 2 in
    their filename.
@@ -169,17 +179,21 @@ SCAN_001_EDIT_OFF.ima
 SCAN_001_EDIT_ON.ima
 SCAN_001_DIFF.ima
 ```
+Also see the folders in the benchmark dataset (`data/benchmark`), which you
+can use as an example structure where folders separate the spectra (e.g.
+`data/benchmark/E1/MEGA_Combi_WS_ON`; note that the `concentrations.json`
+file is not at the top-level for each of the spectra collections, so would
+not be used if you run quantify on it; it is found separately by the benchmark
+sub-command only).
 
 Note, loading of non-Siemens DICOM files has not been tested.
 
 ## Versioning
 
-We use [SemVer](http://semver.org/) for versioning.
-
 Released versions:
 * v1.0 - first release, tensorflow 1 and python2.
-* v1.1 - update to python3 and tensorflow 2; code, api and ui cleanups; extended
-  dataset generation and model selection.
+* v1.1-dev1 - update to python3 and tensorflow 2; code, api and ui cleanups.
+* v1.1-dev2 - updates to spectra processing; extended dataset generation and model selection.
 
 ## Locations
 
@@ -212,21 +226,3 @@ M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 1.0. 
 [[10.6084/m9.figshare.9824417.v1]](https://doi.org/10.6084/m9.figshare.9824417.v1)
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/MaxChandler/MRSNet)
-
-## License
-
-Copyright (C) 2019, M Chandler.
-Copyright (C) 2020-2021, FC Langbein.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.

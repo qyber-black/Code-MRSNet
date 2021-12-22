@@ -1,13 +1,11 @@
 # mrsnet/dataset.py - MRSNet - spectra dataset
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import math
-import copy
 import sobol_seq
 import numpy as np
 import joblib
@@ -15,6 +13,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from itertools import combinations
 
+from .spectrum import Spectrum
 from .grid import Grid
 from .cfg import Cfg
 
@@ -39,29 +38,35 @@ class Dataset(object):
     specs = {}
     concs = {}
     concs_ok = True
+    if self.metabolites == None:
+      self.metabolites = []
     for dir, subdirs, files in os.walk(folder):
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
           s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites)
+          for m in s.metabolites:
+            if m not in self.metabolites:
+              self.metabolites.append(m)
           if s.id not in specs:
             specs[s.id] = {}
           specs[s.id][s.acquisition] = s
           concs[s.id] = c
           if len(c) == 0:
             concs_ok = False
+    self.metabolites.sort()
     for id in sorted(specs.keys()):
-      b0_shift = []
-      # b0 correction as average over all acquisitions and peaks
+      # B0 correction per spectrum
+      shifts = []
       for a in specs[id].keys():
-        if 'NAA' in specs[id][a].metabolites or 'Cr' in self.specs[id][a].metabolites:
-          shift = specs[id][a].correct_b0()
-          if shift is not None:
-            b0_shift.append(shift)
-      if len(b0_shift) == 0:
-        raise Exception("B0 correction failed")
-      b0_shift = np.mean(np.array(b0_shift, dtype=np.float64))
-      for a in specs[id].keys():
-        specs[id][a].correct_b0(ppm_shift=b0_shift)
+        shift = specs[id][a].correct_b0()
+        if shift is not None:
+          shifts.append(shift)
+      # Shift spectra by mean b0 shift, if we have one
+      if len(shifts) > 0:
+        mean = np.mean(shifts)
+        for a in specs[id].keys():
+          specs[id][a].correct_b0(mean)
+      # Add to dataset
       self.spectra.append(specs[id])
       if concs_ok:
         self.concentrations.append(concs[id])
@@ -71,16 +76,16 @@ class Dataset(object):
     # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
     # Does not add noise, but only generates clean combined ADC signal.
     if num <= 0:
-      raise Exception('n_samples must be greater than 0, not %d!' % num)
+      raise Exception(f"n_samples must be greater than 0, not {num}!")
     if self.metabolites == None:
       self.metabolites = basis.metabolites
     else:
       for m in basis.metabolites:
         if m not in self.metabolites:
-          raise Exception("Basis metabolite not in dataset: %s" % m)
+          raise Exception(f"Basis metabolite not in dataset: {m}")
       for m in self.metabolites:
         if m not in basis.metabolites:
-          raise Exception("Dataset metabolite not in basis: %s" % m)
+          raise Exception(f"Dataset metabolite not in basis: {m}")
 
     if self.pulse_sequence == None:
       self.pulse_sequence = basis.pulse_sequence
@@ -91,9 +96,9 @@ class Dataset(object):
       for a in basis.spectra[s].keys():
         nu = basis.spectra[s][a].nu()
         if np.min(nu) > self.high_ppm:
-          raise Exception('Spectra do not reach the required max frequency axis (%.2f) for export: %.2f' % (np.min(spectra.nu()), self.high_ppm))
+          raise Exception(f"Spectra do not reach the required max frequency axis ({np.min(spectra.nu()):.2f}) for export: {self.high_ppm:.2f}")
         elif np.max(nu) < self.low_ppm:
-          raise Exception('Spectra do not reach the required min frequency axis (%.2f) for export: %.2f' % (np.max(spectra.nu()), self.low_ppm))
+          raise Exception(f"Spectra do not reach the required min frequency axis ({np.max(spectra.nu()):.2f}) for export: {self.low_ppm:.2f}")
 
     n0 = num // len(samplers)
     n1 = num % len(samplers)
@@ -103,7 +108,7 @@ class Dataset(object):
       n = n0 + (1 if n1 > 0 else 0)
       n1 -= 1
       if verbose > 0:
-        print("Generating %d concentrations with %s sampling" % (n,sampler))
+        print(f"Generating {n} concentrations with {sampler} sampling")
       if sampler == 'random':
         # Random uniform concentrations
         concentrations = np.random.ranf((n, n_metabolites))
@@ -125,9 +130,9 @@ class Dataset(object):
           combs = list(combinations(list(range(0,n_metabolites)), n_excited))
           n_per_group = n_per_combs // len(combs)
           if verbose > 0:
-            print("  For %d excited: %d samples per %d combinations" % (n_excited, n_per_group, len(combs)))
+            print(f"  For {n_excited} excited: {n_per_group} samples per {len(combs)} combinations")
           if n_per_group < 1:
-            raise Exception('Insufficient samples for *-zeros with %d groups' % len(groups))
+            raise Exception(f"Insufficient samples for *-zeros with {len(groups)} groups")
           for comb in combs:
             groups.append(comb)
             groups_n.append(n_per_group)
@@ -153,7 +158,7 @@ class Dataset(object):
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
             skip += n_g # Get differnt samples for the groups
           else:
-            raise Exception('Unknown concentration generation method: ' + sampler)
+            raise Exception(f"Unknown concentration generation method: {sampler}")
           idx += n_g
       elif sampler[-4:] == '-one':
         # Set one concentration to one
@@ -161,9 +166,9 @@ class Dataset(object):
         combs = list(combinations(list(range(0,n_metabolites)), n_metabolites-1))
         n_per_group = n // len(combs)
         if verbose > 0:
-          print("  %d samples for %d combinations with one 1.0" % (n_per_group, len(combs)))
+          print(f"  {n_per_group} samples for {len(combs)} combinations with one 1.0")
         if n_per_group < 1:
-          raise Exception('Insufficient samples for *-one with %d combinations' % len(combs))
+          raise Exception(f"Insufficient samples for *-one with {len(combs)} combinations")
         n_total = 0
         groups = []
         groups_n = []
@@ -213,8 +218,7 @@ class Dataset(object):
       raise Exception("Noise added twice to dataset")
     if noise_p > 0.0:
       if verbose > 0:
-        print("Adding noise Normal(mu=%f,sigma=%f) with probability %f to time signal"
-              % (noise_mu,noise_sigma,noise_p))
+        print(f"Adding noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
       self.noise_added = True
       num = len(self.spectra)
       n_add = np.random.uniform(0.0,1.0,num)
@@ -232,30 +236,41 @@ class Dataset(object):
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
               raise Exception("Difference spectrum without edit_off or edit_on")
-            diff = copy.deepcopy(self.spectra[idx]['edit_off'])
-            diff.fft_cache = None
-            # https: // www.ncbi.nlm.nih.gov / pmc / articles / PMC3825742 /
-            # diff = s1 * on - s2 * off
-            if np.abs(self.spectra[idx]['edit_on'].scale - self.spectra[idx]['edit_off'].scale) < 1e-8:
-              diff.scale = (self.spectra[idx]['edit_on'].scale + self.spectra[idx]['edit_off'].scale) / 2.0
-              diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
-            elif self.spectra[idx]['edit_on'].scale > self.spectra[idx]['edit_off'].scale:
-              # diff = s2 * (s1/s2 * on - off)
-              diff.scale = self.spectra[idx]['edit_off'].scale
-              s12 = self.spectra[idx]['edit_on'].scale / self.spectra[idx]['edit_off'].scale
-              diff.raw_adc = s12 * self.spectra[idx]['edit_on'].raw_adc - self.spectra[idx]['edit_off'].raw_adc
-            else:
-              # diff = s1 * ( on - s2/s1 * off)
-              diff.scale = self.spectra[idx]['edit_on'].scale
-              s21 = self.spectra[idx]['edit_off'].scale / self.spectra[idx]['edit_on'].scale
-              diff.raw_adc = self.spectra[idx]['edit_on'].raw_adc - s21 * self.spectra[idx]['edit_off'].raw_adc
-            diff.acquisition = 'difference'
+            diff = Spectrum(self.spectra[idx]['edit_on'].id+":ON_-_OFF:"+self.spectra[idx]['edit_off'].id,
+                            source=self.spectra[idx]['edit_off'].source,
+                            metabolites=self.spectra[idx]['edit_off'].metabolites,
+                            pulse_sequence=self.spectra[idx]['edit_off'].pulse_sequence,
+                            acquisition="difference",
+                            omega=self.spectra[idx]['edit_off'].omega,
+                            linewidth=self.spectra[idx]['edit_off'].linewidth,
+                            dt=self.spectra[idx]['edit_off'].dt,
+                            center_ppm=self.spectra[idx]['edit_off'].center_ppm,
+                            filter_fft=self.spectra[idx]['edit_off'].filter_fft,
+                            remove_water_peak=self.spectra[idx]['edit_off'].remove_water_peak,
+                            scale=1.0)
+            diff.adc_noise_mu = self.spectra[idx]['edit_off'].adc_noise_mu
+            diff.adc_noise_sigma = self.spectra[idx]['edit_off'].adc_noise_sigma
+            diff.set_adc(self.spectra[idx]['edit_on'].adc(pad=False) - self.spectra[idx]['edit_off'].adc(pad=False))
             self.spectra[idx]['difference'] = diff
+          # B0 correction per spectrum
+          shifts = []
+          for a in self.spectra[idx]:
+            shift = self.spectra[idx][a].correct_b0()
+            if shift is not None:
+              shifts.append(shift)
+          # Shift spectra by mean b0 shift if we have one
+          if len(shifts) > 0:
+            shift_mean = np.mean(shifts)
+            for a in self.spectra[idx]:
+              self.spectra[idx][a].correct_b0(shift_mean)
       if verbose > 1:
-        print("  Added noise to %d of %d spectra" % (n_cnt,num))
+        print(f"  Added noise to {n_cnt} of {num} spectra")
 
   def save(self, path):
     from .getfolder import get_folder
+    for s in self.spectra:
+      for a in s:
+        s[a].fft_cache = None
     folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
     joblib.dump(self, os.path.join(folder, "spectra.joblib"))
     return folder
@@ -274,10 +289,8 @@ class Dataset(object):
         n_row += 1
       fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
       axes = axes.flatten()
-      plt.suptitle('Concentrations %s of %s; %d spectra; %f - %f ppm @ %d pts'
-                   % ('' if norm == 'none' else ("("+norm+" normalised)"),
-                      self.name, len(self.spectra), self.low_ppm,
-                      self.high_ppm, self.n_fft_pts))
+      norm_str = "" if norm == 'none' else ("("+norm+" normalised)"),
+      plt.suptitle(f"Concentrations {norm_str} of {self.name}; {len(self.spectra)} spectra; {self.low_ppm} - {self.high_ppm} ppm @ {self.n_fft_pts} pts")
       cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
       k = 0
       for c in self.concentrations:
@@ -303,7 +316,7 @@ class Dataset(object):
 
     if len(self.spectra) > 0:
       if verbose > 0:
-        print("Converting input spectra to tensor")
+        print("Converting spectra to tensor")
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
@@ -314,7 +327,7 @@ class Dataset(object):
       d_inp = np.ndarray((0,0))
     if export_concentrations and len(self.concentrations) > 0:
       if verbose > 0:
-        print("Converting output concentrations to tensor")
+        print("Converting concentrations to tensor")
       d_out = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
                     metabolites, norm)
                 for c in tqdm(self.concentrations, disable=(verbose<1)))
@@ -346,7 +359,10 @@ class Dataset(object):
         nl="\n"
         fft = np.ndarray((len(acquisitions),self.n_fft_pts),dtype=np.complex64)
         a_idx = 0
+        a_norm = None
         for a in acquisitions:
+          if a == "edit_off":
+            a_norm = a_idx
           fft[a_idx,:], _ = self.spectra[s][a].rescale_fft(high_ppm=self.high_ppm,
                                                            low_ppm=self.low_ppm,
                                                            npts=self.n_fft_pts)
@@ -354,7 +370,10 @@ class Dataset(object):
         if normalise:
           m = np.abs(fft)
           p = np.angle(fft)
-          no = np.max(m)
+          if a_norm == None:
+            no = np.max(m)
+          else:
+            no = np.max(m[a_norm,:])
           m /= no
           new_fft = np.multiply(m, np.exp(1j*p))
           diff = np.max(np.abs(np.abs(new_fft)*no - np.abs(fft)))
@@ -431,13 +450,19 @@ class Dataset(object):
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
+    a_norm = None
     for a in acquisitions:
+      if a == "edit_off":
+        a_norm = a_idx
       fft[a_idx,:], _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
       a_idx += 1
     if normalise:
       m = np.abs(fft)
       p = np.angle(fft)
-      m /= np.max(m)
+      if a_norm == None:
+        m /= np.max(m)
+      else:
+        m /= np.max(m[a_norm,:])
       fft = np.multiply(m, np.exp(1j*p))
     for a_idx in range(0,fft.shape[0]):
       d_idx = 0
@@ -453,7 +478,7 @@ class Dataset(object):
           if normalise:
             inp[a_idx,d_idx,:] = (inp[a_idx,d_idx,:]/np.pi+1.0)/2.0 # Normalise to (0..1]
         else:
-          raise Exception("Unknown datatype %s" % d)
+          raise Exception(f"Unknown datatype {d}")
         d_idx += 1
     return inp
 
@@ -466,29 +491,29 @@ class Dataset(object):
     elif norm == 'sum':
       out /= np.sum(out)
     elif norm != 'none':
-      raise Exception("Unknown norm %s" % norm)
+      raise Exception(f"Unknown norm {norm}")
     return out
 
 Collections = {
   'single_source-sampler-noise': Grid({
-    'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
-    'source': ['lcmodel', 'fid-a', 'pygamma'],
+    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
+    'source': ['lcmodel','fid-a','pygamma'],
     'manufacturer': ['siemens'],
     'omega': [123.23],
     'linewidth': [1.0],
     'pulse_sequence': ['megapress'],
     'num': [10000],
-    'sample': ['random', 'sobol', 'dirichlet'],
+    'sample': ['random','sobol','dirichlet'],
     'noise_p': [1.0],
     'noise_sigma': [0.05,0.1],
     'noise_mu': [0.0]
   }),
   'multi_source-linewidths': Grid({
-    'metabolites': [['Cr', 'GABA', 'Gln', 'Glu', 'NAA']],
-    'source': [['lcmodel', 'fid-a', 'pygamma']],
+    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
+    'source': [['fid-a','lcmodel','pygamma'],['fid-a','pygamma']],
     'manufacturer': ['siemens'],
     'omega': [123.23],
-    'linewidth': [[0.75, 1.0, 1.25]],
+    'linewidth': [1.0,[0.75,1.0,1.25]],
     'pulse_sequence': ['megapress'],
     'num': [30000],
     'sample': ['sobol'],

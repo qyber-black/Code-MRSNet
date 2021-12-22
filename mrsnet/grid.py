@@ -1,8 +1,7 @@
 # mrsnet/grid.py - MRSNet - key-value grid
 #
+# SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import numpy as np
 
@@ -43,5 +42,6 @@ class GridIterator:
       l -= 1
       if l < 0:
         self._max_level = -1
+        break
       self._index[l] += 1
     return res

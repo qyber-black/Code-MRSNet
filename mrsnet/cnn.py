@@ -1,9 +1,8 @@
 # mrsnet/cnn.py - MRSNet - CNN models
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import csv
@@ -49,7 +48,7 @@ class CNN:
       self.cnn.add(Conv2D(filter, c, strides=(1,s)))
     if dropout == 0.0:
       self.cnn.add(BatchNormalization())
-    self.cnn.add(Activation('relu'))
+    self.cnn.add(ReLU())
     if dropout > 0.0:
       self.cnn.add(Dropout(dropout))
     if s < 0:
@@ -59,7 +58,7 @@ class CNN:
     self.cnn = Sequential(name=self.model)
     vals = self.model.split("_")
     if vals[0] != 'cnn':
-      raise Exception("Unknown model %s" % vals[0])
+      raise Exception(f"Unknown model {vals[0]}")
     if vals[1] == 'small' or vals[1] == 'medium' or vals[1] == 'large':
       # cnn_[small,medium,large]_[softmax,sigmoid][_pool]
       if vals[1] == 'small':
@@ -76,7 +75,7 @@ class CNN:
         freq_convolution3 = 7
       freq_convolution4 = 3
       dropout1 = 0.0
-      dropout2 = 0.0 # 0.3?
+      dropout2 = 0.3
       output_act = vals[2]
       if vals[-1] == 'pool':
         strides1 = -2
@@ -117,7 +116,7 @@ class CNN:
         self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
 
     self.cnn.add(Flatten())
-    self.cnn.add(Dense(dense))
+    self.cnn.add(Dense(dense,activation="sigmoid"))
     if dropout2 > 0.0:
       self.cnn.add(Dropout(dropout2))
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
@@ -136,7 +135,7 @@ class CNN:
       os.makedirs(folder)
 
     if verbose > 0:
-      print("# Train CNN %s" % str(self))
+      print(f"# Train CNN {str(self)}")
 
     d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_out, dtype=tf.float32)
@@ -201,8 +200,8 @@ class CNN:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
       print("      Train          Validation")
-      print('MSE:  %.12f %.12f' % (d_score[0], v_score[0]))
-      print('MAE:  %.12f %.12f' % (d_score[1], v_score[1]))
+      print(f"MSE:  {d_score[0]:.12f} {v_score[0]:.12f}")
+      print(f"MAE:  {d_score[1]:.12f} {v_score[1]:.12f}")
     self._save_results(folder, history.history, d_score, v_score, no_show, image_dpi, screen_dpi)
 
     d_res={"MSE":d_score[0],"MAE":d_score[1]}
@@ -255,7 +254,7 @@ class CNN:
       writer.writerows(zip(*[history[key] for key in keys]))
     # Plot
     fig, axes = plt.subplots(1, 3)
-    fig.suptitle("%s Training Results" % self.model)
+    fig.suptitle(f"{self.model} Training Results")
     for key in keys:
       if 'mse' in key or 'loss' in key:
         axes[0].semilogy(history[key], label=key)

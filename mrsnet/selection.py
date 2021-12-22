@@ -1,8 +1,7 @@
 # mrsnet/selection.py - MRSNet - model selection
 #
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import subprocess
@@ -11,6 +10,7 @@ import json
 import csv
 import numpy as np
 import sobol_seq
+import random
 import matplotlib.pyplot as plt
 
 from .grid import Grid
@@ -25,7 +25,7 @@ class Select:
       name = os.path.join(*id[-9:-1])
       self.ds_rest = id[-1]
       if verbose > 0:
-        print("# Loading dataset %s : %s" % (name,self.ds_rest))
+        print(f"# Loading dataset {name} : {self.ds_rest}")
       ds = Dataset.load(dataset)
       self.pulse_sequence = ds.pulse_sequence
     else:
@@ -96,7 +96,7 @@ class Select:
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     else:
-      raise Exception("Unknown model %s" % na['model'])
+      raise Exception(f"Unknown model {na['model']}")
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
     fold=""
     if self.validate > 1.0:
@@ -112,7 +112,7 @@ class Select:
     elif self.validate == 0.0:
       trainer = "NoValidation"
     else:
-      raise Exception("Unknown validation %f" % args.validate)
+      raise Exception(f"Unknown validation {args.validate}")
     # Check if sane, delete otherwise
     base_path = os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
                              train_model)
@@ -141,10 +141,10 @@ class Select:
               selected_id = repeat_id
           else:
             if self.verbose > 0:
-              print("# WARNING: %s - broken/incomplete model" % fn)
+              print(f"# WARNING: {fn} - broken/incomplete model")
         else:
           if self.verbose > 0:
-            print("# WARNING: %s - this file should not be there" % ffn)
+            print(f"# WARNING: {ffn} - this file should not be there")
     if selected_id < 0:
       selected_id = 1
     return os.path.join(base_path,trainer+"-"+str(selected_id)), fold
@@ -162,11 +162,11 @@ class Select:
     remote_run = []
     for t in self.tasks:
       if not load_only and self.verbose > 0:
-        print("# Task %d / %d" % (counter,len(self.tasks)))
+        print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
       if os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")):
         if self.verbose > 0:
-          print("Exists %s:%s" % (t['model_path'],t['fold']))
+          print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
         if val_p is not None:
           self.key_vals.append(t['args'])
@@ -191,7 +191,7 @@ class Select:
         elif t['args']['model'][0:4] == 'cnn_':
           model_str = t['args']['model']
         else:
-          raise Exception("Unknown model string %s" % t['args']['model'])
+          raise Exception(f"Unknown model string {t['args']['model']}")
         if self.remote == 'local':
           self._run(t['args']['norm'],t['args']['acquisitions'],t['args']['datatype'],
                     model_str,t['args']['batch_size'])
@@ -222,7 +222,7 @@ class Select:
         all_done = True
         for k in range(0,len(remote_run)):
           if remote_run[k][0] != 'complete':
-            print("## Job %d / %d" % (k+1,len(remote_run)))
+            print(f"## Job {k+1} / {len(remote_run)}")
             status = self._run_remote(k,remote_run)
             if status == 'done':
               val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
@@ -238,7 +238,7 @@ class Select:
         running = len([l for l in remote_run if l[0] == 'run'])
         waiting = len([l for l in remote_run if l[0] == 'wait'])
         if self.verbose > 0:
-          print("  %d running; %d waiting" % (running,waiting))
+          print(f"  {running} running; {waiting} waiting")
         if running >= self.remote_tasks or (waiting < 1 and running > 0):
           time.sleep(self.remote_wait*60)
 
@@ -322,7 +322,7 @@ class Select:
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
-        print("# WARNING: %s - model broken" % (model_path))
+        print(f"# WARNING: {model_path} - model broken")
         print(e)
       return None, None
     return val_p, train_p
@@ -338,7 +338,7 @@ class Select:
     idx = [l[0] for l in sorted(enumerate(self.val_performance), key=lambda x:np.mean(x[1]))]
     with open(os.path.join(folder,"model_performance.csv"), "w") as f:
       writer = csv.writer(f, delimiter=",")
-      writer.writerow(["Results from %s" % self.__class__.__name__])
+      writer.writerow([f"Results from {self.__class__.__name__}"])
       writer.writerow([])
       writer.writerow(["Dataset", self.dataset])
       writer.writerow(["Epochs", self.epochs])
@@ -450,7 +450,7 @@ class SelectGrid(Select):
     counter = 1
     for model in models:
       if self.verbose > 0:
-        print("# Model %d / %d" % (counter,total))
+        print(f"# Model {counter} / {total}")
       key_vals = {}
       for l in range(0,len(keys)):
         key_vals[keys[l]] = model[l]
@@ -480,7 +480,7 @@ class SelectQMC(Select):
     select = sobol_seq.i4_sobol_generate(dim, self.repeats+skip)[skip:,:]
     while counter <= self.repeats:
       if self.verbose > 0:
-        print("# Sample %d / %d in space of size %d" % (counter,self.repeats,total))
+        print(f"# Sample {counter} / {self.repeats} in space of size {total}")
       # Sample from parameter space
       key_vals = {}
       for k in keys:
@@ -509,7 +509,7 @@ class SelectGPO(Select):
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
     total = np.prod([len(models.values[k]) for k in keys])
     if self.verbose > 0:
-      print("Search space size: %d" % total)
+      print(f"Search space size: {total}")
     import GPyOpt as gpo
     domain = []
     self.values = {}
@@ -545,7 +545,7 @@ class SelectGPO(Select):
     if len(self.key_vals) < 1:
       for ki,k in enumerate(keys):
         if k in var_keys:
-          key_vals[k] = models.values[k][0]
+          key_vals[k] = models.values[k][random.randrange(len(models.values[k]))]
       self._add_task(key_vals, path_model)
       self._run_tasks()
     # Convert eval. data to GPO format
@@ -571,7 +571,7 @@ class SelectGPO(Select):
     XDiff = [0]
     XLast = Xdata[-1,:]
     if self.verbose > 0:
-      print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
+      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n)} samples")
 
     # Optimisation iterations
     current_iter = len(self.key_vals)
@@ -586,8 +586,7 @@ class SelectGPO(Select):
         # Switch to avoid posterior sampling bias
         evaluator = 'thompson_sampling' if current_iter % 2 == 0 else 'random'
       if self.verbose > 0:
-        print("### Iteration %d / %d - samples remaining: %d [eval: %s]"
-              % (current_iter+1,self.repeats,remaining_samples,evaluator))
+        print(f"### Iteration {current_iter+1} / {self.repeats} - samples remaining: {remaining_samples} [eval: {evaluator}]")
       # Optimiser to get next evaluations
       bop = gpo.methods.BayesianOptimization(f=None, domain=domain,
                                              X=Xdata, Y=Ydata,
@@ -623,7 +622,7 @@ class SelectGPO(Select):
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
       XLast = Xdata[-1,:]
       if self.verbose > 0:
-        print("## Best: Y[%d] = %f %s  of %d/%d = %d samples" % (idx_best,Ybest[-1],str(Xdata[idx_best,:]),Ydata.shape[0],res_n,Ydata.shape[0]//res_n))
+        print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
         for l in range(0,len(var_keys)):
           key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[idx_best,l])]
         print("   "+str([str(key_vals[k]) for k in var_keys]))
@@ -685,39 +684,38 @@ Collections = {
   #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
   #   -> dirichlet, random
-  #   -> noise effect: 0.05, 0.1, 0.2
+  #   -> noise effect: 0.05, 0.1
   #   -> benchmark
   # FIXME: check models trained with one dataset on another dataset
   # FIXME: train on MIXED datasets (basis, linewidth)
   # FIXME: optimise over model parameters
   'cnn-simple-all': Grid({
-    'norm':         ['sum', 'max'],
-    'acquisitions': [['difference','edit_off'], ['difference','edit_on'],
-                     ['edit_off','edit_on'], ['difference','edit_off','edit_on']],
-    'datatype':     [['magnitude'], ['magnitude','phase'], ['imaginary','real'], ['real']],
-    'model':        ['cnn_small_softmax', 'cnn_medium_softmax', 'cnn_large_softmax',
-                     'cnn_small_sigmoid_pool', 'cnn_medium_sigmoid_pool', 'cnn_large_sigmoid_pool'],
-    'batch_size':   [16, 32, 64]
+    'norm':         ['sum','max'],
+    'acquisitions': [['difference','edit_off'],['difference','edit_on'],
+                     ['edit_off','edit_on'],['difference','edit_off','edit_on']],
+    'datatype':     [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
+    'model':        ['cnn_small_softmax','cnn_medium_softmax','cnn_large_softmax',
+                     'cnn_small_sigmoid_pool','cnn_medium_sigmoid_pool','cnn_large_sigmoid_pool'],
+    'batch_size':   [16,32,64]
   }),
   'cnn-para-all': Grid({
     'norm':             ['sum', 'max'],
     'acquisitions':     [['difference','edit_off','edit_on'],['difference','edit_on'],
                          ['difference','edit_off'],['edit_off','edit_on']],
-    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],
-                         ['real'],['imaginary']],
+    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
     'model':            ['cnn'],
     'model_S1':         [-2,2],
     'model_S2':         [-3,-2,2,3],
-    'model_C1':         [3, 5, 7, 9, 11],
-    'model_C2':         [3, 5, 7, 9],
-    'model_C3':         [3, 5, 7],
-    'model_C4':         [3, 5],
+    'model_C1':         [3,5,7,9,11],
+    'model_C2':         [3,5,7,9],
+    'model_C3':         [3,5,7],
+    'model_C4':         [3,5],
     'model_O1':         [0.0,0.3],
     'model_O2':         [0.0,0.3],
     'model_F1':         [256],
     'model_F2':         [512],
     'model_D':          [1024],
     'model_ACTIVATION': ['softmax','sigmoid'],
-    'batch_size':       [16, 32, 64]
+    'batch_size':       [16,32,64]
   })
 }

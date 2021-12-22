@@ -1,9 +1,8 @@
 # mrsnet/analyse.py - MRSNet - analyse model performance
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import glob
@@ -47,9 +46,9 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
         writer.writerow(['Metabolite', 'Predicted'])
       for l in range(0,inp.shape[0]):
         if id is None:
-          writer.writerow(["Spectrum: %d" % l])
+          writer.writerow([f"Spectrum: {l}"])
         else:
-          writer.writerow(["Spectrum: %s" % id[l]])
+          writer.writerow([f"Spectrum: {id[l]}"])
         if len(out) > 0:
           for k,m in enumerate(model.metabolites):
             writer.writerow([m, pre[l,k], out[l,k], pre[l,k]-out[l,k]])
@@ -57,7 +56,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
           for k,m in enumerate(model.metabolites):
             writer.writerow([m, pre[l,k]])
   if show_conc:
-    print('\n# %s Quantification Results' % str(model).upper())
+    print(f"\n# {str(model).upper()} Quantification Results")
     print("Metabolites: "+", ".join(model.metabolites))
     print("Pulse Sequence: "+model.pulse_sequence)
     print('\n                       Concentrations')
@@ -67,9 +66,9 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       print('  %12s  %8s' % ('Metabolite', 'Predicted'))
     for l in range(0,inp.shape[0]):
       if id is None:
-        print("Spectrum: %d" % l)
+        print(f"Spectrum: {l}")
       else:
-        print("Spectrum: %s" % id[l])
+        print(f"Spectrum: {id[l]}")
       if len(out) > 0:
         for k,m in enumerate(model.metabolites):
           print('  %12s  %.8f    %.8f  %.8f' % (m, pre[l,k], out[l,k], pre[l,k]-out[l,k]))
@@ -95,7 +94,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
 
   # Per metabolite plots/data
   fig, axes =  plt.subplots(2,len(model.metabolites)+1)
-  fig.suptitle("Concentration Error Analysis (%s)" % prefix)
+  fig.suptitle(f"Concentration Error Analysis ({prefix})")
   for l,m in enumerate(model.metabolites):
     with warnings.catch_warnings():
       warnings.filterwarnings('ignore')
@@ -199,7 +198,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
                             np.ones(1))
   info["wasserstein_distance_error"] = wd
   if verbose > 0:
-    print("  Wasserstein distance error (%s): %f" % (prefix,wd))
+    print(f"  Wasserstein distance error ({prefix}): {wd}")
 
   with open(os.path.join(folder, prefix+"_concentration_errors.json"), 'w') as f:
     print(json.dumps(info, indent=2, sort_keys=True), file=f)

@@ -1,9 +1,8 @@
 # mrsnet/train.py - MRSNet - training
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 
 import os
 import glob
@@ -46,9 +45,9 @@ class Train:
           axes[b+1,dim].hist(d_out[np.where(self._bucket_idx==b)[0],dim],
                              bins=int(np.max([25, np.ceil(data_dim/(self.k*100))])))
           if b == self.k-1:
-            axes[b+1,dim].set_xlabel("Output value %d" % dim)
+            axes[b+1,dim].set_xlabel(f"Output value {dim}")
           if dim == 0:
-            axes[b+1,dim].set_ylabel("%d Buckets" % b)
+            axes[b+1,dim].set_ylabel(f"{b} Buckets")
     if not os.path.isdir(folder):
       os.makedirs(folder)
     for f in glob.glob(os.path.join(folder,"output-distribution@*.png")):
@@ -67,7 +66,7 @@ class Train:
     val_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
     for val_fold in range(0,self.k):
       if verbose > 0:
-        print("# Fold %d of %d" % (val_fold, self.k))
+        print(f"# Fold {val_fold} of {self.k}")
       fold_folder = os.path.join(folder,"fold-"+str(val_fold))
       val_sel = (self._bucket_idx == val_fold)
       train_sel = np.logical_not(val_sel)
@@ -118,19 +117,19 @@ class Train:
                                   np.ones(len(val_res['error'][k1])) / len(val_res['error'][k1]),
                                   np.ones(len(val_res['error'][k2])) / len(val_res['error'][k2]))
         if verbose > 1:
-          print("    %d - %d = %f" % (k1,k2,wd))
+          print(f"    {k1} - {k2} = {wd}")
         if wd > max_wd_err:
           max_wd_err = wd
         wd = wasserstein_distance(np.abs(val_res['error'][k1]), np.abs(val_res['error'][k2]),
                                   np.ones(len(val_res['error'][k1])) / len(val_res['error'][k1]),
                                   np.ones(len(val_res['error'][k2])) / len(val_res['error'][k2]))
         if verbose > 1:
-          print("    |%d| - |%d| = %f" % (k1,k2,wd))
+          print(f"    |{k1}| - |{k2}| = {wd}")
         if wd > max_wd_aerr:
           max_wd_aerr = wd
     if verbose > 0:
-      print("  Max 1st order Wasserstein distance between error: %f" % max_wd_err)
-      print("  Max 1st order Wasserstein distance between absolute error: %f" % max_wd_aerr)
+      print(f"  Max 1st order Wasserstein distance between error: {max_wd_err}")
+      print(f"  Max 1st order Wasserstein distance between absolute error: {max_wd_aerr}")
 
     # Plot corss-validation results
     self._plot_cross_validate(train_res, val_res, folder, no_show, image_dpi, screen_dpi)
@@ -288,7 +287,7 @@ class Split(Train):
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if verbose > 0:
-      print("# Creating %f split for %d-dimensional output data for %d points" % (self.p,out_dim,data_dim))
+      print(f"# Creating {self.p} split for {out_dim}-dimensional output data for {data_dim} points")
     idx = np.arange(0,data_dim)
     if shuffle:
       if verbose > 0:
@@ -298,13 +297,13 @@ class Split(Train):
     # Split
     split = np.round(data_dim * self.p).astype(np.int64)
     if verbose > 0:
-      print("  Split %d / %d" % (split,data_dim-split))
+      print(f"  Split {split} / {data_dim-split}")
     self._bucket_idx = np.ndarray(data_dim,dtype=np.int16)
     self._bucket_idx[idx[0:split]] = 1
     self._bucket_idx[idx[split:]] = 0
     if verbose > 1:
-      print("    Bucket 0: %d" % np.where(self._bucket_idx == 0)[0].shape[0])
-      print("    Bucket 1: %d" % np.where(self._bucket_idx == 1)[0].shape[0])
+      print(f"    Bucket 0: {np.where(self._bucket_idx == 0)[0].shape[0]}")
+      print(f"    Bucket 1: {np.where(self._bucket_idx == 1)[0].shape[0]}")
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "Split_"+str(self.p)+"-%s")
@@ -335,7 +334,7 @@ class DuplexSplit(Train):
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if verbose > 0:
-      print("# Creating %f duplex split for %d-dimensional output data for %d points" % (self.p,out_dim,data_dim))
+      print(f"# Creating {self.p} duplex split for {out_dim}-dimensional output data for {data_dim} points")
     # Assign pairs to bucket in order of largest distance
     if verbose > 0:
       print("  Duplex split")
@@ -395,7 +394,7 @@ class DuplexSplit(Train):
     self._bucket_idx[sel] = (bucket_small + 1) % 2
     del dm
     if verbose > 0:
-      print("  Split %d / %d" % (np.where(self._bucket_idx==0)[0].shape[0], np.where(self._bucket_idx==1)[0].shape[0]))
+      print(f"  Split {np.where(self._bucket_idx==0)[0].shape[0]} / {np.where(self._bucket_idx==1)[0].shape[0]}")
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "DuplexSplit_"+str(self.p)+"-%s")
@@ -425,7 +424,7 @@ class KFold(Train):
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if verbose > 0:
-      print("# Creating %d folds for %d-dimensional output data for %d points" % (self.k,out_dim,data_dim))
+      print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     idx = np.arange(0,data_dim)
     if shuffle:
       if verbose > 0:
@@ -438,7 +437,7 @@ class KFold(Train):
     self._bucket_idx = np.floor(idx % self.k).astype(np.int64)
     if verbose > 1:
       for b in range(0,self.k):
-        print("    Bucket %d: %d" % (b,np.where(self._bucket_idx == b)[0].shape[0]))
+        print(f"    Bucket {b}: {np.where(self._bucket_idx == b)[0].shape[0]}")
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "KFold_"+str(self.k)+"-%s")
@@ -458,7 +457,7 @@ class DuplexKFold(Train):
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if verbose > 0:
-      print("# Creating %d folds for %d-dimensional output data for %d points" % (self.k,out_dim,data_dim))
+      print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     # Assign pairs to bucket in order of largest distance
     if verbose > 0:
       print("  k-Duplex splitting")
@@ -515,7 +514,7 @@ class DuplexKFold(Train):
     del dm
     if verbose > 1:
       for b in range(0,self.k):
-        print("    Bucket %d: %d" % (b,np.where(self._bucket_idx == b)[0].shape[0]))
+        print(f"    Bucket {b}: {np.where(self._bucket_idx == b)[0].shape[0]}")
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "DuplexKFold_"+str(self.k)+"-%s")

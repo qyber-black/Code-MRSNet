@@ -2,10 +2,9 @@
 #
 # mrsnet.py - MRSNet - command line MRSNet interface
 #
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Copyright (C) 2019, Max Chandler, PhD student at Cardiff University
-# Copyright (C) 2020-2021, Frank C Langbein <frank@langbein.org>, Cardiff University
 #
 # See --help for arguments, uses sub-commands
 
@@ -49,6 +48,13 @@ def main():
   add_arguments_default(p_gen_ds)
   p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (single_source-sampler-noise, multi_source-linewidth; see mrsnet.dataset.Collection)')
   p_gen_ds.set_defaults(func=generate_datasets)
+
+  # Compare spectra
+  p_compare = subparsers.add_parser('compare', help='Compare spectra.',
+                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  add_arguments_default(p_compare)
+  add_arguments_compare(p_compare)
+  p_compare.set_defaults(func=compare)
 
   # Train
   p_train = subparsers.add_parser('train', help='Train model on dataset.',
@@ -98,10 +104,19 @@ def main():
   p_benchmark.set_defaults(func=benchmark)
 
   args = parser.parse_args()
+  if hasattr(args,"metabolites"):
+    if "GlX" in args.metabolites and ("Gln" in args.metabolites or "Glu" in args.metabolites):
+      raise Exception("GlX with Gln or Glu is not possible")
+  if hasattr(args,"noise_p"):
+    if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0):
+      args.noise_p = 0.0
+      args.noise_sigma = 0.0
+      args.noise_mu = 0.0
+
   if hasattr(args,"func"):
     args.func(args)
   else:
-    print("%s: illegal sub-command or sub-command not specified, see help [-h]" % sys.argv[0], file=sys.stderr)
+    print(f"{sys.argv[0]}: illegal sub-command or sub-command not specified, see help [-h]", file=sys.stderr)
 
 def add_arguments_default(p):
   # Add argumnets for all sub-commands
@@ -119,7 +134,7 @@ def add_arguments_basis(p):
   p.add_argument('--source', type=lambda s : s.lower(),
                  choices=['lcmodel', 'fid-a', 'pygamma'], default=['lcmodel'],
                  nargs='+',
-                 help='Data source(s) for the basis spectra (fid-a required Matlab).')
+                 help='Data source(s) for the basis spectra (fid-a requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default=['siemens'],
                  nargs='+',
@@ -146,12 +161,32 @@ def add_arguments_simulate(p):
   p.add_argument('--show-spectra', action='store_true', default=False,
                  help='Shows plots of all generated spectra.')
 
+def add_arguments_compare(p):
+  # Add compare arguments
+  p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
+  p.add_argument('--metabolites', type=lambda s : molecules.short_name(s), nargs='+',
+                 default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
+                 help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
+  p.add_argument('--source', type=lambda s : s.lower(),
+                 choices=['lcmodel', 'fid-a', 'pygamma'], default='lcmodel',
+                 help='Data source for the basis spectra (fid-a requires Matlab).')
+  p.add_argument('--manufacturer', type=lambda s : s.lower(),
+                 choices=['siemens', 'ge', 'phillips'], default='siemens',
+                 help='Scanner manufacturer (fid-a and pygamma only support siemens).')
+  p.add_argument('--omega', type=float, default=123.23, nargs=1,
+                 help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
+  p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
+                 help='Linewidths to be used for simulation (not possible for lcmodel).')
+  p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
+                 choices=['megapress'], default="megapress",
+                 help='Pulse sequence (placeholder).')
+
 def add_arguments_train_select(p):
   # Add training/selection arguments
   p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
                  help='Number of training epochs.')
-  p.add_argument('-k', '--validate', type=float, default=5,
+  p.add_argument('-k', '--validate', type=float, default=0.7,
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
 
 def add_arguments_train(p):
@@ -183,7 +218,7 @@ def add_arguments_aetrain(p):
 
 def add_arguments_quantify(p):
   # Add quantification arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID)')
+  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
   p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
 
@@ -222,7 +257,7 @@ def basis(args):
     for d in ['magnitude','phase','real','imaginary']:
       fig = b.plot(data=d, type='fft')
       if args.verbose > 0:
-        print("Saving figure %s" % b.name())
+        print(f"Saving figure {b.name()}")
       for dpi in Cfg.val['image_dpi']:
         plt.savefig(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"-"+d+"@"+str(dpi)+".png"), dpi=dpi)
       if not args.no_show:
@@ -271,22 +306,22 @@ def simulate(args):
     n = n0 + (1 if n1 > 0 else 0)
     n1 -= 1
     if args.verbose > 0:
-      print("Generating %d spectra for %s" % (n,b))
+      print(f"Generating {n} spectra for {b}")
     dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
-    dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
+  dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
   if args.verbose > 0:
-    print("Saving dataset %s" % dataset.name)
+    print(f"Saving dataset {dataset.name}")
   path = dataset.save(Cfg.val["path_simulation"])
   if args.verbose > 0:
     print("Plotting concentrations")
   for norm in ['none', 'sum', 'max']:
     fig = dataset.plot_concentrations(norm=norm)
     if args.verbose > 0:
-      print("Saving %s-normalised concentration figure" % norm)
-    for f in glob.glob(os.path.join(path,"concentrations-%s@*.png" % norm)):
+      print(f"Saving {norm}-normalised concentration figure")
+    for f in glob.glob(os.path.join(path,f"concentrations-{norm}@*.png")):
       os.remove(f)
     for dpi in Cfg.val['image_dpi']:
-      plt.savefig(os.path.join(path,"concentrations-%s@%d.png" % (norm,dpi)), dpi=dpi)
+      plt.savefig(os.path.join(path,f"concentrations-{norm}@{dpi}.png"), dpi=dpi)
     if not args.no_show:
       fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
@@ -322,9 +357,11 @@ def generate_datasets(args):
                       na['noise_p'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
     if os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra.joblib")):
       if args.verbose > 0:
-        print("Exists: %s:%s" % (name,na['num'][0]))
+        print(f"# Exists: {name}:{na['num'][0]}")
     else:
       # Create
+      if args.verbose > 0:
+        print(f"# Creating {name}")
       cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
       if args.verbose > 0:
         cmd += ['-v']*args.verbose
@@ -350,6 +387,49 @@ def generate_datasets(args):
         except OSError as e:
           raise Exception('MRSNet simulations failed') from e
         p.wait()
+      else:
+        if args.verbose > 0:
+          print("Skipping non-1.0 linewidth for lcmodel")
+
+def compare(args):
+  # Compare sub-command
+  import mrsnet.dataset as dataset
+  import numpy as np
+  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+    id = get_std_name(args.dataset)
+    name = os.path.join(*id[-9:-1])
+    ds_rest = id[-1]
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  else:
+    if args.verbose > 0:
+      print(f"# Loading dicom data {args.dataset}")
+    concentrations = os.path.join(args.dataset,"concentrations.json")
+    if not os.path.isfile(concentrations):
+      concentrations = os.path.join(os.path.dirname(args.dataset),"concentrations.json")
+      if not os.path.isfile(concentrations):
+        concentrations = os.path.join(os.path.dirname(os.path.dirname(args.dataset)),"concentrations.json")
+        if not os.path.isfile(concentrations):
+          concentrations = None
+    ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
+                                                  concentrations=concentrations,
+                                                  metabolites=args.metabolites)
+  if len(ds.concentrations) > 0:
+    # Get basis
+    import mrsnet.basis as basis
+    if args.verbose > 0:
+      print("# Setting up basis")
+    basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
+                        manufacturer=args.manufacturer, omega=args.omega,
+                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence).setup(Cfg.val['path_basis'])
+    # Analyse with given concentrations
+    from mrsnet.compare import compare_basis
+    compare_basis(ds, basis,
+                  verbose=args.verbose, image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
+  else:
+    if args.verbose > 0:
+      print("Nothing to compare, as no concentrations available/found")
 
 def train(args):
   # Train sub-command
@@ -359,7 +439,7 @@ def train(args):
   name = os.path.join(*id[-9:-1])
   ds_rest = id[-1]
   if args.verbose > 0:
-    print("# Loading dataset %s : %s" % (name,ds_rest))
+    print(f"# Loading dataset {name} : {ds_rest}")
   dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
@@ -373,9 +453,9 @@ def train(args):
     model = CNN(args.model, args.metabolites, dataset.pulse_sequence,
                 args.acquisitions, args.datatype, args.norm)
   else:
-    raise Exception("Unknown model %s" % args.model)
+    raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
-    print("# Model setup:\n  %s" % str(model))
+    print(f"# Model setup:\n  {str(model)}")
 
   if args.validate > 1.0:
     from mrsnet.train import KFold
@@ -393,7 +473,7 @@ def train(args):
     from mrsnet.train import NoValidation
     trainer = NoValidation()
   else:
-    raise Exception("Unknown validation %f" % args.validate)
+    raise Exception(f"Unknown validation {args.validate}")
   trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
                 Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
@@ -482,7 +562,7 @@ def model_selection(args):
     selector = SelectEvo(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
   else:
-    raise Exception("Unknown model selection method %s" % args.method)
+    raise Exception(f"Unknown model selection method {args.method}")
   selector.optimise(args.collection, models, Cfg.val['path_model'])
 
 def quantify(args):
@@ -494,67 +574,10 @@ def quantify(args):
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
     if args.verbose > 0:
-      print("# Loading dataset %s : %s" % (name,ds_rest))
+      print(f"# Loading dataset {name} : {ds_rest}")
     ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   else:
     ds = None # Load later, as dicom and we don't know metabolites
-  id = get_std_name(args.model)
-  name = []
-  for k in range(0,len(id)):
-    if id[k][0:4] == 'cnn_':
-      name = os.path.join(*id[k:k+6])
-      train_model = id[k+6]
-      batch_size = id[k+7]
-      epochs = id[k+8]
-      trainer = id[k+9]
-      rest = id[k+10] if len(id) > k+10 else '' # Folds
-      break
-  if len(name) == 0:
-    raise Exception("Cannot get model name from model argument")
-  if args.verbose > 0:
-    print("# Loading model %s : %s : %s %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
-  if name[0:4] == "cnn_":
-    from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
-  else:
-    raise Exception("Unknown model "+name)
-  if ds is None:
-    if args.verbose > 0:
-      print("# Loading dicom data %s" % args.dataset)
-    ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
-                                                  metabolites=quantifier.metabolites)
-    store_in_data = True
-  else:
-    store_in_data = False
-  # Export for quantification
-  d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
-                           acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
-                           verbose=args.verbose)
-  if np.sum(d_out.shape) == 0:
-    # No concentrations, so for analysis of data and store results with data, not model
-    store_in_data = True
-  from mrsnet.analyse import analyse_model
-  id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
-  if store_in_data:
-    # Store results in data repository, as dicoms or no concentrations (so for actual quantification)
-    analyse_model(quantifier, d_inp, d_out, args.dataset,
-                  id=[s[id_ref].id for s in ds.spectra],
-                  show_conc=True, save_conc=True, no_show=args.no_show,
-                  verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
-                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
-  else:
-    # Store results with model, as concentrations and dataset is for testing model
-    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size,
-                                                         epochs, train_model, trainer, rest),
-                  id=[s[id_ref].id for s in ds.spectra],
-                  show_conc=True, save_conc=True, no_show=args.no_show,
-                  verbose=args.verbose, prefix=ds.name.replace("/","_"),
-                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
-
-def benchmark(args):
-  # Benchmark sub-command
-  if args.verbose > 0:
-    print("# Loading model %s" % args.model)
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
@@ -569,7 +592,53 @@ def benchmark(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print("# Model %s : %s : %s : %s : %s : %s" % (name,batch_size,epochs,train_model,trainer,rest))
+    print(f"# Loading model {name} : {batch_size} : {epochs} {train_model} : {trainer} : {rest}")
+  if name[0:4] == "cnn_":
+    from mrsnet.cnn import CNN
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
+  else:
+    raise Exception("Unknown model "+name)
+  if ds is None:
+    if args.verbose > 0:
+      print(f"# Loading dicom data {args.dataset}")
+    concentrations = os.path.join(args.dataset,"concentrations.json")
+    if not os.path.isfile(concentrations):
+      concentrations = None
+    ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
+                                                  concentrations=concentrations,
+                                                  metabolites=quantifier.metabolites)
+  # Export for quantification
+  d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
+                           acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
+                           verbose=args.verbose)
+  from mrsnet.analyse import analyse_model
+  id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
+  # Store results in data repository
+  analyse_model(quantifier, d_inp, d_out, args.dataset,
+                id=[s[id_ref].id for s in ds.spectra],
+                show_conc=True, save_conc=True, no_show=args.no_show,
+                verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
+                image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
+
+def benchmark(args):
+  # Benchmark sub-command
+  if args.verbose > 0:
+    print(f"# Loading model {args.model}")
+  id = get_std_name(args.model)
+  name = []
+  for k in range(0,len(id)):
+    if id[k][0:4] == 'cnn_':
+      name = os.path.join(*id[k:k+6])
+      batch_size = id[k+6]
+      epochs = id[k+7]
+      train_model = id[k+8]
+      trainer = id[k+9]
+      rest = id[k+10] if len(id) > k+10 else '' # Folds
+      break
+  if len(name) == 0:
+    raise Exception("Cannot get model name from model argument")
+  if args.verbose > 0:
+    print(f"# Model {name} : {batch_size} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
@@ -578,7 +647,7 @@ def benchmark(args):
   import mrsnet.dataset as dataset
   for id in ['E1', 'E2', 'E3', 'E4a', 'E4b', 'E4c', 'E4d']:
     if args.verbose > 0:
-      print("# Loading Benchmark %s" % id)
+      print(f"# Loading Benchmark {id}")
     bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
                                          concentrations=os.path.join(Cfg.val['path_benchmark'],
                                                                      id, 'concentrations.json'),
