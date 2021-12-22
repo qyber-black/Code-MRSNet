@@ -19,7 +19,7 @@ class Cfg:
     'figsize': (26.67,15.0),
     'default_screen_dpi': 96,
     'screen_dpi': None,
-    'image_dpi': [300]
+    'image_dpi': [96]#96
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),
@@ -67,16 +67,16 @@ class Cfg:
   @staticmethod
   def _screen_dpi():
     # DPI for plots on screen
-    try:
-      from screeninfo import get_monitors
-    except ModuleNotFoundError:
-      return Cfg.val['default_screen_dpi']
-    try:
-      m = get_monitors()[0]
-    except:
-      return Cfg.val['default_screen_dpi']
-    from math import hypot
-    try:
-      return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
-    except:
-      return Cfg.val['default_screen_dpi']
+    #try:
+    #  from screeninfo import get_monitors
+    #except ModuleNotFoundError:
+    #  return Cfg.val['default_screen_dpi']
+    #try:
+    #  m = get_monitors()[0]
+    #except:
+    #  return Cfg.val['default_screen_dpi']
+    #from math import hypot
+    #try:
+    #  return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
+    #except:
+    return Cfg.val['default_screen_dpi']

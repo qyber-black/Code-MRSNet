@@ -4,3 +4,4 @@ __pycache__
 data/model
 data/sim-spectra
 data/OLD
+/.idea/

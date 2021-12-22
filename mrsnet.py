@@ -419,7 +419,7 @@ def aetrain(args):
   if args.model[0:3] == 'ae_':
     from mrsnet.autoencoder import Autoencoder
     if dataset.noise_added:
-      raise Exception("Dataset contains nosiy data, not suitable for autoencoder training")
+      raise Exception("Dataset contains noisy data, not suitable for autoencoder training")
     # Add noise and export again (concentrations/output remains the same)
     dataset.add_noise(args.noise_p,args.noise_mu,args.noise_sigma,verbose=args.verbose)
     d_inp_noise, _ = dataset.export(metabolites=args.metabolites, norm=args.norm,
@@ -618,9 +618,11 @@ if __name__ == '__main__':
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
   # Headless mode
+  from matplotlib import use
   if not "DISPLAY" in os.environ:
-    from matplotlib import use
     use("Agg")
+  #else:
+  #use("Qt5Agg")
   # Find base folder
   bin_path = os.path.realpath(__file__)
   if not os.path.isfile(bin_path):
