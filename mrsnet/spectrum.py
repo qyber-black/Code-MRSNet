@@ -143,10 +143,8 @@ class Spectrum(object):
 
     fft = self.fft()
     freq_step = (low_ppm-high_ppm)/(npts-1)
-    fp = interp1d(nu, np.angle(fft), "cubic")
-    fm = interp1d(nu, np.abs(fft), "cubic")
-    int_fft = np.multiply(fm(np.arange(high_ppm,low_ppm+freq_step,freq_step)),
-                          np.exp(1j*fp(np.arange(high_ppm,low_ppm+freq_step,freq_step))))
+    fp = interp1d(nu, fft, "cubic")
+    int_fft = fp(np.arange(high_ppm,low_ppm+freq_step,freq_step))
 
     return int_fft, np.arange(high_ppm,low_ppm+freq_step,freq_step)
 
