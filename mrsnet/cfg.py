@@ -79,6 +79,9 @@ class Cfg:
       return Cfg.val['default_screen_dpi']
     from math import hypot
     try:
-      return hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
+      dpi = hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
+      if dpi > Cfg.val['image_dpi']:
+        return Cfg.val['image_dpi']
+      return dpi
     except:
       return Cfg.val['default_screen_dpi']
