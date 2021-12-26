@@ -534,7 +534,7 @@ class SelectGPO(Select):
     for k in fix_keys:
       key_vals[k] = models.values[k][0]
     # Load Existing - can be disabled, so we can run repeatedly and use existing results
-    if 'feature_selectgpo_optimse_noload' not in Cfg.dev:
+    if not Cfg.dev('feature_selectgpo_optimse_noload'):
       for model in models:
         for ki,k in enumerate(keys):
           if k in var_keys:

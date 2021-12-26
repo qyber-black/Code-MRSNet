@@ -51,7 +51,7 @@ class Spectrum(object):
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
-    if filter_fft: # FIXME: check
+    if filter_fft: # FIXME: Butterworth on FFT - why?
       b, a = signal.butter(1, 0.7)
       self.fft = signal.filtfilt(b, a, self.fft, padlen=150)
     if remove_water_peak:

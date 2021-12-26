@@ -19,10 +19,8 @@ from .cfg import Cfg
 
 class Dataset(object):
   # A dataset is a collection of spectra for training, tesing or predicting.
-  # The dataset object contains methods for how to handle and export the data
-  # from the spectra objects.
 
-  def __init__(self, name, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048):
+  def __init__(self, name, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048): # FIXME: high/low ppm and pts only for export
     self.name = name
     self.metabolites = None
     self.spectra = []
@@ -201,7 +199,7 @@ class Dataset(object):
       self.spectra.append(s)
       self.concentrations.append(c)
 
-  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose):
+  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose): # FIXME: needs to use adc_gaussian!
     # Add noise to all spectra
     if self.noise_added:
       raise Exception("Noise added twice to dataset")
@@ -233,7 +231,7 @@ class Dataset(object):
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
-  def save(self, path):
+  def save(self, path): # FIXME: save json/npy
     from .getfolder import get_folder
     for s in self.spectra:
       for a in s:
@@ -243,7 +241,7 @@ class Dataset(object):
     return folder
 
   @staticmethod
-  def load(folder):
+  def load(folder): # FIXME: load json/npy
     return joblib.load(os.path.join(folder, "spectra.joblib"))
 
   def plot_concentrations(self, norm='none'):
@@ -308,12 +306,12 @@ class Dataset(object):
       if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != self.n_fft_pts:
         raise Exception("Unexpected input/output tensor shape(s)")
 
-    if "check_dataset_export" in Cfg.dev:
+    if Cfg.dev("check_dataset_export"):
       self._check_export(d_inp,d_out,metabolites, norm, acquisitions, datatype, normalise)
 
     return d_inp, d_out
 
-  def _check_export(self,d_inp,d_out,metabolites,norm,acquisitions,datatype,normalise):
+  def _check_export(self,d_inp,d_out,metabolites,norm,acquisitions,datatype,normalise): # FIXME: test this
     # Test mrsnet.dataset.export
     from colorama import Fore, Style
     print("# Testing mrsnet.dataset.export")
@@ -351,7 +349,7 @@ class Dataset(object):
           if diff > 1e-6: # Phase errors can be in the 1e-7 range
             print(f"{nl}- Max. FFT center/normalise phase error: {diff}")
             nl=""
-          if 'flag_plots' in Cfg.dev:
+          if Cfg.dev('flag_plots'):
             for a_idx in range(len(acquisitions)):
               figure, axes = plt.subplots(2, 3)
               axes[0,0].plot(np.abs(fft[a_idx,:]))

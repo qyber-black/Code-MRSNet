@@ -190,6 +190,7 @@ class Basis(object):
         print('Some spectra are missing, simulating: ' + str(to_simulate))
         from .simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
+                     npts=4096, adc_dt=4e-4, # FIXME: npts and adc_dt arguments - better than harcode?
                      save_dir=os.path.join(path_basis,'basis_files'))
         self._load_fida(path_basis, second_call=True)
 
@@ -201,7 +202,7 @@ class Basis(object):
     for metabolite_name in self.metabolites:
       specs = Spectrum.load_pygamma(path_basis, metabolite_name,
                                     self.pulse_sequence, self.omega,
-                                    self.linewidth, npts, adc_dt)
+                                    self.linewidth, npts, adc_dt)  # FIXME: npts and adc_dt arguments - better than harcode?
       for s in specs:
         if s.metabolites[0] not in self.spectra:
           self.spectra[s.metabolites[0]] = {}
@@ -234,11 +235,13 @@ class Basis(object):
             self.spectra[s.metabolites[0]] = {}
           self.spectra[s.metabolites[0]][s.acquisition] = s
     for m in self.spectra.keys():
-      if 'difference' not in self.spectra[m].keys(): # FIXME: duplicate spectrum/zero fft
+      if 'difference' not in self.spectra[m].keys():
         self.spectra[m]['difference'] = copy.deepcopy(self.spectra[m]['edit_off'])
         self.spectra[m]['difference'].acquisition = 'difference'
-        self.spectra[m]['difference'].set_f(np.zeros_like(self.spectra[m]['edit_off'].fft), self.spectra[m]['edit_off'].sample_rate,
-                                            center_ppm=self.spectra[m]['edit_off'].center_ppm)
+        self.spectra[m]['difference'].set_f(np.zeros_like(self.spectra[m]['edit_off'].fft),
+                                            self.spectra[m]['edit_off'].sample_rate,
+                                            center_ppm=self.spectra[m]['edit_off'].center_ppm,
+                                            b0_shift_ppm=self.spectra[m]['edit_off'].b0_shift_ppm)
 
   def _add_missing_spectra(self):
     if self.pulse_sequence == 'megapress':
@@ -317,7 +320,7 @@ class Basis(object):
       raise Exception("Coimbined difference spectrum differs from edit_on - edit_off")
     return spectra, con
 
-  def plot(self, data='magnitude', type='fft'): # FIXME: check
+  def plot(self, data='magnitude', type='fft'):
     acqs = self.acquisitions
     num_m = len(self.spectra)
     num_a = len(acqs)

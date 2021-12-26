@@ -5,6 +5,8 @@
 
 import numpy as np
 
+# FIXME: load grid specs from json
+
 class Grid:
   def __init__(self, values):
     self.values = values

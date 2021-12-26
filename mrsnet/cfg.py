@@ -11,6 +11,7 @@ class Cfg:
   # These are static variables for the class, accessed via the class. No object
   # of this class should be used; all methods are static.
   val = {
+    'path_root': None,
     'path_basis': None,
     'path_simulation': None,
     'path_model': None,
@@ -25,7 +26,7 @@ class Cfg:
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),
   # but all in use should be in the comments here for reference.
-  dev = set()
+  dev_flags = set()
   # check_dataset_export - Test if exporting dataset to tensors is correct in train
   # flag_plots - Show some test graphs for the activated checks
   # feature_selectgpo_optimse_noload - do not load existing results for SelectGPO
@@ -43,8 +44,9 @@ class Cfg:
             Cfg.val[k] = js[k]
           else:
             raise Exception(f"Unknown config file entry {k} in {Cfg.file}")
+    Cfg.val["path_root"] = os.path.dirname(bin_path)
     # Check data folders and create as needed
-    data_dir = os.path.join(os.path.dirname(bin_path),'data')
+    data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {
       "path_basis": "basis",
       "path_simulation": "sim-spectra",
@@ -63,7 +65,11 @@ class Cfg:
     # Dev flags
     if 'MRSNET_DEV' in os.environ:
       for f in os.environ['MRSNET_DEV'].split(":"):
-        Cfg.dev.add(f)
+        Cfg.dev_flags.add(f)
+
+  @staticmethod
+  def dev(flag):
+    return flag in Cfg.dev_flags or "all" in Cfg.dev_flags
 
   @staticmethod
   def _screen_dpi():

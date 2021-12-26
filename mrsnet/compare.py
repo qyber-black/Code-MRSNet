@@ -11,7 +11,7 @@ import seaborn as sns
 from .dataset import Dataset
 from . import molecules
 
-def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
+def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96): # FIXME: adjust to fft spectra representation
   # Compare dataset to spectra generated from basis
   # Setup basis
   if verbose > 0:
