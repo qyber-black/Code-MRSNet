@@ -55,13 +55,13 @@ class Dataset(object):
             concs_ok = False
     self.metabolites.sort()
     for id in sorted(specs.keys()):
-      # B0 correction per spectrum
+      # B0 correction per spectrum - FIXME: select acqusition!
       shifts = []
       for a in specs[id].keys():
         shift = specs[id][a].correct_b0()
         if shift is not None:
           shifts.append(shift)
-      # Shift spectra by mean b0 shift, if we have one
+      # Shift spectra by mean b0 shift, if we have one - FIXME: best, not mean
       if len(shifts) > 0:
         mean = np.mean(shifts)
         for a in specs[id].keys():
@@ -94,7 +94,7 @@ class Dataset(object):
 
     for s in basis.spectra.keys():
       for a in basis.spectra[s].keys():
-        nu = basis.spectra[s][a].nu()
+        _, nu = basis.spectra[s][a].get_f()
         if np.min(nu) > self.high_ppm:
           raise Exception(f"Spectra do not reach the required max frequency axis ({np.min(spectra.nu()):.2f}) for export: {self.high_ppm:.2f}")
         elif np.max(nu) < self.low_ppm:
@@ -231,26 +231,23 @@ class Dataset(object):
           # Add noise
           for a in self.spectra[idx]:
             if a != 'difference':
-              self.spectra[idx][a].add_noise(mu=n_mu[idx], sigma=n_sigma[idx])
+              self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
           if 'difference' in self.spectra[idx]:
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
               raise Exception("Difference spectrum without edit_off or edit_on")
             diff = Spectrum(self.spectra[idx]['edit_on'].id+":ON_-_OFF:"+self.spectra[idx]['edit_off'].id,
-                            source=self.spectra[idx]['edit_off'].source,
-                            metabolites=self.spectra[idx]['edit_off'].metabolites,
                             pulse_sequence=self.spectra[idx]['edit_off'].pulse_sequence,
                             acquisition="difference",
                             omega=self.spectra[idx]['edit_off'].omega,
-                            linewidth=self.spectra[idx]['edit_off'].linewidth,
-                            dt=self.spectra[idx]['edit_off'].dt,
-                            center_ppm=self.spectra[idx]['edit_off'].center_ppm,
-                            filter_fft=self.spectra[idx]['edit_off'].filter_fft,
-                            remove_water_peak=self.spectra[idx]['edit_off'].remove_water_peak,
-                            scale=1.0)
-            diff.adc_noise_mu = self.spectra[idx]['edit_off'].adc_noise_mu
-            diff.adc_noise_sigma = self.spectra[idx]['edit_off'].adc_noise_sigma
-            diff.set_adc(self.spectra[idx]['edit_on'].adc(pad=False) - self.spectra[idx]['edit_off'].adc(pad=False))
+                            source=self.spectra[idx]['edit_off'].source,
+                            metabolites=self.spectra[idx]['edit_off'].metabolites,
+                            linewidth=self.spectra[idx]['edit_off'].linewidth)
+            diff.noise = self.spectra[idx]['edit_off'].noise
+            eon, _ = self.spectra[idx]['edit_on'].get_f() # FXIME: subtract spectra
+            eoff, _ = self.spectra[idx]['edit_off'].get_f()
+            diff.set_f(eon - eoff, self.spectra[idx]['edit_off'].sample_rate,
+                       center_ppm=self.spectra[idx]['edit_off'].center_ppm)
             self.spectra[idx]['difference'] = diff
           # B0 correction per spectrum
           shifts = []

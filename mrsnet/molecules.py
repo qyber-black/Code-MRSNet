@@ -29,10 +29,13 @@ NAMES = {
   'Scyllo-Inositol': ['scyllo']
 }
 
-NAA_REFERENCE = -2.01
-CR_REFERENCE = -3.015
-WATER_REFERENCE = -4.75             # Temperature dependant, avoid using if at all possible
-GYROMAGNETIC_RATIO = 42.57747892    # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
+# B0 correction metabolites with reference peak location
+# Priority list - first metabolite peak found is used
+b0_correction = [ ('NAA', -2.01),
+                  ('Cr', -3.015) ]
+
+WATER_REFERENCE = -4.75          # Temperature dependant, avoid using if at all possible
+GYROMAGNETIC_RATIO = 42.57747892 # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
 
 def convert_names(molecules, shorten=False):
   # Standardise molecule names to short or long form

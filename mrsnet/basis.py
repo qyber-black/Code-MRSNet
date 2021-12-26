@@ -9,8 +9,8 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 
+from . import molecules
 from .spectrum import Spectrum
-from .molecules import convert_names
 
 class BasisCollection:
   def __init__(self):
@@ -75,7 +75,6 @@ class Basis(object):
   def __init__(self, metabolites=[], source=None, manufacturer=None,
                omega=None, linewidth=None, pulse_sequence=None):
     self.metabolites = sorted(metabolites)
-    # FIXME: Check GLX pseudo-spectrum
     self.source = source
     self.manufacturer = manufacturer
     self.omega = omega
@@ -118,10 +117,10 @@ class Basis(object):
       else:
         if sorted(self.spectra[m].keys()) != acqs:
           raise Exception("Acquisitions between metabolite spectra for basis not consistent")
-        self.acquisitions = acqs
-    # Normalise ADC signal globally
+    self.acquisitions = acqs
+    # Global normalisation
     self._normalise()
-    # B0 correction
+    # Global B0 correction
     self._correct_b0()
     return self
 
@@ -156,20 +155,18 @@ class Basis(object):
       for a in self.spectra['Gln'].keys():
         if a in self.spectra['Glu']:
           spec[a] = Spectrum(self.spectra['Gln'][a].id+":Gln_+_Glu:"+self.spectra['Glu'][a].id,
-                             source=self.spectra['Gln'][a].source, # should be identical to Glu
-                             metabolites=["GlX"],
                              pulse_sequence=self.spectra['Gln']['edit_off'].pulse_sequence, # should be identical to Glu
                              acquisition=a,
                              omega=self.spectra['Gln'][a].omega, # should be identical to Glu
-                             linewidth=self.spectra['Gln'][a].linewidth, # should be identical to Glu
-                             dt=self.spectra['Gln'][a].dt, # should be identical to Glu
-                             center_ppm=self.spectra['Gln'][a].center_ppm, # should be identical to Glu
-                             filter_fft=self.spectra['Gln'][a].filter_fft,
-                             remove_water_peak=self.spectra['Gln'][a].remove_water_peak,
-                             scale=1.0)
-          spec[a].adc_noise_mu = self.spectra['Gln'][a].adc_noise_mu # should be identical to Glu
-          spec[a].adc_noise_sigma = self.spectra['Gln'][a].adc_noise_sigma # should be identical to Glu
-          spec[a].set_adc(self.spectra['Gln'][a].adc(pad=False) + self.spectra['Glu'][a].adc(pad=False))
+                             source=self.spectra['Gln'][a].source, # should be identical to Glu
+                             metabolites=["GlX"],
+                             linewidth=self.spectra['Gln'][a].linewidth) # should be identical to Glu
+          spec[a].noise = self.spectra['Gln'][a].noise # should be identical to Glu
+          f_gln, _ = self.spectra['Gln'][a].get_f()
+          f_glu, _ = self.spectra['Glu'][a].get_f() # FIXME: add function for spectrum
+          spec[a].set_f(f_gln+f_glu,
+                        self.spectra['Gln'][a].sample_rate, # should be identical to Glu
+                        center_ppm=self.spectra['Gln'][a].center_ppm) # should be identical to Glu
       self.spectra['GlX'] = spec
       del self.spectra['Gln']
       del self.spectra['Glu']
@@ -247,10 +244,11 @@ class Basis(object):
             self.spectra[s.metabolites[0]] = {}
           self.spectra[s.metabolites[0]][s.acquisition] = s
     for m in self.spectra.keys():
-      if 'difference' not in self.spectra[m].keys():
+      if 'difference' not in self.spectra[m].keys(): # FIXME: duplicate spectrum/zero fft
         self.spectra[m]['difference'] = copy.deepcopy(self.spectra[m]['edit_off'])
         self.spectra[m]['difference'].acquisition = 'difference'
-        self.spectra[m]['difference'].set_adc(np.zeros_like(self.spectra[m]['difference'].raw_adc))
+        self.spectra[m]['difference'].set_f(np.zeros_like(self.spectra[m]['edit_off'].fft), self.spectra[m]['edit_off'].sample_rate,
+                                            center_ppm=self.spectra[m]['edit_off'].center_ppm)
 
   def _add_missing_spectra(self):
     if self.pulse_sequence == 'megapress':
@@ -259,71 +257,76 @@ class Basis(object):
           pass
         elif 'edit_on' in self.spectra[m] and 'edit_off' in self.spectra[m]:
           diff = Spectrum(self.spectra[m]['edit_on'].id+":ON_-_OFF:"+self.spectra[m]['edit_off'].id,
-                          source=self.spectra[m]['edit_off'].source,
-                          metabolites=self.spectra[m]['edit_off'].metabolites,
                           pulse_sequence=self.spectra[m]['edit_off'].pulse_sequence,
                           acquisition="difference",
                           omega=self.spectra[m]['edit_off'].omega,
-                          linewidth=self.spectra[m]['edit_off'].linewidth,
-                          dt=self.spectra[m]['edit_off'].dt,
-                          center_ppm=self.spectra[m]['edit_off'].center_ppm,
-                          filter_fft=self.spectra[m]['edit_off'].filter_fft,
-                          remove_water_peak=self.spectra[m]['edit_off'].remove_water_peak,
-                          scale=1.0)
-          diff.adc_noise_mu = self.spectra[m]['edit_off'].adc_noise_mu
-          diff.adc_noise_sigma = self.spectra[m]['edit_off'].adc_noise_sigma
-          diff.set_adc(self.spectra[m]['edit_on'].adc(pad=False) - self.spectra[m]['edit_off'].adc(pad=False))
+                          source=self.spectra[m]['edit_off'].source,
+                          metabolites=self.spectra[m]['edit_off'].metabolites,
+                          linewidth=self.spectra[m]['edit_off'].linewidth)
+          diff.noise = self.spectra[m]['edit_off'].noise
+          eon, _ = self.spectra[m]['edit_on'].get_f()
+          eoff, _ = self.spectra[m]['edit_off'].get_f() # FIXME: difference between spectra
+          diff.set_f(eon - eoff,self.spectra[m]['edit_off'].sample_rate,center_ppm=self.spectra[m]['edit_off'].center_ppm)
           self.spectra[m]['difference'] = diff
         elif 'edit_off' in self.spectra[m] and 'difference' in self.spectra[m]:
           eon = Spectrum(self.spectra[m]['difference'].id+":DIFF_+_OFF:"+self.spectra[m]['edit_off'].id,
-                         source=self.spectra[m]['edit_off'].source,
-                         metabolites=self.spectra[m]['edit_off'].metabolites,
                          pulse_sequence=self.spectra[m]['edit_off'].pulse_sequence,
                          acquisition="edit_on",
                          omega=self.spectra[m]['edit_off'].omega,
-                         linewidth=self.spectra[m]['edit_off'].linewidth,
-                         dt=self.spectra[m]['edit_off'].dt,
-                         center_ppm=self.spectra[m]['edit_off'].center_ppm,
-                         filter_fft=self.spectra[m]['edit_off'].filter_fft,
-                         remove_water_peak=self.spectra[m]['edit_off'].remove_water_peak,
-                         scale=1.0)
-          eon.adc_noise_mu = self.spectra[m]['edit_off'].adc_noise_mu
-          eon.adc_noise_sigma = self.spectra[m]['edit_off'].adc_noise_sigma
-          eon.set_adc(self.spectra[m]['difference'].adc(pad=False) + self.spectra[m]['edit_off'].adc(pad=False))
+                         source=self.spectra[m]['edit_off'].source,
+                         metabolites=self.spectra[m]['edit_off'].metabolites,
+                         linewidth=self.spectra[m]['edit_off'].linewidth)
+          eon.noise = self.spectra[m]['edit_off'].noise
+          diff, _ = self.spectra[m]['difference'].get_f()
+          eoff, _ = self.spectra[m]['edit_off'].get_f() # FIXME: add spectra
+          eon.set_f(diff + eoff, self.spectra[m]['edit_off'].sample_rate, center_ppm=self.spectra[m]['edit_off'].center_ppm)
           self.spectra[m]['edit_on'] = eon
+        elif 'edit_on' in self.spectra[m] and 'difference' in self.spectra[m]:
+          eoff = Spectrum(self.spectra[m]['edit_on'].id+":ON_-_DIFF:"+self.spectra[m]['difference'].id,
+                          pulse_sequence=self.spectra[m]['edit_on'].pulse_sequence,
+                          acquisition="edit_off",
+                          omega=self.spectra[m]['edit_on'].omega,
+                          source=self.spectra[m]['edit_on'].source,
+                          metabolites=self.spectra[m]['edit_on'].metabolites,
+                          linewidth=self.spectra[m]['edit_on'].linewidth)
+          eoff.noise = self.spectra[m]['edit_on'].noise
+          diff, _ = self.spectra[m]['difference'].get_f()
+          eon, _ = self.spectra[m]['edit_on'].get_f() # FIXME: subtract spectra
+          eon.set_f(eon - diff, self.spectra[m]['edit_on'].sample_rate, center_ppm=self.spectra[m]['edit_on'].center_ppm)
+          self.spectra[m]['edit_off'] = eoff
         else:
           raise Exception(f"Incomplete megapress spectrum for {m}")
 
   def _normalise(self):
-    # All spectra are normalised against the maximum absolute adc signal in the basis set.
-    # There are a number of reasons, but it means that the noise added to the ADC has the same mu and sigma values.
+    # All spectra are normalised against the maximum fft magnitude.
+    # This is mainly to ensure the same noise is added (if it is added).
     global_max = 0.0
     for m in self.spectra.keys():
       for a in self.spectra[m].keys():
-        global_max = np.max([global_max, np.max(np.abs(self.spectra[m][a].raw_adc))])
+        fft, _ = self.spectra[m][a].get_f()
+        global_max = np.max([global_max, np.max(np.abs(fft))])
     for m in self.spectra.keys():
       for a in self.spectra[m].keys():
-        self.spectra[m][a].scale = 1.0/global_max
+        self.spectra[m][a].scale /= global_max
 
   def _correct_b0(self):
-    if self.source in ['fid-a', 'lcmodel', 'pygamma']:
-      # There's not going to be an individual shift per metabolite...
-      # so we calibrate the entire set against Cr or NAA
-      b0_shift = []
-      for m in self.spectra.keys():
-        for a in self.spectra[m].keys():
-          shift = self.spectra[m][a].correct_b0()
-          if shift is not None:
-            b0_shift.append(shift)
-      if len(b0_shift) == 0:
-        raise Exception("B0 correction for basis failed")
-      # Shift all by mean
-      b0_shift = np.mean(b0_shift)
-      for m in self.spectra.keys():
-        for a in self.spectra[m].keys():
-          self.spectra[m][a].correct_b0(ppm_shift=b0_shift)
+    # There's not going to be an individual shift per metabolite...
+    # so we calibrate the entire set against the priority reference peak
+    b0_shift = None
+    if self.pulse_sequence == "megapress":
+      for pair in molecules.b0_correction:
+        if pair[0] in self.spectra:
+          b0_shift = self.spectra[pair[0]]['edit_off'].correct_b0()
+          if b0_shift is not None:
+            break
     else:
-      raise Exception('Unrecognised source for B0 correction routine')
+      raise Exception(f"No B0 correction for {self.pulse_sequence}")
+    if b0_shift == None:
+      raise Exception("B0 correction for basis failed")
+    # Apply shift
+    for m in self.spectra.keys():
+      for a in self.spectra[m].keys():
+        self.spectra[m][a].correct_b0(shift=b0_shift)
 
   def combine(self, concentrations, id):
     if len(concentrations) != len(self.spectra.keys()):
@@ -340,47 +343,40 @@ class Basis(object):
         l += 1
     shifts = []
     for a in self.acquisitions:
-      adc = None
+      fft = None
       lw = None
-      dt = None
+      sample_rate = None
       center_ppm = None
-      ppm_shift = None
+      shift_ppm = None
       for m in self.spectra.keys():
-        if adc is None:
-          adc = self.spectra[m][a].adc(pad=False) * con[m]
+        if fft is None:
+          fft, _ = self.spectra[m][a].get_f()
+          fft *= con[m]
           lw = self.spectra[m][a].linewidth
-          dt = self.spectra[m][a].dt
+          sample_rate = self.spectra[m][a].sample_rate
           center_ppm = self.spectra[m][a].center_ppm
-          ppm_shift = self.spectra[m][a].b0_ppm_shift
-        else:
-          a_adc = self.spectra[m][a].adc(pad=False) * con[m]
-          al = a_adc.shape[0]
-          adcl = adc.shape[0]
-          if al > adcl:
-            adc = np.append(adc, np.zeros(al-adcl)) + a_adc
-          elif al < adcl:
-            adc += np.append(a_adc, np.zeros(adcl-al))
-          else:
-            adc += a_adc
+          shift_ppm = self.spectra[m][a].b0_shift_ppm
+        else: # FIXME: weighted add spectra
+          a_fft, _ = self.spectra[m][a].get_f()
+          fft += a_fft * con[m]
           lw += self.spectra[m][a].linewidth
-          if np.abs(dt - self.spectra[m][a].dt) > 1e-8:
-            raise Exception("Cannot combine spectra with different dt")
+          if np.abs(sample_rate - self.spectra[m][a].sample_rate) > 1e-8:
+            raise Exception("Cannot combine spectra with different sample rates")
           if np.abs(center_ppm - self.spectra[m][a].center_ppm) > 1e-8:
             raise Exception("Cannot combine spectra with different center_ppm")
-          if np.abs(ppm_shift - self.spectra[m][a].b0_ppm_shift) > 1e-8:
-            raise Exception("Cannot combine spectra with different b0_ppm_shift")
+          if np.abs(shift_ppm - self.spectra[m][a].b0_shift_ppm) > 1e-8:
+            raise Exception("Cannot combine spectra with different b0_shift_ppm")
       lw = lw / len(self.spectra.keys()) # Linewidth should be identical, but just in case
       spectra[a] = Spectrum(id=id,
-                            source=self.spectra[self.metabolites[0]][a].source,
-                            metabolites=self.metabolites,
                             pulse_sequence=self.pulse_sequence,
                             acquisition=a,
                             omega=self.omega,
-                            linewidth=lw,
-                            dt=self.spectra[self.metabolites[0]][a].dt, # should be identical
-                            center_ppm=self.spectra[self.metabolites[0]][a].center_ppm, # should be identical
-                            raw_adc=adc)
-      # B0 correction
+                            source=self.spectra[self.metabolites[0]][a].source,
+                            metabolites=self.metabolites,
+                            linewidth=lw)
+      spectra[a].set_f(fft,sample_rate,center_ppm=center_ppm,b0_shift_ppm=shift_ppm,
+                       filter_fft=True, remove_water_peak=True) # Treat as real spectra
+      # B0 correction - FIXME: select suitable acqusition for finding shift
       shift = spectra[a].correct_b0()
       if shift is not None:
         shifts.append(shift)
@@ -391,12 +387,15 @@ class Basis(object):
         spectra[a].correct_b0(mean_shift)
     # Sanity check for difference
     if 'edit_on' in self.acquisitions and 'edit_off' in self.acquisitions and 'difference' in self.acquisitions:
-      err = np.max(np.abs(spectra['edit_on'].raw_adc - spectra['edit_off'].raw_adc - spectra['difference'].raw_adc))
+      eon, _ = spectra['edit_on'].get_f()
+      eoff, _ = spectra['edit_off'].get_f()
+      diff, _ = spectra['difference'].get_f()
+      err = np.max(np.abs(eon - eoff - diff))
       if err > 1e-8:
         raise Exception("Coimbined difference spectrum differs from edit_on - edit_off")
     return spectra, con
 
-  def plot(self, data='magnitude', type='fft'):
+  def plot(self, data='magnitude', type='fft'): # FIXME: check
     acqs = self.acquisitions
     num_m = len(self.spectra)
     num_a = len(acqs)
@@ -414,7 +413,7 @@ class Basis(object):
       row = 0
       for m in sorted(self.spectra.keys()):
         self.spectra[m][a].plot(axes[row,col], type=type, mode=data)
-        ml = convert_names([m], shorten=True)[0]
+        ml = molecules.convert_names([m], shorten=True)[0]
         if col == 0:
           axes[row,col].annotate(ml, xy=(0, 0.5), xytext=(-axes[row,col].yaxis.labelpad - pad, 0),
                                  xycoords=axes[row,col].yaxis.label, textcoords='offset points',

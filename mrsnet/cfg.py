@@ -16,7 +16,6 @@ class Cfg:
     'path_model': None,
     'path_benchmark': None,
     'figsize': (26.67,15.0),
-    'fft_oversample': 2,
     'b0_correct_ppm_range': 0.25,
     'water_peak_ppm_range': 0.5,
     'default_screen_dpi': 96,
@@ -80,8 +79,8 @@ class Cfg:
     from math import hypot
     try:
       dpi = hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
-      if dpi > Cfg.val['image_dpi']:
-        return Cfg.val['image_dpi']
+      if dpi > Cfg.val['image_dpi'][0]: # screen_dpi bound by image_dpi to avoid huge resolutions
+        return Cfg.val['image_dpi'][0]
       return dpi
     except:
       return Cfg.val['default_screen_dpi']
