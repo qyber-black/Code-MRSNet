@@ -55,18 +55,7 @@ class Dataset(object):
             concs_ok = False
     self.metabolites.sort()
     for id in sorted(specs.keys()):
-      # B0 correction per spectrum - FIXME: select acqusition!
-      shifts = []
-      for a in specs[id].keys():
-        shift = specs[id][a].correct_b0()
-        if shift is not None:
-          shifts.append(shift)
-      # Shift spectra by mean b0 shift, if we have one - FIXME: best, not mean
-      if len(shifts) > 0:
-        mean = np.mean(shifts)
-        for a in specs[id].keys():
-          specs[id][a].correct_b0(mean)
-      # Add to dataset
+      Spectrum.correct_b0_multi(specs[id])
       self.spectra.append(specs[id])
       if concs_ok:
         self.concentrations.append(concs[id])
@@ -236,30 +225,11 @@ class Dataset(object):
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
               raise Exception("Difference spectrum without edit_off or edit_on")
-            diff = Spectrum(self.spectra[idx]['edit_on'].id+":ON_-_OFF:"+self.spectra[idx]['edit_off'].id,
-                            pulse_sequence=self.spectra[idx]['edit_off'].pulse_sequence,
-                            acquisition="difference",
-                            omega=self.spectra[idx]['edit_off'].omega,
-                            source=self.spectra[idx]['edit_off'].source,
-                            metabolites=self.spectra[idx]['edit_off'].metabolites,
-                            linewidth=self.spectra[idx]['edit_off'].linewidth)
-            diff.noise = self.spectra[idx]['edit_off'].noise
-            eon, _ = self.spectra[idx]['edit_on'].get_f() # FXIME: subtract spectra
-            eoff, _ = self.spectra[idx]['edit_off'].get_f()
-            diff.set_f(eon - eoff, self.spectra[idx]['edit_off'].sample_rate,
-                       center_ppm=self.spectra[idx]['edit_off'].center_ppm)
-            self.spectra[idx]['difference'] = diff
+            self.spectra[idx]['difference'] = Spectrum.comb(1.0,self.spectra[idx]['edit_on'],-1.0,self.spectra[idx]['edit_off'],
+                                                            self.spectra[idx]['edit_on'].id+"_+_"+self.spectra[idx]['edit_off'].id,
+                                                            "difference")
           # B0 correction per spectrum
-          shifts = []
-          for a in self.spectra[idx]:
-            shift = self.spectra[idx][a].correct_b0()
-            if shift is not None:
-              shifts.append(shift)
-          # Shift spectra by mean b0 shift if we have one
-          if len(shifts) > 0:
-            shift_mean = np.mean(shifts)
-            for a in self.spectra[idx]:
-              self.spectra[idx][a].correct_b0(shift_mean)
+          Spectrum.correct_b0_multi(self.spectra[idx])
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 

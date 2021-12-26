@@ -276,6 +276,106 @@ class Spectrum(object):
     return figure
 
   @staticmethod
+  def comb(f1,s1,f2,s2,id,acq):
+    # Weighted addition of two spectra
+    if s1.pulse_sequence != s2.pulse_sequence:
+      raise Exception("Combing spectra from different pulse sequences")
+    if np.abs(s1.omega - s2.omega) >= 1e-8:
+      raise Exception("Combing spectra with different omega")
+    if s1.source != s2.source:
+      raise Exception("Combing spectra from different sources")
+    metabolites = s1.metabolites
+    for m in s2.metabolites:
+      if m not in metabolites:
+        metabolites.append(m)
+    metabolites.sort()
+    if s1.linewidth != s2.linewidth and np.abs(s1.linewidth - s2.linewidth) >= 1e-8:
+      raise Exception("Combing spectra with different linewidths")
+    s = Spectrum(id=id,
+                 pulse_sequence=s1.pulse_sequence,
+                 acquisition=acq,
+                 omega=(s1.omega+s2.omega)/2.0,
+                 source=s1.source,
+                 metabolites=metabolites,
+                 linewidth=None if s1.linewidth == None else (s1.linewidth + s2.linewidth)/2.0)
+    if s1.center_ppm != s2.center_ppm:
+      raise Exception("Combining spectra with different center_ppm")
+    if s1.b0_shift_ppm != s2.b0_shift_ppm:
+      raise Exception("Combining spectra with different b0_shift_ppm")
+    if s1.sample_rate != s2.sample_rate:
+      raise Exception("Combining spectra with different sample rates")
+    if s1.noise != s2.noise:
+      raise Exception("Combining spectra with different added noise")
+    fft1, _ = s1.get_f()
+    fft2, _ = s2.get_f()
+    s.set_f(f1*fft1 + f2*fft2, s1.sample_rate, center_ppm = s1.center_ppm, b0_shift_ppm = s1.b0_shift_ppm)
+    s.noise = s1.noise
+    return s
+
+  @staticmethod
+  def combs(fs,ss,id,acq):
+    # Weighted sum of spectra
+    for n in range(1,len(ss)):
+      if ss[0].pulse_sequence != ss[n].pulse_sequence:
+        raise Exception("Combing spectra from different pulse sequences")
+      if ss[0].source != ss[n].source:
+        raise Exception("Combing spectra from different sources")
+    avg_omega = np.mean([s.omega for s in ss])
+    if ss[0].linewidth == None:
+      avg_linewidth = None
+    else:
+      avg_linewidth = np.mean([s.linewidth for s in ss])
+    all_metabolites = []
+    for n in range(len(ss)):
+      if np.abs(ss[n].omega - avg_omega) >= 1e-8:
+        raise Exception("Combing spectra with different omega")
+      if (avg_linewidth == None and ss[n].linewidth is not None) or \
+         np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8:
+        raise Exception("Combing spectra with different linewidths")
+      for m in ss[n].metabolites:
+        if m not in all_metabolites:
+          all_metabolites.append(m)
+    all_metabolites.sort()
+    s = Spectrum(id=id,
+                 pulse_sequence=ss[0].pulse_sequence,
+                 acquisition=acq,
+                 omega=avg_omega,
+                 source=ss[0].source,
+                 metabolites=all_metabolites,
+                 linewidth=avg_linewidth)
+    fft = fs[0] * ss[0].get_f()[0]
+    for n in range(1,len(ss)):
+      if ss[0].center_ppm != ss[n].center_ppm:
+        raise Exception("Combining spectra with different center_ppm")
+      if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
+        raise Exception("Combining spectra with different b0_shift_ppm")
+      if ss[0].sample_rate != ss[n].sample_rate:
+        raise Exception("Combining spectra with different sample rates")
+      if ss[0].noise != ss[n].noise:
+        raise Exception("Combining spectra with different added noise")
+      fft +=  fs[n] * ss[n].get_f()[0]
+    s.set_f(fft, ss[0].sample_rate, center_ppm = ss[0].center_ppm, b0_shift_ppm = ss[0].b0_shift_ppm)
+    s.noise = ss[0].noise
+    return s
+
+  @staticmethod
+  def correct_b0_multi(spectra):
+    # B0 correction across multiple acquisitions
+    for a in spectra:
+      if spectra[a].pulse_sequence != "megapress":
+        raise Exception("Multi-b0-correction only for megapress")
+    b0_shift = None
+    for pair in molecules.b0_correction:
+      b0_shift = spectra['edit_off'].correct_b0()
+      if b0_shift is not None:
+        break
+    if b0_shift == None:
+      b0_shift = 0.0 # No shift as no peak found
+    for a in spectra:
+      spectra[a].correct_b0(b0_shift)
+    return b0_shift
+
+  @staticmethod
   def load_fida(fida_file,id):
     fida_data = loadmat(fida_file)
     s = Spectrum(id=id,
