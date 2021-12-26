@@ -83,16 +83,30 @@ class Spectrum(object):
     return shift
 
   def _fft_peak_location(self, location, ppm_range):
-    fft_abs, nu = self.get_f()
-    fft_abs = -np.abs(fft_abs)
+    fft, nu = self.get_f()
+    fft_abs = -np.abs(fft)
     mean = np.mean(fft_abs)
     # finds the highest peak from location +- ppm_range
-    # FIXME: speed up via index selection and max?
     peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:
       if abs(location - nu[idx]) < ppm_range:
-        # FIXME: interpolate?
-        return nu[idx]
+        # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2000.
+        # Quinn's second estimator for peak (least RMS error)
+        if idx < 1 or idx > len(nu) - 1:
+          return nu[idx] # at boundary (should never really be there)
+        de = (fft[idx].real**2 + fft[idx].imag**2)
+        ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
+        dp = ap / (ap-1)
+        am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
+        dm = am / (1-am)
+        dp2 = dp**2
+        dm2 = dm**2
+        f1 = np.sqrt(6.0)/24.0
+        f2 = np.sqrt(2.0/3.0)
+        tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1 * np.log((dp2+1.0-f2) / (dp2+1.0+f2))
+        tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1 * np.log((dm2+1.0-f2) / (dm2+1.0+f2))
+        d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
+        return nu[idx] + (nu[1] - nu[0]) * d
       if fft_abs[idx] < mean:
         break
     return None
@@ -108,7 +122,6 @@ class Spectrum(object):
     return fp(np.arange(high_ppm,low_ppm+freq_step,freq_step)), np.arange(high_ppm,low_ppm+freq_step,freq_step)
 
   def _fft_remove_water_peak(self):
-    # FIXME: check
     # find the peak then set the range centered around it to the median signal of the fft
     water_peak_loc = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'])
     if water_peak_loc is not None:
@@ -227,10 +240,11 @@ class Spectrum(object):
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
                    " @ " + str(next(iter(omega))) + "Hz Linewidth: " + str(next(iter(linewidth)))
     noise = next(iter(noise))
-    if noise is not None and noise[0] == "adc" and noise[1] == "normal":
-      super_title += f" - ADC Noise N({noise[2]},{noise[3]})"
-    else:
-      raise Exception("Unknonw noise model")
+    if noise is not None:
+      if noise[0] == "adc" and noise[1] == "normal":
+        super_title += f" - ADC Noise N({noise[2]},{noise[3]})"
+      else:
+        raise Exception("Unknown noise model")
 
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:

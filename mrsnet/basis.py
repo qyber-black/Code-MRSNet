@@ -157,19 +157,6 @@ class Basis(object):
           spec[a] = Spectrum.comb(1.0,self.spectra['Gln'],1.0,self.spectra['Glu'],
                                   self.spectra['Gln'][a].id+"_+_"+self.spectra['Glu'][a].id,
                                   a)
-          #spec[a] = Spectrum(self.spectra['Gln'][a].id+"_+_"+self.spectra['Glu'][a].id,
-          #                   pulse_sequence=self.spectra['Gln']['edit_off'].pulse_sequence, # should be identical to Glu
-          #                   acquisition=a,
-          #                   omega=self.spectra['Gln'][a].omega, # should be identical to Glu
-          #                   source=self.spectra['Gln'][a].source, # should be identical to Glu
-          #                   metabolites=["GlX"],
-          #                   linewidth=self.spectra['Gln'][a].linewidth) # should be identical to Glu
-          #spec[a].noise = self.spectra['Gln'][a].noise # should be identical to Glu
-          #f_gln, _ = self.spectra['Gln'][a].get_f()
-          #f_glu, _ = self.spectra['Glu'][a].get_f() # FIXME: add function for spectrum
-          #spec[a].set_f(f_gln+f_glu,
-          #              self.spectra['Gln'][a].sample_rate, # should be identical to Glu
-          #              center_ppm=self.spectra['Gln'][a].center_ppm) # should be identical to Glu
       self.spectra['GlX'] = spec
       del self.spectra['Gln']
       del self.spectra['Glu']
@@ -262,50 +249,14 @@ class Basis(object):
           self.spectra[m]['difference'] = Spectrum.comb(1.0,self.spectra[m]['edit_on'],-1.0,self.spectra[m]['edit_off'],
                                                         self.spectra[m]['edit_on'].id+":ON_-_OFF:"+self.spectra[m]['edit_off'].id,
                                                         "difference")
-          #diff = Spectrum(self.spectra[m]['edit_on'].id+":ON_-_OFF:"+self.spectra[m]['edit_off'].id,
-          #                pulse_sequence=self.spectra[m]['edit_off'].pulse_sequence,
-          #                acquisition="difference",
-          #                omega=self.spectra[m]['edit_off'].omega,
-          #                source=self.spectra[m]['edit_off'].source,
-          #                metabolites=self.spectra[m]['edit_off'].metabolites,
-          #                linewidth=self.spectra[m]['edit_off'].linewidth)
-          #diff.noise = self.spectra[m]['edit_off'].noise
-          #eon, _ = self.spectra[m]['edit_on'].get_f()
-          #eoff, _ = self.spectra[m]['edit_off'].get_f() # FIXME: difference between spectra
-          #diff.set_f(eon - eoff,self.spectra[m]['edit_off'].sample_rate,center_ppm=self.spectra[m]['edit_off'].center_ppm)
-          #self.spectra[m]['difference'] = diff
         elif 'edit_off' in self.spectra[m] and 'difference' in self.spectra[m]:
           self.spectra[m]['edit_on'] = Spectrum.comb(1.0,self.spectra[m]['difference'],1.0,self.spectra[m]['edit_off'],
                                                      self.spectra[m]['difference'].id+"_+_"+self.spectra[m]['edit_off'].id,
                                                      "edit_on")
-          #eon = Spectrum(self.spectra[m]['difference'].id+":DIFF_+_OFF:"+self.spectra[m]['edit_off'].id,
-          #               pulse_sequence=self.spectra[m]['edit_off'].pulse_sequence,
-          #               acquisition="edit_on",
-          #               omega=self.spectra[m]['edit_off'].omega,
-          #               source=self.spectra[m]['edit_off'].source,
-          #               metabolites=self.spectra[m]['edit_off'].metabolites,
-          #               linewidth=self.spectra[m]['edit_off'].linewidth)
-          #eon.noise = self.spectra[m]['edit_off'].noise
-          #diff, _ = self.spectra[m]['difference'].get_f()
-          #eoff, _ = self.spectra[m]['edit_off'].get_f() # FIXME: add spectra
-          #eon.set_f(diff + eoff, self.spectra[m]['edit_off'].sample_rate, center_ppm=self.spectra[m]['edit_off'].center_ppm)
-          #self.spectra[m]['edit_on'] = eon
         elif 'edit_on' in self.spectra[m] and 'difference' in self.spectra[m]:
           self.spectra[m]['edit_off'] = Spectrum.comb(1.0,self.spectra[m]['edit_on'],1.0,self.spectra[m]['difference'],
                                                       self.spectra[m]['edit_on'].id+"_-_"+self.spectra[m]['difference'].id,
                                                       "edif_off")
-          #eoff = Spectrum(self.spectra[m]['edit_on'].id+":ON_-_DIFF:"+self.spectra[m]['difference'].id,
-          #                pulse_sequence=self.spectra[m]['edit_on'].pulse_sequence,
-          #                acquisition="edit_off",
-          #                omega=self.spectra[m]['edit_on'].omega,
-          #                source=self.spectra[m]['edit_on'].source,
-          #                metabolites=self.spectra[m]['edit_on'].metabolites,
-          #                linewidth=self.spectra[m]['edit_on'].linewidth)
-          #eoff.noise = self.spectra[m]['edit_on'].noise
-          #diff, _ = self.spectra[m]['difference'].get_f()
-          #eon, _ = self.spectra[m]['edit_on'].get_f() # FIXME: subtract spectra
-          #eon.set_f(eon - diff, self.spectra[m]['edit_on'].sample_rate, center_ppm=self.spectra[m]['edit_on'].center_ppm)
-          #self.spectra[m]['edit_off'] = eoff
         else:
           raise Exception(f"Incomplete megapress spectrum for {m}")
 
