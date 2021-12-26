@@ -10,7 +10,6 @@ import subprocess
 import json
 import numpy as np
 from scipy.io import loadmat
-from scipy.interpolate import interp1d
 from scipy import signal
 import matplotlib.pyplot as plt
 
@@ -90,9 +89,10 @@ class Spectrum(object):
     peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:
       if abs(location - nu[idx]) < ppm_range:
-        # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2000.
-        # Quinn's second estimator for peak (least RMS error)
-        if idx < 1 or idx > len(nu) - 1:
+        # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2001.
+        # https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
+        # Quinn's second estimator (least RMS error)
+        if idx < 1 or idx >= len(nu) - 1:
           return nu[idx] # at boundary (should never really be there)
         de = (fft[idx].real**2 + fft[idx].imag**2)
         ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
@@ -103,23 +103,37 @@ class Spectrum(object):
         dm2 = dm**2
         f1 = np.sqrt(6.0)/24.0
         f2 = np.sqrt(2.0/3.0)
-        tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1 * np.log((dp2+1.0-f2) / (dp2+1.0+f2))
-        tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1 * np.log((dm2+1.0-f2) / (dm2+1.0+f2))
+        tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
+        tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
         d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
-        return nu[idx] + (nu[1] - nu[0]) * d
+        return nu[idx] + (nu[1]-nu[0])*d
       if fft_abs[idx] < mean:
         break
     return None
 
-  def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048): # FIXME: with get_f?
-    # Interpolate oversampled (see Cfg and set_adc) spectrum to get fixed fft bins
-    # (avoids issues with b0 correction and simpler than zero padding)
+  def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
+    # Resample fft to prescribed frequency bins via zero filling
     fft, nu = self.get_f()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
-      raise Exception('Requested ppm rescale range out of range of nu of spectrum. Max:' + str(np.min(nu)) + ' Min: ' + str(np.max(nu)))
-    freq_step = (low_ppm-high_ppm)/(npts-1)
-    fp = interp1d(nu, fft, "cubic") # FIXME: better? zero filling
-    return fp(np.arange(high_ppm,low_ppm+freq_step,freq_step)), np.arange(high_ppm,low_ppm+freq_step,freq_step)
+      raise Exception(f"Requested ppm rescale range out of range [{nu[0]},{nu[len(nu)-1]}]")
+    freq_step = (low_ppm-high_ppm)/npts
+    bw = self.sample_rate/2.0/self.omega
+    t_samples = int(2.0*bw/freq_step)
+    rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
+    index = (rnu >= high_ppm) & (rnu <= low_ppm)
+    if len(rnu[index]) != npts:
+      t_samples += 1
+      rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
+      index = (rnu >= high_ppm) & (rnu <= low_ppm)
+      if len(rnu[index]) != npts:
+        raise Exception(f"Length error: got {len(rnu[index])}, expected {npts}")
+    ifft = np.fft.ifft(np.fft.ifftshift(self.fft))
+    if t_samples > len(self.fft):
+      ifft = np.append(ifft, np.zeros(t_samples - len(self.fft)))
+    else:
+      ifft = ifft[0:t_samples]
+    rfft = np.fft.fftshift(np.fft.fft(ifft))
+    return rfft[index], rnu[index]
 
   def _fft_remove_water_peak(self):
     # find the peak then set the range centered around it to the median signal of the fft
@@ -155,7 +169,7 @@ class Spectrum(object):
       Y, X = self.get_t()
       axes.set_xlabel('Time (s)')
     elif type == 'fft':
-      Y, X = self.get_f() # FXIME: specify range / rescale_fft
+      Y, X = self.rescale_fft()
       axes.set_xlabel('Frequency (ppm)')
     else:
       raise Exception("Unknown plot type")
@@ -531,7 +545,7 @@ class Spectrum(object):
                            omega=metadata["SEQPAR"]['HZPPPM'],
                            source='lcmodel',
                            metabolites=[metabolite],
-                           linewidth=1.0) # FIXME: linewidth?
+                           linewidth=1.0) # FIXME: linewidth for lcmodel?
               s.set_f(np.fft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
               specs.append(s)
           elif area != "":
