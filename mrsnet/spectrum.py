@@ -84,7 +84,7 @@ class Spectrum(object):
   def _fft_peak_location(self, location, ppm_range):
     fft, nu = self.get_f()
     fft_abs = -np.abs(fft)
-    mean = np.mean(fft_abs)
+    mean = np.mean(fft_abs) # FIXME: too large?
     # finds the highest peak from location +- ppm_range
     peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:

@@ -11,7 +11,7 @@ import seaborn as sns
 from .dataset import Dataset
 from . import molecules
 
-def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
+def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, verbose=0, image_dpi=[300], screen_dpi=96):
   # Compare dataset to spectra generated from basis
   # Setup basis
   if verbose > 0:
@@ -41,8 +41,8 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
                        acquisitions=['difference','edit_off','edit_on'],
                        datatype=['magnitude','phase','real','imaginary'],
                        verbose=verbose)
-  ppm_step = (ds.low_ppm - ds.high_ppm)/(r_inp.shape[-1]-1)
-  nu = np.arange(ds.high_ppm,ds.low_ppm+ppm_step,ppm_step)
+  ppm_step = (low_ppm - high_ppm)/(r_inp.shape[-1]-1)
+  nu = np.arange(high_ppm,low_ppm+ppm_step,ppm_step)
 
   all_diff = np.ndarray((r_inp.shape[1],r_inp.shape[2],r_inp.shape[3]*r_inp.shape[0]))
   for l in range(len(ds.spectra)):

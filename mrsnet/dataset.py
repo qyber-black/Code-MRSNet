@@ -20,14 +20,11 @@ from .cfg import Cfg
 class Dataset(object):
   # A dataset is a collection of spectra for training, tesing or predicting.
 
-  def __init__(self, name, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048): # FIXME: high/low ppm and pts only for export
+  def __init__(self, name):
     self.name = name
     self.metabolites = None
     self.spectra = []
     self.concentrations = []
-    self.high_ppm = high_ppm
-    self.low_ppm = low_ppm
-    self.n_fft_pts = n_fft_pts
     self.pulse_sequence = None
     self.noise_added = False
 
@@ -61,7 +58,6 @@ class Dataset(object):
 
   def generate_spectra(self, basis, num, samplers, verbose):
     # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
-    # Does not add noise, but only generates clean combined ADC signal.
     if num <= 0:
       raise Exception(f"n_samples must be greater than 0, not {num}!")
     if self.metabolites == None:
@@ -78,14 +74,6 @@ class Dataset(object):
       self.pulse_sequence = basis.pulse_sequence
     elif self.pulse_sequence != basis.pulse_sequence:
       raise Exception("Dataset pulse sequence does not match basis pulse sequence")
-
-    for s in basis.spectra.keys():
-      for a in basis.spectra[s].keys():
-        _, nu = basis.spectra[s][a].get_f()
-        if np.min(nu) > self.high_ppm:
-          raise Exception(f"Spectra do not reach the required max frequency axis ({np.min(spectra.nu()):.2f}) for export: {self.high_ppm:.2f}")
-        elif np.max(nu) < self.low_ppm:
-          raise Exception(f"Spectra do not reach the required min frequency axis ({np.max(spectra.nu()):.2f}) for export: {self.low_ppm:.2f}")
 
     n0 = num // len(samplers)
     n1 = num % len(samplers)
@@ -199,7 +187,7 @@ class Dataset(object):
       self.spectra.append(s)
       self.concentrations.append(c)
 
-  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose): # FIXME: needs to use adc_gaussian!
+  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose):
     # Add noise to all spectra
     if self.noise_added:
       raise Exception("Noise added twice to dataset")
@@ -223,10 +211,11 @@ class Dataset(object):
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
               raise Exception("Difference spectrum without edit_off or edit_on")
-            self.spectra[idx]['difference'] = Spectrum.comb(1.0,self.spectra[idx]['edit_on'],-1.0,self.spectra[idx]['edit_off'],
+            self.spectra[idx]['difference'] = Spectrum.comb(1.0,self.spectra[idx]['edit_on'],
+                                                            -1.0,self.spectra[idx]['edit_off'],
                                                             self.spectra[idx]['edit_on'].id+"_+_"+self.spectra[idx]['edit_off'].id,
                                                             "difference")
-          # B0 correction per spectrum
+          # B0 correction
           Spectrum.correct_b0_multi(self.spectra[idx])
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
@@ -255,7 +244,7 @@ class Dataset(object):
       fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
       axes = axes.flatten()
       norm_str = "" if norm == 'none' else ("("+norm+" normalised)"),
-      plt.suptitle(f"Concentrations {norm_str} of {self.name}; {len(self.spectra)} spectra; {self.low_ppm} - {self.high_ppm} ppm @ {self.n_fft_pts} pts")
+      plt.suptitle(f"Concentrations {norm_str} of {self.name}; {len(self.spectra)} spectra")
       cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
       k = 0
       for c in self.concentrations:
@@ -274,7 +263,7 @@ class Dataset(object):
       return fig
     return None
 
-  def export(self, metabolites=None, norm='sum', acquisitions=['edit_off','difference'],
+  def export(self, metabolites=None, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, norm='sum', acquisitions=['edit_off','difference'],
              datatype='magnitude', normalise=True, verbose=0):
     if metabolites is None:
       metabolites = self.metabolites
@@ -283,7 +272,7 @@ class Dataset(object):
       if verbose > 0:
         print("Converting spectra to tensor")
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
-                    acquisitions, datatype, self.high_ppm, self.low_ppm, self.n_fft_pts, normalise)
+                    acquisitions, datatype, high_ppm, low_ppm, n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
       d_inp = np.array(d_inp, dtype=np.float64)
       if verbose > 0:
@@ -303,15 +292,15 @@ class Dataset(object):
       d_out = np.ndarray((0,0))
 
     if np.sum(d_out.shape) > 0:
-      if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != self.n_fft_pts:
+      if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != n_fft_pts:
         raise Exception("Unexpected input/output tensor shape(s)")
 
     if Cfg.dev("check_dataset_export"):
-      self._check_export(d_inp,d_out,metabolites, norm, acquisitions, datatype, normalise)
+      self._check_export(d_inp,d_out,metabolites, high_ppm, low_ppm, n_fft_pts, norm, acquisitions, datatype, normalise)
 
     return d_inp, d_out
 
-  def _check_export(self,d_inp,d_out,metabolites,norm,acquisitions,datatype,normalise): # FIXME: test this
+  def _check_export(self,d_inp,d_out,metabolites,high_ppm,low_ppm,n_fft_pts,norm,acquisitions,datatype,normalise):
     # Test mrsnet.dataset.export
     from colorama import Fore, Style
     print("# Testing mrsnet.dataset.export")
@@ -322,15 +311,15 @@ class Dataset(object):
       for s in range(len(self.spectra)):
         print(f"## Spectra tensor export test: {s: 10d}", end='\r', flush=True)
         nl="\n"
-        fft = np.ndarray((len(acquisitions),self.n_fft_pts),dtype=np.complex64)
+        fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
         a_idx = 0
         a_norm = None
         for a in acquisitions:
           if a == "edit_off":
             a_norm = a_idx
-          fft[a_idx,:], _ = self.spectra[s][a].rescale_fft(high_ppm=self.high_ppm,
-                                                           low_ppm=self.low_ppm,
-                                                           npts=self.n_fft_pts)
+          fft[a_idx,:], _ = self.spectra[s][a].rescale_fft(high_ppm=high_ppm,
+                                                           low_ppm=low_ppm,
+                                                           npts=n_fft_pts)
           a_idx += 1
         if normalise:
           m = np.abs(fft)

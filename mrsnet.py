@@ -8,6 +8,9 @@
 #
 # See --help for arguments, uses sub-commands
 
+# FIXME: verbose only, no plot/MRSNET_DEV
+# FIXME: ppm_range; fft sampling_rate/samples
+
 import os
 import glob
 import sys
