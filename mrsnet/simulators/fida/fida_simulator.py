@@ -11,11 +11,11 @@ import subprocess
 from mrsnet.cfg import Cfg
 from mrsnet.molecules import GYROMAGNETIC_RATIO
 
-def fida_spectra(metabolite_names, omega, linewidth, npts, adc_dt, save_dir):
+def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, save_dir):
   matlab_command = "addpath(genpath(fullfile('"+Cfg.val['path_root']+"','mrsnet','simulators','fida')));"
   matlab_command += "Bfield="+str(omega/GYROMAGNETIC_RATIO)+";"
   matlab_command += "Npts="+str(npts)+";"
-  matlab_command += "sw="+str(1/adc_dt)+";"
+  matlab_command += "sw="+str(sample_rate)+";"
 
   matlab_command += "metabolites={"
   for m in metabolite_names:

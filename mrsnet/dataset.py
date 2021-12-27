@@ -243,8 +243,8 @@ class Dataset(object):
         n_row += 1
       fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
       axes = axes.flatten()
-      norm_str = "" if norm == 'none' else ("("+norm+" normalised)"),
-      plt.suptitle(f"Concentrations {norm_str} of {self.name}; {len(self.spectra)} spectra")
+      norm_str = "" if norm == 'none' else f"({norm} normalised) "
+      plt.suptitle(f"Concentrations {norm_str}of {self.name}; {len(self.spectra)} spectra")
       cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
       k = 0
       for c in self.concentrations:
@@ -460,7 +460,9 @@ Collections = {
     'sample': ['random','sobol','dirichlet'],
     'noise_p': [1.0],
     'noise_sigma': [0.05,0.1],
-    'noise_mu': [0.0]
+    'noise_mu': [0.0],
+    'sample_rate': [2000],
+    'samples': [8192]
   }),
   'multi_source-linewidths': Grid({
     'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
@@ -473,6 +475,8 @@ Collections = {
     'sample': ['sobol'],
     'noise_p': [1.0],
     'noise_sigma': [0.1],
-    'noise_mu': [0.0]
+    'noise_mu': [0.0],
+    'sample_rate': [2000],
+    'samples': [8192]
   })
 }

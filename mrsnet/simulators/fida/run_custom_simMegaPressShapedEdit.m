@@ -118,13 +118,13 @@ for ii=1:length(metabolites)
       edit = false;
       fid = outOFF.fids;
       fft = outOFF.specs;
-      f_name = sprintf('FIDA_%s_MEGA-PRESS_EDIT_OFF_LW_%f.mat',m_name, lw);
+      f_name = sprintf('FIDA_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat',m_name, lw, sw, Npts, Bfield);
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
 
       edit = true;
       fid = outON.fids;
       fft = outON.specs;
-      f_name = sprintf('FIDA_%s_MEGA-PRESS_EDIT_ON_LW_%f.mat',m_name, lw);
+      f_name = sprintf('FIDA_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat',m_name, lw, sw, Npts, Bfield);
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
     end
 end

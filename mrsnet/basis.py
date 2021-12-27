@@ -24,10 +24,11 @@ class BasisCollection:
     return str
 
   def add(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence,
-          path_basis=os.path.join('data','basis')):
+          sample_rate, samples, path_basis=os.path.join('data','basis')):
     basis = Basis(metabolites=metabolites, source=source,
                   manufacturer=manufacturer, omega=omega,
-                  linewidth=linewidth, pulse_sequence=pulse_sequence).setup(path_basis)
+                  linewidth=linewidth, pulse_sequence=pulse_sequence,
+                  sample_rate=sample_rate, samples=samples).setup(path_basis)
     idx = basis.name()
     if idx in self._bases:
       raise Exception(f"Basis {idx} already in basis collection")
@@ -73,25 +74,36 @@ class Basis(object):
   # are for one basis_source, manufacturer, pulse_sequence, omega, linewidth
 
   def __init__(self, metabolites=[], source=None, manufacturer=None,
-               omega=None, linewidth=None, pulse_sequence=None):
+               omega=None, linewidth=None, pulse_sequence=None, sample_rate=2500, samples=4096):
     self.metabolites = sorted(metabolites)
     self.source = source
     self.manufacturer = manufacturer
     self.omega = omega
-    self.linewidth = linewidth
     self.pulse_sequence = pulse_sequence
+
+    if self.source == "lcmodel":
+      self.linewidth = None # Unknown
+      self.sample_rate = 2000 # Taken from lcmodel basis file
+      self.samples = 8192 # Taken from lcmodel basis file
+    else:
+      self.linewidth = linewidth
+      self.sample_rate = sample_rate
+      self.samples = samples
+
 
     self.acquisitions = None # Indicates if setup or not and lists acqusitions
     self.spectra = {}  # Dict of spectra in basis: spectra['METABOLITE'] = {'ACQUISITION': Spectrum}
 
   def __str__(self):
-    return ("Basis: \n  Metabolites: %s\n  Source: %s\n  Manufacturer: %s\n  Omega: %f\n  Lindewith: %f\n  Pulse Sequence: %s"
+    return ("Basis: \n  Metabolites: %s\n  Source: %s\n  Manufacturer: %s\n  Omega: %f\n  Linewidth: %s\n  Pulse Sequence: %s\n  Sample Rate: %f\n  Samples: %d"
             % ("-".join(self.metabolites), self.source, self.manufacturer,
-               self.omega, self.linewidth,self.pulse_sequence))
+               self.omega, str(self.linewidth), self.pulse_sequence,
+               self.sample_rate, self.samples))
 
   def name(self):
     return "_".join(["-".join(self.metabolites), self.source, self.manufacturer,
-                     str(self.omega), str(self.linewidth), self.pulse_sequence])
+                     str(self.omega), str(self.linewidth), self.pulse_sequence,
+                     str(self.sample_rate), str(self.samples)])
 
   def setup(self, path_basis=os.path.join('data','basis')):
     if self.acquisitions is not None:
@@ -133,7 +145,7 @@ class Basis(object):
       self.metabolites.sort()
       glx = True
     if self.source == 'lcmodel':
-      if self.linewidth != 1.0:
+      if self.linewidth != None:
         raise Exception('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
       self._load_lcm(path_basis=os.path.join(path_basis,'lcmodel'))
     elif self.source == 'fid-a':
@@ -170,18 +182,30 @@ class Basis(object):
       os.makedirs(os.path.join(path_basis,'basis_files'))
     to_simulate = copy.copy(self.metabolites)
     for file in os.listdir(os.path.join(path_basis,'basis_files')):
-      if file.endswith('.mat'):
-        spec = Spectrum.load_fida(os.path.join(path_basis,'basis_files',file),file[0:-4])
-        if len(spec.metabolites) > 1:
-          raise Exception("More than one metabolite in FID-A basis")
-        if (spec.metabolites[0].lower() in [x.lower() for x in self.metabolites]) \
-            and (spec.linewidth == self.linewidth) \
-            and (np.abs(spec.omega - self.omega) < 1e-8): # there are rounding errors for storing the B0
-          if spec.metabolites[0] not in self.spectra:
-            self.spectra[spec.metabolites[0]] = {}
-          self.spectra[spec.metabolites[0]][spec.acquisition] = spec
-          if spec.metabolites[0] in to_simulate:
-            to_simulate.remove(spec.metabolites[0])
+      if file.startswith('FIDA_') and file.endswith('.mat'):
+        vals = file.split("_")
+        try:
+          if vals[2].lower() == self.pulse_sequence \
+             and (vals[3] == "EDITON" or vals[3] == "EDITOFF") \
+             and np.abs(float(vals[4]) - self.linewidth) < 1e-2 \
+             and int(vals[5]) == self.sample_rate \
+             and int(vals[6]) == self.samples \
+             and np.abs(float(vals[7][0:-4]) - self.omega/molecules.GYROMAGNETIC_RATIO) < 1e-2:
+            spec = Spectrum.load_fida(os.path.join(path_basis,'basis_files',file),file[0:-4])
+            if len(spec.metabolites) > 1:
+              raise Exception("More than one metabolite in FID-A basis")
+            if spec.metabolites[0].lower() in [x.lower() for x in self.metabolites] \
+               and np.abs(spec.linewidth - self.linewidth) < 1e-2 \
+               and np.abs(spec.omega - self.omega) < 1e-2 \
+               and spec.sample_rate == self.sample_rate \
+               and len(spec.fft) == self.samples:
+              if spec.metabolites[0] not in self.spectra:
+                self.spectra[spec.metabolites[0]] = {}
+              self.spectra[spec.metabolites[0]][spec.acquisition] = spec
+              if spec.metabolites[0] in to_simulate:
+                to_simulate.remove(spec.metabolites[0])
+        except:
+          pass
     if len(to_simulate) > 0:
       if second_call:
         raise Exception('Recursion error, should have simulated spectra - but I can\'t seem to find it and '
@@ -190,19 +214,17 @@ class Basis(object):
         print('Some spectra are missing, simulating: ' + str(to_simulate))
         from .simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
-                     npts=4096, adc_dt=4e-4, # FIXME: npts and adc_dt arguments - better than harcode?
+                     npts=self.samples, sample_rate=self.sample_rate,
                      save_dir=os.path.join(path_basis,'basis_files'))
         self._load_fida(path_basis, second_call=True)
 
   def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), second_call=False):
     # Constants, synchronise with pygamma_simulator (passed as arguments, but defaults hardcoded
     # in pygamma simulator as well)
-    npts = 4096
-    adc_dt = 4e-4
     for metabolite_name in self.metabolites:
       specs = Spectrum.load_pygamma(path_basis, metabolite_name,
                                     self.pulse_sequence, self.omega,
-                                    self.linewidth, npts, adc_dt)  # FIXME: npts and adc_dt arguments - better than harcode?
+                                    self.linewidth, self.samples, 1.0/self.sample_rate)
       for s in specs:
         if s.metabolites[0] not in self.spectra:
           self.spectra[s.metabolites[0]] = {}

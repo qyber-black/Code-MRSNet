@@ -9,7 +9,7 @@
 # See --help for arguments, uses sub-commands
 
 # FIXME: verbose only, no plot/MRSNET_DEV
-# FIXME: ppm_range; fft sampling_rate/samples
+# FIXME: ppm_range+freq-samples
 
 import os
 import glob
@@ -34,6 +34,7 @@ def main():
   add_arguments_default(p_basis)
   add_arguments_metabolites(p_basis)
   add_arguments_basis(p_basis)
+  add_arguments_fft(p_basis)
   p_basis.set_defaults(func=basis)
 
   # Generate simulated dataset
@@ -43,6 +44,7 @@ def main():
   add_arguments_metabolites(p_simulate)
   add_arguments_basis(p_simulate)
   add_arguments_simulate(p_simulate)
+  add_arguments_fft(p_simulate)
   p_simulate.set_defaults(func=simulate)
 
   # Generate all datasets
@@ -57,6 +59,7 @@ def main():
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_compare)
   add_arguments_compare(p_compare)
+  add_arguments_fft(p_compare)
   p_compare.set_defaults(func=compare)
 
   # Train
@@ -133,12 +136,19 @@ def add_arguments_basis(p):
                  nargs='+',
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
-                 help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
+                 help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, nargs='+', default=[1.0],
                  help='Linewidths to be used for simulation (not possible for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
                  help='Pulse sequence (placeholder).')
+
+def add_arguments_fft(p):
+  # Add fft arguments
+  p.add_argument('--sample_rate', type=lambda v : (abs(int(v))//2)*2, default=2000,
+                 help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel).')
+  p.add_argument('--samples', type=lambda v : (abs(int(v))//2)*2, default=8192,
+                 help='FFT time samples for basis/simluation (even, positive integer; ignored for lcmodel).')
 
 def add_arguments_simulate(p):
   # Add dataset simulation arguments
@@ -169,7 +179,7 @@ def add_arguments_compare(p):
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
-                 help='Linewidths to be used for simulation (not possible for lcmodel).')
+                 help='Linewidths to be used for simulation (ignored for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
                  help='Pulse sequence (placeholder).')
@@ -225,7 +235,9 @@ def basis(args):
       for o in args.omega:
         for l in args.linewidth:
           for p in args.pulse_sequence:
-            bases.add(args.metabolites, s, m, o, l, p, path_basis=Cfg.val['path_basis'])
+            bases.add(args.metabolites, s, m, o, l, p,
+                      args.sample_rate, args.samples,
+                      path_basis=Cfg.val['path_basis'])
   if args.verbose > 0:
     print(bases)
     print("# Generating plots")
@@ -258,7 +270,7 @@ def simulate(args):
   args.linewidth = sorted(args.linewidth, key=float)
   args.metabolites.sort()
   args.pulse_sequence.sort()
-  name=os.path.join("-".join(args.source),
+  name=os.path.join("-".join(args.source)+":"+str(args.sample_rate)+":"+str(args.samples),
                     "-".join(args.manufacturer),
                     "-".join([str(k) for k in args.omega]),
                     "-".join([str(k) for k in args.linewidth]),
@@ -274,7 +286,9 @@ def simulate(args):
       for o in args.omega:
         for l in args.linewidth:
           for ps in args.pulse_sequence:
-            bases.add(args.metabolites, s, m, o, l, ps)
+            bases.add(args.metabolites, s, m, o, l, ps,
+                      args.sample_rate, args.samples,
+                      path_basis=Cfg.val['path_basis'])
           num_bases += 1
   if args.verbose > 0:
     print(bases)
@@ -328,7 +342,7 @@ def generate_datasets(args):
         na[k[ki]] = [str(val) for val in v[ki]]
       else:
         na[k[ki]] = [str(v[ki])]
-    name=os.path.join("-".join(na['source']),
+    name=os.path.join("-".join(na['source'])+":"+str(na['sample_rate'])+":"+str(na['samples']),
                       "-".join(na['manufacturer']),
                       "-".join(na['omega']),
                       "-".join(na['linewidth']),
@@ -403,7 +417,8 @@ def compare(args):
       print("# Setting up basis")
     basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
                         manufacturer=args.manufacturer, omega=args.omega,
-                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence).setup(Cfg.val['path_basis'])
+                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence,
+                        sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'])
     # Analyse with given concentrations
     from mrsnet.compare import compare_basis
     compare_basis(ds, basis,

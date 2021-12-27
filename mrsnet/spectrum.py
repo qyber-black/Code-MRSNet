@@ -196,7 +196,7 @@ class Spectrum(object):
       n_cols = 2
     else:
       super_title += "-".join(self.metabolites[0]) + ' '
-    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + " @ " + str(self.omega) + "Hz Linewidth: " + str(self.linewidth)
+    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} Hz Linewidth: " + str(self.linewidth)
     if self.noise != None:
       if self.noise[0] == "adc" and self.noise[1] == "normal":
         super_title += f" - ADC Noise N({self.noise[2]},{self.adc_noise[3]})"
@@ -251,8 +251,9 @@ class Spectrum(object):
        len(noise) != 1:
       raise Exception("Spectra differ in more than acqusition")
 
+    omega = next(iter(omega))
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
-                   " @ " + str(next(iter(omega))) + "Hz Linewidth: " + str(next(iter(linewidth)))
+                   f" @ {omega:.2f} Hz Linewidth: " + str(next(iter(linewidth)))
     noise = next(iter(noise))
     if noise is not None:
       if noise[0] == "adc" and noise[1] == "normal":
