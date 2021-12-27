@@ -38,22 +38,19 @@ class Spectrum(object):
 
     self.noise = None
 
-  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, filter_fft=False, remove_water_peak=False):
+  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
     self.fft = np.asarray(fft)
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, filter_fft, remove_water_peak)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
 
-  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, filter_fft=False, remove_water_peak=False):
+  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
     self.fft = np.fft.fftshift(np.fft.fft(adc))
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, filter_fft, remove_water_peak)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
 
-  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, filter_fft, remove_water_peak):
+  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak):
     self.sample_rate = sample_rate
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
-    if filter_fft: # FIXME: Butterworth on FFT - why?
-      b, a = signal.butter(1, 0.7)
-      self.fft = signal.filtfilt(b, a, self.fft, padlen=150)
     if remove_water_peak:
       self._fft_remove_water_peak()
 
@@ -107,7 +104,7 @@ class Spectrum(object):
         tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
         tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
         d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
-        return nu[idx] + (nu[1]-nu[0])*d, -fft_abs[idx]
+        return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
       if fft_abs[idx] > cut_off:
         break
     return None, None
@@ -122,11 +119,13 @@ class Spectrum(object):
     t_samples = int(2.0*bw/freq_step)
     rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
     index = (rnu >= high_ppm) & (rnu <= low_ppm)
-    if len(rnu[index]) != npts:
+    repeats = 0
+    while len(rnu[index]) != npts:
       t_samples += 1
       rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
       index = (rnu >= high_ppm) & (rnu <= low_ppm)
-      if len(rnu[index]) != npts:
+      repeats += 1
+      if repeats > Cfg.val['spectrum_rescale_fft_max_repeats']:
         raise Exception(f"Length error: got {len(rnu[index])}, expected {npts}")
     ifft = np.fft.ifft(np.fft.ifftshift(self.fft))
     if t_samples > len(self.fft):
@@ -140,16 +139,27 @@ class Spectrum(object):
     # find the peak then set the range centered around it to the median signal of the fft
     water_peak_loc, _ = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'])
     if water_peak_loc is not None:
-      abs_fft, nu = self.get_f()
-      abs_fft = np.abs(abs_fft)
+      fft, nu = self.get_f()
+      abs_fft = np.abs(fft)
       mean_abs = np.mean(abs_fft)
       under_mean = 0
       for jj in range(0, len(abs_fft)):
-        if np.abs(water_peak_loc - nu[jj]) < ppm_range/2.0:
-          if self.fft[jj] > mean_abs:
+        if nu[jj] >= water_peak_loc and nu[jj] < water_peak_loc + Cfg.val['water_peak_ppm_range']/2.0:
+          if np.abs(self.fft[jj]) > mean_abs:
             under_mean = 0
             self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
           elif nu[jj] > water_peak_loc:
+            # trailing edge detection, stop when the water peak is over
+            under_mean += 1
+            if under_mean > 5:
+              break
+      under_mean = 0
+      for jj in reversed(range(0, len(abs_fft))):
+        if nu[jj] <= water_peak_loc and nu[jj] > water_peak_loc - Cfg.val['water_peak_ppm_range']/2.0:
+          if np.abs(self.fft[jj]) > mean_abs:
+            under_mean = 0
+            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
+          else:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
             if under_mean > 5:
@@ -239,12 +249,13 @@ class Spectrum(object):
   @staticmethod
   def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
     n_cols = len(spectra)
+    metabolites = spectra[next(iter(spectra))].metabolites # Metabolites have to be the same for all spectra
 
     super_title = type.upper() + " "
     if len(concentrations) > 0:
       n_cols +=1
     else:
-      super_title += "-".join(self.metabolites[0]) + " "
+      super_title += "-".join(metabolites[0]) + " "
     source = set([spectra[a].source for a in spectra])
     pulse_sequence = set([spectra[a].pulse_sequence for a in spectra])
     omega = set([spectra[a].omega for a in spectra])
@@ -270,11 +281,6 @@ class Spectrum(object):
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
       axes = np.reshape(axes, (4, 1))
-    else:
-      axes[0,n_cols-1].remove()
-      axes[1,n_cols-1].remove()
-      axes[2,n_cols-1].remove()
-      axes[3,n_cols-1].remove()
 
     plt.suptitle(super_title)
 
@@ -304,7 +310,6 @@ class Spectrum(object):
       cn = [n for n in concentrations.keys()]
       cv = [concentrations[v] for v in cn]
       ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv)
-      metabolites = spectra[next(iter(spectra))].metabolites
       ax.set_xticks(np.arange(len(metabolites)))
       ax.set_xticklabels(molecules.short_name(cn))
 
@@ -651,5 +656,6 @@ class Spectrum(object):
                     source='dicom',
                     metabolites=metabolites,
                     linewidth=None) # Unknown
-    spec.set_t(dat,1/dt,center_ppm=-4.7,filter_fft=True,remove_water_peak=True)
+    # FIXME: Hanning/Hamming filter on time domain data?
+    spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True)
     return spec, cs

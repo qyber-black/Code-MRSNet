@@ -11,7 +11,7 @@ import seaborn as sns
 from .dataset import Dataset
 from . import molecules
 
-def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, verbose=0, image_dpi=[300], screen_dpi=96):
+def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, image_dpi=[300], screen_dpi=96):
   # Compare dataset to spectra generated from basis
   # Setup basis
   if verbose > 0:
@@ -36,10 +36,12 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, verbose=0, image_dpi=[30
   r_inp, r_out = ref_spectra.export(metabolites=ds.metabolites, norm='max',
                                     acquisitions=['difference','edit_off','edit_on'],
                                     datatype=['magnitude','phase','real','imaginary'],
+                                    high_ppm=high_ppm, low_ppm=low_ppm, n_fft_pts=n_fft_pts,
                                     verbose=verbose)
   d_inp, _ = ds.export(metabolites=ds.metabolites, norm='max',
                        acquisitions=['difference','edit_off','edit_on'],
                        datatype=['magnitude','phase','real','imaginary'],
+                       high_ppm=high_ppm, low_ppm=low_ppm, n_fft_pts=n_fft_pts,
                        verbose=verbose)
   ppm_step = (low_ppm - high_ppm)/(r_inp.shape[-1]-1)
   nu = np.arange(high_ppm,low_ppm+ppm_step,ppm_step)

@@ -18,14 +18,16 @@ class Cfg:
     'path_benchmark': None,
     'figsize': (26.67,15.0),
     'b0_correct_ppm_range': 0.25,
-    'water_peak_ppm_range': 0.5,
+    'water_peak_ppm_range': 0.75,
+    'spectrum_rescale_fft_max_repeats': 10,
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),
-  # but all in use should be in the comments here for reference.
+  # but all in use should be in the comments here for reference:
+  # * selectgpo_optimise_noload: do not load existing datapoints for GPO model selection
   dev_flags = set()
   # check_dataset_export - Test if exporting dataset to tensors is correct in train
   # flag_plots - Show some test graphs for the activated checks
@@ -69,7 +71,7 @@ class Cfg:
 
   @staticmethod
   def dev(flag):
-    return flag in Cfg.dev_flags or "all" in Cfg.dev_flags
+    return flag in Cfg.dev_flags
 
   @staticmethod
   def _screen_dpi():

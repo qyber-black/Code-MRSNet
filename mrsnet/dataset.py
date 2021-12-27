@@ -260,8 +260,8 @@ class Dataset(object):
       return fig
     return None
 
-  def export(self, metabolites=None, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, norm='sum', acquisitions=['edit_off','difference'],
-             datatype='magnitude', normalise=True, verbose=0):
+  def export(self, metabolites=None, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, norm='sum',
+             acquisitions=['edit_off','difference'],datatype='magnitude', normalise=True, verbose=0):
     if metabolites is None:
       metabolites = self.metabolites
 
@@ -289,15 +289,19 @@ class Dataset(object):
       d_out = np.ndarray((0,0))
 
     if np.sum(d_out.shape) > 0:
-      if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or d_inp.shape[3] != n_fft_pts:
+      if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or \
+         d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or \
+         d_inp.shape[3] != n_fft_pts:
         raise Exception("Unexpected input/output tensor shape(s)")
 
-    if Cfg.dev("check_dataset_export"):
-      self._check_export(d_inp,d_out,metabolites, high_ppm, low_ppm, n_fft_pts, norm, acquisitions, datatype, normalise)
+    if verbose > 4:
+      self._check_export(d_inp,d_out,metabolites, high_ppm, low_ppm, n_fft_pts, norm,
+                         acquisitions, datatype, normalise, verbose)
 
     return d_inp, d_out
 
-  def _check_export(self,d_inp,d_out,metabolites,high_ppm,low_ppm,n_fft_pts,norm,acquisitions,datatype,normalise):
+  def _check_export(self,d_inp,d_out,metabolites,high_ppm,low_ppm,n_fft_pts,norm,
+                    acquisitions,datatype,normalise,verbose):
     # Test mrsnet.dataset.export
     from colorama import Fore, Style
     print("# Testing mrsnet.dataset.export")
@@ -335,7 +339,7 @@ class Dataset(object):
           if diff > 1e-6: # Phase errors can be in the 1e-7 range
             print(f"{nl}- Max. FFT center/normalise phase error: {diff}")
             nl=""
-          if Cfg.dev('flag_plots'):
+          if verbose > 5:
             for a_idx in range(len(acquisitions)):
               figure, axes = plt.subplots(2, 3)
               axes[0,0].plot(np.abs(fft[a_idx,:]))
@@ -459,7 +463,7 @@ Collections = {
     'noise_sigma': [0.05,0.1],
     'noise_mu': [0.0],
     'sample_rate': [2000],
-    'samples': [8192]
+    'samples': [4096]
   }),
   'multi_source-linewidths': Grid({
     'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
@@ -474,6 +478,6 @@ Collections = {
     'noise_sigma': [0.1],
     'noise_mu': [0.0],
     'sample_rate': [2000],
-    'samples': [8192]
+    'samples': [4096]
   })
 }

@@ -18,7 +18,7 @@ from .dataset import Dataset
 from .cfg import Cfg
 
 class Select:
-  def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose):
+  def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
     from .dataset import Dataset
     if os.path.isfile(os.path.join(dataset,"spectra.joblib")):
       id = _get_std_name(dataset)
@@ -37,7 +37,6 @@ class Select:
     self.validate = validate
     self.screen_dpi = screen_dpi
     self.image_dpi = image_dpi
-    self.no_show = no_show
     self.verbose = verbose
     self.dataset_name = ds.name
 
@@ -245,7 +244,7 @@ class Select:
     self.tasks = []
 
   def _run(self,norm,acquisitions,datatype,model,batch_size):
-    cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'train', '--no-show',
+    cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'train',
            '--metabolites', *[m for m in self.metabolites],
            '--dataset', self.dataset,
            '--epochs', str(self.epochs),
@@ -254,7 +253,7 @@ class Select:
            '--acquisitions', *[a for a in acquisitions],
            '--datatype', *[d for d in datatype],
            '--model', model,
-           '--batch-size', str(batch_size)]
+           '--batchsize', str(batch_size)]
     if self.verbose > 0:
       cmd += ['-v']*self.verbose
       print('# Run '+' '.join(cmd[3:]))
@@ -393,7 +392,7 @@ class Select:
     fig.tight_layout()
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"errors@"+str(dpi)+".png"), dpi=dpi)
-    if not self.no_show:
+    if self.verbose > 1:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
@@ -431,14 +430,14 @@ class Select:
     fig.tight_layout()
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"error-dists@"+str(dpi)+".png"), dpi=dpi)
-    if not self.no_show:
+    if self.verbose > 1:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
 
 class SelectGrid(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,no_show,verbose):
-    super(SelectGrid, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose)
+  def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
+    super(SelectGrid, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
 
   def optimise(self, collection_name, models, path_model):
     if self.verbose > 0:
@@ -461,8 +460,8 @@ class SelectGrid(Select):
     self._save_performance(collection_name+"-grid", var_keys, fix_keys)
 
 class SelectQMC(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,no_show,verbose):
-    super(SelectQMC, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose)
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+    super(SelectQMC, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
@@ -497,8 +496,8 @@ class SelectQMC(Select):
     self._save_performance(collection_name+"-qmc", var_keys, fix_keys)
 
 class SelectGPO(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,no_show,verbose):
-    super(SelectGPO, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose)
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+    super(SelectGPO, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
@@ -534,7 +533,7 @@ class SelectGPO(Select):
     for k in fix_keys:
       key_vals[k] = models.values[k][0]
     # Load Existing - can be disabled, so we can run repeatedly and use existing results
-    if not Cfg.dev('feature_selectgpo_optimse_noload'):
+    if not Cfg.dev('selectgpo_optimse_noload'):
       for model in models:
         for ki,k in enumerate(keys):
           if k in var_keys:
@@ -648,14 +647,14 @@ class SelectGPO(Select):
     folder = os.path.join(self.dataset,collection_name+"-gpo-"+str(self.epochs))
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"gpo_convergence@"+str(dpi)+".png"), dpi=dpi)
-    if not self.no_show:
+    if self.verbose > 1:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
 
 class SelectEvo(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,no_show,verbose):
-    super(SelectEvo, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,no_show,verbose)
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+    super(SelectEvo, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):

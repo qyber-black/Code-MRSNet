@@ -16,14 +16,14 @@ from scipy.stats import linregress
 from scipy.stats import wasserstein_distance
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False,
-                  no_show=False, verbose=0, image_dpi=[300], screen_dpi=96):
+                  verbose=0, image_dpi=[300], screen_dpi=96):
   # Analyse data (assumed to be exported from dataset in format as used by model for train call)
   if not os.path.exists(folder):
     os.makedirs(folder)
   pre = model.predict(inp,verbose=verbose)
   # Analyse if we have concentrations
   if len(out) > 0:
-    info, error = _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose, image_dpi, screen_dpi)
+    info, error = _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi)
   else:
     info = None
     error = None
@@ -74,7 +74,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   return pre, info, error
 
 
-def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose, image_dpi, screen_dpi):
+def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi):
   error = pre - out
   error_mean = np.mean(error,axis=0)
   error_std = np.std(error,axis=0)
@@ -201,7 +201,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, no_show, verbose,
     os.remove(f)
   for dpi in image_dpi:
     plt.savefig(os.path.join(folder, prefix + '_concentration_errors@'+str(dpi)+'.png'), dpi=dpi)
-  if not no_show:
+  if verbose > 1:
     fig.set_dpi(screen_dpi)
     plt.show()
   plt.close()
