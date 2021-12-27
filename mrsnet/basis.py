@@ -301,12 +301,14 @@ class Basis(object):
     # There's not going to be an individual shift per metabolite...
     # so we calibrate the entire set against the priority reference peak
     b0_shift = None
+    peak_val = 0.0
     if self.pulse_sequence == "megapress":
       for pair in molecules.b0_correction:
         if pair[0] in self.spectra:
-          b0_shift = self.spectra[pair[0]]['edit_off'].correct_b0()
-          if b0_shift is not None:
-            break
+          shift, val = self.spectra[pair[0]]['edit_off'].correct_b0()
+          if shift is not None and peak_val < val:
+            b0_shift = shift
+            peak_val = val
     else:
       raise Exception(f"No B0 correction for {self.pulse_sequence}")
     if b0_shift == None:

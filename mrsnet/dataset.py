@@ -220,17 +220,14 @@ class Dataset(object):
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
-  def save(self, path): # FIXME: save json/npy
+  def save(self, path):
     from .getfolder import get_folder
-    for s in self.spectra:
-      for a in s:
-        s[a].fft_cache = None
     folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
     joblib.dump(self, os.path.join(folder, "spectra.joblib"))
     return folder
 
   @staticmethod
-  def load(folder): # FIXME: load json/npy
+  def load(folder):
     return joblib.load(os.path.join(folder, "spectra.joblib"))
 
   def plot_concentrations(self, norm='none'):

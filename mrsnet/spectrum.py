@@ -39,7 +39,7 @@ class Spectrum(object):
     self.noise = None
 
   def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, filter_fft=False, remove_water_peak=False):
-    self.fft = fft
+    self.fft = np.asarray(fft)
     self._set(sample_rate, center_ppm, b0_shift_ppm, scale, filter_fft, remove_water_peak)
 
   def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, filter_fft=False, remove_water_peak=False):
@@ -67,24 +67,25 @@ class Spectrum(object):
 
   def correct_b0(self, shift=None):
     # Find reference peak and adjust nu range via ppm_shift
+    peak_val = 0.0
     if shift is None:
       # Pick shift from reference peak
       self.b0_shift_ppm = 0
       for pair in molecules.b0_correction:
         if pair[0] in self.metabolites:
-          peak = self._fft_peak_location(pair[1], Cfg.val['b0_correct_ppm_range'])
-          if peak:
+          peak, val = self._fft_peak_location(pair[1], Cfg.val['b0_correct_ppm_range'])
+          if peak and peak_val < val:
             shift = pair[1] - peak
-            break
+            peak_val = val
     # Apply Shift
     if shift is not None:
       self.b0_shift_ppm = shift
-    return shift
+    return shift, peak_val
 
   def _fft_peak_location(self, location, ppm_range):
     fft, nu = self.get_f()
     fft_abs = -np.abs(fft)
-    mean = np.mean(fft_abs) # FIXME: too large?
+    cut_off = np.median(fft_abs)
     # finds the highest peak from location +- ppm_range
     peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:
@@ -106,10 +107,10 @@ class Spectrum(object):
         tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
         tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
         d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
-        return nu[idx] + (nu[1]-nu[0])*d
-      if fft_abs[idx] < mean:
+        return nu[idx] + (nu[1]-nu[0])*d, -fft_abs[idx]
+      if fft_abs[idx] > cut_off:
         break
-    return None
+    return None, None
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
     # Resample fft to prescribed frequency bins via zero filling
@@ -137,7 +138,7 @@ class Spectrum(object):
 
   def _fft_remove_water_peak(self):
     # find the peak then set the range centered around it to the median signal of the fft
-    water_peak_loc = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'])
+    water_peak_loc, _ = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'])
     if water_peak_loc is not None:
       abs_fft, nu = self.get_f()
       abs_fft = np.abs(abs_fft)
@@ -196,7 +197,9 @@ class Spectrum(object):
       n_cols = 2
     else:
       super_title += "-".join(self.metabolites[0]) + ' '
-    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} Hz Linewidth: " + str(self.linewidth)
+    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} Hz"
+    if self.linewidth != None:
+      super_title += " Linewidth: " + str(self.linewidth)
     if self.noise != None:
       if self.noise[0] == "adc" and self.noise[1] == "normal":
         super_title += f" - ADC Noise N({self.noise[2]},{self.adc_noise[3]})"
@@ -253,7 +256,10 @@ class Spectrum(object):
 
     omega = next(iter(omega))
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
-                   f" @ {omega:.2f} Hz Linewidth: " + str(next(iter(linewidth)))
+                   f" @ {omega:.2f} Hz"
+    linewidth = next(iter(linewidth))
+    if linewidth != None:
+      super_title += " Linewidth: " + str(linewidth)
     noise = next(iter(noise))
     if noise is not None:
       if noise[0] == "adc" and noise[1] == "normal":
@@ -358,8 +364,9 @@ class Spectrum(object):
     for n in range(len(ss)):
       if np.abs(ss[n].omega - avg_omega) >= 1e-8:
         raise Exception("Combing spectra with different omega")
-      if (avg_linewidth == None and ss[n].linewidth is not None) or \
-         np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8:
+      if (avg_linewidth == None and ss[n].linewidth != None) or \
+         (avg_linewidth != None and ss[n].linewidth == None) or \
+         (avg_linewidth != None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
         raise Exception("Combing spectra with different linewidths")
       for m in ss[n].metabolites:
         if m not in all_metabolites:
@@ -394,10 +401,12 @@ class Spectrum(object):
       if spectra[a].pulse_sequence != "megapress":
         raise Exception("Multi-b0-correction only for megapress")
     b0_shift = None
+    peak_val = 0.0
     for pair in molecules.b0_correction:
-      b0_shift = spectra['edit_off'].correct_b0()
-      if b0_shift is not None:
-        break
+      shift, val = spectra['edit_off'].correct_b0()
+      if shift is not None and peak_val < val:
+        b0_shift = shift
+        peak_val = val
     if b0_shift == None:
       b0_shift = 0.0 # No shift as no peak found
     for a in spectra:
@@ -546,7 +555,7 @@ class Spectrum(object):
                            omega=metadata["SEQPAR"]['HZPPPM'],
                            source='lcmodel',
                            metabolites=[metabolite],
-                           linewidth=1.0) # FIXME: linewidth for lcmodel?
+                           linewidth=None)
               s.set_f(np.fft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
               specs.append(s)
           elif area != "":

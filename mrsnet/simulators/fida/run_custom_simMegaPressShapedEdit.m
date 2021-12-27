@@ -35,8 +35,6 @@
 % outOFF            = Simulated ExTE-MEGA-PRESS edit-OFF spectrum.
 % outDIFF           = Simulated ExTE-MEGA-PRESS difference spectrum.
 
-% Minor modifications for MRSNet (Frank C Langbein, Cardiff University, 2020)
-
 if ~exist(save_dir, 'dir')
   mkdir(save_dir);
 end
