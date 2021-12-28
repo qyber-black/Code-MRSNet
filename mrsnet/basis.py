@@ -9,8 +9,8 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 
-from . import molecules
-from .spectrum import Spectrum
+import mrsnet.molecules as molecules
+from mrsnet.spectrum import Spectrum
 
 class BasisCollection:
   def __init__(self):
@@ -68,7 +68,7 @@ class BasisCollectionIterator:
       return res
     raise StopIteration
 
-class Basis(object):
+class Basis:
   # The Basis object is used to contain sets of single metabolite spectra,
   # and is used to generate combined spectra of them. We assume the spectra
   # are for one basis_source, manufacturer, pulse_sequence, omega, linewidth
@@ -212,7 +212,7 @@ class Basis(object):
                         'I\'m going to end up in an endless loop.')
       else:
         print('Some spectra are missing, simulating: ' + str(to_simulate))
-        from .simulators.fida.fida_simulator import fida_spectra
+        from mrsnet.simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
                      npts=self.samples, sample_rate=self.sample_rate,
                      save_dir=os.path.join(path_basis,'basis_files'))

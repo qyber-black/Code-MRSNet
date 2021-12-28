@@ -13,10 +13,10 @@ from scipy.io import loadmat
 from scipy import signal
 import matplotlib.pyplot as plt
 
-from . import molecules
-from .cfg import Cfg
+from mrsnet import molecules
+from mrsnet.cfg import Cfg
 
-class Spectrum(object):
+class Spectrum:
   # Spectrum is a class that contains information about a single spectrum.
 
   def __init__(self, id, pulse_sequence, acquisition, omega,
@@ -443,15 +443,9 @@ class Spectrum(object):
     if not os.path.exists(filename):
       if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
-      pygamma_cmd = ['/usr/bin/env', 'python3', os.path.join('mrsnet',
-                      'simulators', 'pygamma', 'pygamma_simulator.py'),
-                     metabolite, str(omega), pulse_sequence, str(linewidth),
-                     str(npts), str(dt), cache_dir]
-      try:
-        p = subprocess.Popen(pygamma_cmd)
-      except OSError as e:
-        raise Exception('PyGamma simulations failed') from e
-      p.wait()
+      from mrsnet.simulators.pygamma.pygamma_simulator import pygamma_spectra_sim
+      pygamma_spectra_sim(metabolite, omega, pulse_sequence,
+                          linewidth, cache_dir, npts, dt)
     specs = []
     with open(filename, 'rb') as load_file:
       for raw in json.load(load_file):
@@ -585,7 +579,7 @@ class Spectrum(object):
   def load_dicom(file, concentrations=None, metabolites=[]):
     if not os.path.exists(file):
         raise Exception('Dicom file does not exist: ' + file)
-    from .qdicom.read_dicom_siemens import read_dicom
+    from mrsnet.qdicom.read_dicom_siemens import read_dicom
     import struct
     # We assume it's a Siemens dicom spectrum, so do not check this
     dicom, info = read_dicom(file)

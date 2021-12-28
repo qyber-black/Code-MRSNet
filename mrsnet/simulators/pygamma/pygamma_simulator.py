@@ -9,8 +9,6 @@
 # Pulse sequence simulation code has been taken from VeSPA and implemented here with minor modifications.
 # https://github.com/vespa-mrs/vespa/
 
-from __future__ import division
-
 import argparse
 import os
 import pdb
@@ -19,8 +17,9 @@ import json
 import numpy as np
 import pygamma as pg
 
-from pygamma_pulse_sequences import fid, press, steam, megapress
 import mrsnet.molecules as molecules
+from mrsnet.simulators.pygamma.pygamma_pulse_sequences import fid, press, steam, megapress
+from mrsnet.cfg import Cfg
 
 def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache_dir,
                         npts, adc_dt):
@@ -31,7 +30,7 @@ def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache
   id = hash(datetime.now().strftime('%f%S%H%M%a%d%b%Y'))
   mol_spectra = []
   print('Cache miss. Simulating ' + metabolite_name + ' : ' + pulse_sequence)
-  infile = os.path.join('mrsnet', 'simulators', 'pygamma', 'metabolite_models',
+  infile = os.path.join(Cfg.val['path_root'], 'mrsnet', 'simulators', 'pygamma', 'metabolite_models',
                         molecules.long_name(metabolite_name).lower() + '.sys')
   spin_system = pg.spin_system()
   spin_system.read(infile)

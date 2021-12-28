@@ -13,8 +13,8 @@ import json
 from tqdm import tqdm
 from scipy.stats import wasserstein_distance
 
-from .analyse import analyse_model
-from .getfolder import get_folder
+from mrsnet.analyse import analyse_model
+from mrsnet.getfolder import get_folder
 
 class Train:
 

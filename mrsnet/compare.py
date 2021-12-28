@@ -8,8 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from .dataset import Dataset
-from . import molecules
+import mrsnet.molecules as molecules
+from mrsnet.dataset import Dataset
 
 def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, image_dpi=[300], screen_dpi=96):
   # Compare dataset to spectra generated from basis

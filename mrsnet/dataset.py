@@ -13,11 +13,11 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from itertools import combinations
 
-from .spectrum import Spectrum
-from .grid import Grid
-from .cfg import Cfg
+from mrsnet.spectrum import Spectrum
+from mrsnet.grid import Grid
+from mrsnet.cfg import Cfg
 
-class Dataset(object):
+class Dataset:
   # A dataset is a collection of spectra for training, tesing or predicting.
 
   def __init__(self, name):
@@ -29,7 +29,7 @@ class Dataset(object):
     self.noise_added = False
 
   def load_dicoms(self, folder, concentrations=None, metabolites=[]):
-    from .spectrum import Spectrum
+    from mrsnet.spectrum import Spectrum
     specs = {}
     concs = {}
     concs_ok = True
@@ -221,7 +221,7 @@ class Dataset(object):
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
   def save(self, path):
-    from .getfolder import get_folder
+    from mrsnet.getfolder import get_folder
     folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
     joblib.dump(self, os.path.join(folder, "spectra.joblib"))
     return folder

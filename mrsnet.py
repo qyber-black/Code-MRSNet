@@ -413,7 +413,6 @@ def compare(args):
     import mrsnet.basis as basis
     if args.verbose > 0:
       print("# Setting up basis")
-    print(args.sample_rate)
     basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
                         manufacturer=args.manufacturer, omega=args.omega,
                         linewidth=args.linewidth, pulse_sequence=args.pulse_sequence,

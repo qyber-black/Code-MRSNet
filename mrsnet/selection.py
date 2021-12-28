@@ -13,13 +13,13 @@ import sobol_seq
 import random
 import matplotlib.pyplot as plt
 
-from .grid import Grid
-from .dataset import Dataset
-from .cfg import Cfg
+from mrsnet.grid import Grid
+from mrsnet.dataset import Dataset
+from mrsnet.cfg import Cfg
 
 class Select:
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
-    from .dataset import Dataset
+    from mrsnet.dataset import Dataset
     if os.path.isfile(os.path.join(dataset,"spectra.joblib")):
       id = _get_std_name(dataset)
       name = os.path.join(*id[-9:-1])
@@ -73,7 +73,7 @@ class Select:
     # Get model info
     if na['model'][0] == 'cnn':
       # Model fully parameterised
-      from .cnn import CNN
+      from mrsnet.cnn import CNN
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = ('cnn_' + na['model_S1'][0] +
                       '_' + na['model_S2'][0] +
@@ -91,7 +91,7 @@ class Select:
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     elif na['model'][0][0:4] == 'cnn_':
       # CNN standard models
-      from .cnn import CNN
+      from mrsnet.cnn import CNN
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     else:

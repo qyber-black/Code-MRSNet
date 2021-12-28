@@ -13,6 +13,8 @@ import pickle
 import pygamma as pg
 import numpy as np
 
+from mrsnet.cfg import Cfg
+
 def fid(spin_system):
   sys_hamiltonian = pg.Hcs(spin_system) + pg.HJ(spin_system)
   read = pg.Fm(spin_system, "1H")
@@ -107,7 +109,8 @@ def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
   rf_pulses = []
 
   for ps_name in pulse_names:
-    with open(os.path.join('mrsnet', 'simulators' ,'pygamma', 'pulses', ps_name + '.vps'), 'rb') as ps_filename:
+    with open(os.path.join(Cfg.val['path_root'], 'mrsnet', 'simulators',
+                           'pygamma', 'pulses', ps_name + '.vps'), 'rb') as ps_filename:
       rf_pulses.append(pickle.load(ps_filename, encoding="latin1"))
 
   # spectrometer frequency in MHz
