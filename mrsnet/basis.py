@@ -190,7 +190,7 @@ class Basis:
              and np.abs(float(vals[4]) - self.linewidth) < 1e-2 \
              and int(vals[5]) == self.sample_rate \
              and int(vals[6]) == self.samples \
-             and np.abs(float(vals[7][0:-4]) - self.omega/molecules.GYROMAGNETIC_RATIO) < 1e-2:
+             and np.abs(float(vals[7][0:-4]) - self.omega) < 1e-2:
             spec = Spectrum.load_fida(os.path.join(path_basis,'basis_files',file),file[0:-4])
             if len(spec.metabolites) > 1:
               raise Exception("More than one metabolite in FID-A basis")

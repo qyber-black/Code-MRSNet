@@ -34,8 +34,8 @@ NAMES = {
 B0_CORRECTION = [ ('NAA', -2.01),
                   ('Cr', -3.015) ]
 
-WATER_REFERENCE = -4.75          # Temperature dependant, avoid using if at all possible
-GYROMAGNETIC_RATIO = 42.57747892 # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
+WATER_REFERENCE = -4.75           # Temperature dependant, avoid using if at all possible
+GYROMAGNETIC_RATIO = 42.577478518 # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
 
 def convert_names(molecules, shorten=False):
   # Standardise molecule names to short or long form

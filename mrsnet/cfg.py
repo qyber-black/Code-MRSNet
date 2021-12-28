@@ -20,9 +20,11 @@ class Cfg:
     'b0_correct_ppm_range': 0.25,
     'water_peak_ppm_range': 0.75,
     'spectrum_rescale_fft_max_repeats': 10,
-    'filter_dicom': None,       # 'hamming' or 'hanning' or 'kaiser' or None
-    'filter_dicom_kaiser': 2.5, # kaiser filter beta shape parameter
-                                # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
+    'filter_dicom': None,         # 'hamming' or 'hanning' or 'kaiser' or None
+    'filter_dicom_duration': 1.0, # in seconds; determines length of filter window
+                                  # (we only use the right half of the filter)
+    'filter_dicom_kaiser': 2.5,   # kaiser filter beta shape parameter
+                                  # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]

@@ -91,8 +91,10 @@ class Spectrum:
         # https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
         # Quinn's second estimator (least RMS error)
         if idx < 1 or idx >= len(nu) - 1:
-          return nu[idx] # at boundary (should never really be there)
+          return nu[idx], -fft_abs[idx] # at boundary (should never really be there)
         de = (fft[idx].real**2 + fft[idx].imag**2)
+        if np.abs(de) < 1e-10:
+          return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
         ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
         dp = ap / (ap-1)
         am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
@@ -424,7 +426,7 @@ class Spectrum:
     s = Spectrum(id=id,
                  pulse_sequence='megapress',
                  acquisition='edit_on' if fida_data['edit'][0][0] != 0 else 'edit_off',
-                 omega=float(fida_data['omega'][0][0]) * molecules.GYROMAGNETIC_RATIO,
+                 omega=float(fida_data['omega'][0][0]),
                  source='fid-a',
                  metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
                  linewidth=float(fida_data['linewidth'][0][0]))
@@ -651,12 +653,18 @@ class Spectrum:
                     source='dicom',
                     metabolites=metabolites,
                     linewidth=None) # Unknown
-    # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
-    if Cfg.val['filter_dicom'] == 'hamming':
-      data = np.multiply(data,np.hamming(len(data)))
-    elif Cfg.val['filter_dicom'] == 'hanning':
-      data = np.multiply(data,np.hanning(len(data)))
-    elif Cfg.val['filter_dicom'] == 'kaiser':
-      data = np.multiply(data,np.kaiser(len(data), Cfg.val['filter_dicom_kaiser']))
+    if Cfg.val['filter_dicom'] != None:
+      # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
+      filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
+      filter = np.zeros(len(data))
+      if Cfg.val['filter_dicom'] == 'hamming':
+        filter[0:filter_length//2] = np.hamming(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'hanning':
+        filter[0:filter_length//2] = np.hanning(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'kaiser':
+        filter[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
+      else:
+        raise Exception("Unknown dicom filter")
+      data = np.multiply(data,filter)
     spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True)
     return spec, cs
