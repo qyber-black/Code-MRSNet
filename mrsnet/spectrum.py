@@ -650,6 +650,14 @@ class Spectrum:
                     source='dicom',
                     metabolites=metabolites,
                     linewidth=None) # Unknown
-    # FIXME: Hanning/Hamming filter on time domain data?
+    # Handle spectral leakage if requested via Cfg
+    # We assume spectral leakage would only be on the right end of the signal,
+    # so only filter that part - otherwise it seems too much of the lower magnitude
+    # frequencies are filtered.
+    # FIXME: honeslty not sure if that's the best option; where to place the window?
+    if Cfg.val['filter_dicom'] == 'hamming':
+      data = np.multiply(data,np.hamming(len(data)*2)[len(data):])
+    elif Cfg.val['filter_dicom'] == 'hanning':
+      data = np.multiply(data,np.hanning(len(data)*2)[len(data):])
     spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True)
     return spec, cs

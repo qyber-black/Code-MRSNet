@@ -20,6 +20,7 @@ class Cfg:
     'b0_correct_ppm_range': 0.25,
     'water_peak_ppm_range': 0.75,
     'spectrum_rescale_fft_max_repeats': 10,
+    'filter_dicom': None, # 'hanning' or 'hamming' or None
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]
