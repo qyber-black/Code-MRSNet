@@ -31,7 +31,7 @@ NAMES = {
 
 # B0 correction metabolites with reference peak location
 # Priority list - first metabolite peak found is used
-b0_correction = [ ('NAA', -2.01),
+B0_CORRECTION = [ ('NAA', -2.01),
                   ('Cr', -3.015) ]
 
 WATER_REFERENCE = -4.75          # Temperature dependant, avoid using if at all possible

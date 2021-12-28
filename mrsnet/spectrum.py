@@ -68,7 +68,7 @@ class Spectrum:
     if shift is None:
       # Pick shift from reference peak
       self.b0_shift_ppm = 0
-      for pair in molecules.b0_correction:
+      for pair in molecules.B0_CORRECTION:
         if pair[0] in self.metabolites:
           peak, val = self._fft_peak_location(pair[1], Cfg.val['b0_correct_ppm_range'])
           if peak and peak_val < val:
@@ -407,7 +407,7 @@ class Spectrum:
         raise Exception("Multi-b0-correction only for megapress")
     b0_shift = None
     peak_val = 0.0
-    for pair in molecules.b0_correction:
+    for pair in molecules.B0_CORRECTION:
       shift, val = spectra['edit_off'].correct_b0()
       if shift is not None and peak_val < val:
         b0_shift = shift
@@ -428,7 +428,8 @@ class Spectrum:
                  source='fid-a',
                  metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
                  linewidth=float(fida_data['linewidth'][0][0]))
-    s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()), # FIXME: why conjugate?
+    # Time signal produced by fid-a seems mirrored, so need to take the complex conjugate
+    s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
             1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
             center_ppm = -np.median(fida_data['nu']))
     return s
@@ -462,7 +463,8 @@ class Spectrum:
                      acquisition=acq,
                      omega=omega,
                      linewidth=linewidth)
-        s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),  # FIXME: why conjugate?
+        # Time signal produced by pygamma seems mirrored, so need to take the complex conjugate
+        s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
                 1/dt)
         specs.append(s)
     return specs
@@ -471,7 +473,6 @@ class Spectrum:
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
-    # FIXME: lcmodel GABA spectrum - unusual?
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
     specs = []
@@ -650,8 +651,7 @@ class Spectrum:
                     source='dicom',
                     metabolites=metabolites,
                     linewidth=None) # Unknown
-    # Handle spectral leakage if requested via Cfg
-    # FIXME: not sure if that's the best option; where to place the window?
+    # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
     if Cfg.val['filter_dicom'] == 'hamming':
       data = np.multiply(data,np.hamming(len(data)))
     elif Cfg.val['filter_dicom'] == 'hanning':

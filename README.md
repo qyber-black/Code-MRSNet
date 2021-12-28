@@ -135,6 +135,14 @@ previous section of how to generate these and what these paths are) for 100
 epochs using 5-fold cross validating on the cnn_small_softmax model with some
 verbosity.
 
+MRSNet can run model selection approaches over a set of model parameters
+(currently hardcoded in `mrsnet/selection.py`) and also run the training
+on a remote system using a separate script - see `scheduler/run_scw.sh` for
+an example running on Supercomputing Wales. For example, run
+```
+./mrsnet.py select -d DATASET_PATH -e 100 --validate 0.8 --method grid cnn-simple-all --remote ./scheduler/run_scw.sh:USERNAME:10:15 -vv
+```
+
 ## Running the Benchmark
 
 To run the benchmark dataset on a model run

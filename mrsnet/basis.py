@@ -303,7 +303,7 @@ class Basis:
     b0_shift = None
     peak_val = 0.0
     if self.pulse_sequence == "megapress":
-      for pair in molecules.b0_correction:
+      for pair in molecules.B0_CORRECTION:
         if pair[0] in self.spectra:
           shift, val = self.spectra[pair[0]]['edit_off'].correct_b0()
           if shift is not None and peak_val < val:

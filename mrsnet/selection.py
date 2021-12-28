@@ -658,7 +658,6 @@ class SelectEvo(Select):
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
-    # FIXME: evolutionary model selection
     raise Exception("Not implemented")
 
 def _get_std_name(name):
@@ -674,20 +673,7 @@ def _get_std_name(name):
   return id
 
 Collections = {
-  # Parameter lists (i.e. lists for single arguments) must be sorted (same as mrsnet.py sort)!
-  #
-  # ./mrsnet.py select -d PATH -e 100 --validate 0.8 --method grid simple-all -vv --remote ./scheduler/run_scw.sh:USER:10:15
-  #
-  # FIXME:
-  #   lcmodel/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   fid-a/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   pygamma/siemens/123.23/1.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-0.0-0.1/10000-1
-  #   -> dirichlet, random
-  #   -> noise effect: 0.05, 0.1
-  #   -> benchmark
-  # FIXME: check models trained with one dataset on another dataset
-  # FIXME: train on MIXED datasets (basis, linewidth)
-  # FIXME: optimise over model parameters
+  # Parameter lists (i.e. lists for single arguments); must be sorted (same as mrsnet.py sort)!
   'cnn-simple-all': Grid({
     'norm':         ['sum','max'],
     'acquisitions': [['difference','edit_off'],['difference','edit_on'],
