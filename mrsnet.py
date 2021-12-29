@@ -407,7 +407,8 @@ def compare(args):
           concentrations = None
     ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                   concentrations=concentrations,
-                                                  metabolites=args.metabolites)
+                                                  metabolites=args.metabolites,
+                                                  verbose=args.verbose)
   if len(ds.concentrations) > 0:
     # Get basis
     import mrsnet.basis as basis
@@ -542,7 +543,8 @@ def quantify(args):
       concentrations = None
     ds = dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                    concentrations=concentrations,
-                                                   metabolites=quantifier.metabolites)
+                                                   metabolites=quantifier.metabolites,
+                                                   verbose=args.verbose)
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
@@ -588,7 +590,8 @@ def benchmark(args):
     bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
                                          concentrations=os.path.join(Cfg.val['path_benchmark'],
                                                                      id, 'concentrations.json'),
-                                         metabolites=quantifier.metabolites)
+                                         metabolites=quantifier.metabolites,
+                                         verbose=args.verbose)
     if args.verbose > 3:
       for s,c in zip(bm.spectra,bm.concentrations):
         for a in s.keys():

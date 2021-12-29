@@ -20,11 +20,13 @@ class Cfg:
     'b0_correct_ppm_range': 0.25,
     'water_peak_ppm_range': 0.75,
     'spectrum_rescale_fft_max_repeats': 10,
-    'filter_dicom': None,         # 'hamming' or 'hanning' or 'kaiser' or None
+    'filter_dicom': None,         # 'hamming' or 'hanning' or 'kaiser' or None dicom spectral leaking filter
     'filter_dicom_duration': 1.0, # in seconds; determines length of filter window
                                   # (we only use the right half of the filter)
     'filter_dicom_kaiser': 2.5,   # kaiser filter beta shape parameter
                                   # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
+    'phase_correct': 'acme',         # 'acme' or 'ernst' or None phase correction algorithm
+    'phase_correct_acme_gamma': 100, # penalty weight for acme phase correction
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]
@@ -33,6 +35,7 @@ class Cfg:
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),
   # but all in use should be in the comments here for reference:
   # * selectgpo_optimise_noload: do not load existing datapoints for GPO model selection
+  # * spectrum_set_phase_correct: show phase correction effect
   dev_flags = set()
   # check_dataset_export - Test if exporting dataset to tensors is correct in train
   # flag_plots - Show some test graphs for the activated checks

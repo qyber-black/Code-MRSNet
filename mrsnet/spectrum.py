@@ -38,19 +38,40 @@ class Spectrum:
 
     self.noise = None
 
-  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
+  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
+            phase_correct=False):
     self.fft = np.asarray(fft)
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 
-  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
+  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
+            phase_correct=False):
     self.fft = np.fft.fftshift(np.fft.fft(adc))
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 
-  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak):
+  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct):
     self.sample_rate = sample_rate
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
+    if phase_correct and Cfg.val['phase_correct'] != None: # Only phase correct if also configured
+      if Cfg.dev('spectrum_set_phase_correct'):
+        fig, axs = plt.subplots(1,2)
+        freq, nu = self.get_f()
+        axs[0].plot(nu, np.real(freq), color='r')
+        axs[0].plot(nu, np.imag(freq), color='g')
+        axs[0].set_title("Raw Dicom Data")
+      if Cfg.val['phase_correct'] == 'acme':
+        self._phase_correct_acme()
+      elif Cfg.val['phase_correct'] == 'ernst':
+        self._phase_correct_acme()
+      else:
+        raise Exception(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
+      if Cfg.dev('spectrum_set_phase_correct'):
+        freq, nu = self.get_f()
+        axs[1].plot(nu, np.real(freq), color='r')
+        axs[1].plot(nu, np.imag(freq), color='g')
+        axs[1].set_title("Phase Corrected Dicom Data")
+        plt.show()
     if remove_water_peak:
       self._fft_remove_water_peak()
 
@@ -110,6 +131,65 @@ class Spectrum:
       if fft_abs[idx] > cut_off:
         break
     return None, None
+
+  def _phase_correct_ernst(self):
+    # R Ernst. Numerical Hilbert transform and automatic phase correction in
+    # magnetic resonance spectroscopy. J Magn Res 1(1):7-26, 1969.
+    # https://www.sciencedirect.com/science/article/abs/pii/0022236469900031
+    def err(para):
+      val = para.valuesdict()
+      # Adjust phase
+      shift = val['phi0'] + val['phi1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+      s_fft = self.fft * np.exp(1j*shift)
+      # Target function
+      return np.sum(np.imag(s_fft))
+    import lmfit
+    para = lmfit.Parameters()
+    para.add('phi0', value=0.0, min=-np.pi/4.0, max=np.pi/4.0)
+    para.add('phi1', value=0.0, min=-0.1, max=0.1)
+    res = lmfit.minimize(entropy, para, method='simplex')
+    val = res.params
+    # Adjust phase
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_fft = np.real(self.fft[idx])
+    shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+    self.fft *= np.exp(1j*shift)
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_s_fft = np.real(self.fft[idx])
+    if max_s_fft * max_fft < 0.0: # avoid flipping the phase / turn real positive, if it should be negative
+      self.fft *= np.exp(1j*np.pi)
+
+  def _phase_correct_acme(self):
+    # Automated phase Correction based on Minimization of Entropy
+    # L Chen, Z Weng, LY Goh, M Garland. An efficient algorithm for automatic
+    # phase correction of NMR spectra based on entropy minimization. J Magn
+    # Res 158:164–168, 2002.
+    def entropy(para):
+      val = para.valuesdict()
+      # Adjust phase
+      shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+      s_fft = self.fft * np.exp(1j*shift)
+      # Target function
+      r = np.real(s_fft)
+      r1 = np.abs((r[1:] - r[:-1]))
+      h = r1 / np.sum(r1)
+      h[np.abs(h)<1e-8] = 1.0
+      return -np.sum(h*np.log(h)) + Cfg.val['phase_correct_acme_gamma'] * np.sum(r[r<0]**2)
+    import lmfit
+    para = lmfit.Parameters()
+    para.add('phc0', value=0.0, min=-np.pi, max=np.pi)
+    para.add('phc1', value=0.0, min=-0.1, max=0.1)
+    res = lmfit.minimize(entropy, para, method='simplex')
+    val = res.params
+    # Adjust phase
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_fft = np.real(self.fft[idx])
+    shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+    self.fft *= np.exp(1j*shift)
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_s_fft = np.real(self.fft[idx])
+    if max_s_fft * max_fft < 0.0: # avoid flipping the phase / turn real positive, if it should be negative
+      self.fft *= np.exp(1j*np.pi)
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
     # Resample fft to prescribed frequency bins via zero filling
@@ -573,7 +653,7 @@ class Spectrum:
     return specs
 
   @staticmethod
-  def load_dicom(file, concentrations=None, metabolites=[]):
+  def load_dicom(file, concentrations=None, metabolites=[], verbose=0):
     if not os.path.exists(file):
         raise Exception('Dicom file does not exist: ' + file)
     from mrsnet.qdicom.read_dicom_siemens import read_dicom
@@ -649,6 +729,10 @@ class Spectrum:
                     linewidth=None) # Unknown
     if Cfg.val['filter_dicom'] != None:
       # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Dicom Data")
       filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
       filter = np.zeros(len(data))
       if Cfg.val['filter_dicom'] == 'hamming':
@@ -660,5 +744,9 @@ class Spectrum:
       else:
         raise Exception("Unknown dicom filter")
       data = np.multiply(data,filter)
-    spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Filtered Dicom Data")
+    spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True,phase_correct=True)
     return spec, cs

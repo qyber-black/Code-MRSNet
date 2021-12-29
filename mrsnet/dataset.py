@@ -28,7 +28,7 @@ class Dataset:
     self.pulse_sequence = None
     self.noise_added = False
 
-  def load_dicoms(self, folder, concentrations=None, metabolites=[]):
+  def load_dicoms(self, folder, concentrations=None, metabolites=[], verbose=0):
     from mrsnet.spectrum import Spectrum
     specs = {}
     concs = {}
@@ -38,7 +38,7 @@ class Dataset:
     for dir, subdirs, files in os.walk(folder):
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
-          s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites)
+          s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites, verbose)
           for m in s.metabolites:
             if m not in self.metabolites:
               self.metabolites.append(m)
