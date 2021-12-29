@@ -9,8 +9,6 @@
 # Pulse sequence simulation code has been taken from VeSPA and implemented here with minor modifications.
 # https://github.com/vespa-mrs/vespa/
 
-from __future__ import division
-
 import argparse
 import os
 import pdb
@@ -19,11 +17,12 @@ import json
 import numpy as np
 import pygamma as pg
 
-from pygamma_pulse_sequences import fid, press, steam, megapress
 import mrsnet.molecules as molecules
+from mrsnet.simulators.pygamma.pygamma_pulse_sequences import fid, press, steam, megapress
+from mrsnet.cfg import Cfg
 
 def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache_dir,
-                        npts=4096, adc_dt=4e-4):
+                        npts, adc_dt):
   # by having multiple linewidths it allows the use of the same 'mx' object to run the binning over,
   # rather than have to recalcualte the pulse sequence again. it would be more efficient to save the mx table
   # but this functionality is currently (Sept-2018) broken in PyGamma
@@ -31,7 +30,7 @@ def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache
   id = hash(datetime.now().strftime('%f%S%H%M%a%d%b%Y'))
   mol_spectra = []
   print('Cache miss. Simulating ' + metabolite_name + ' : ' + pulse_sequence)
-  infile = os.path.join('mrsnet', 'simulators', 'pygamma', 'metabolite_models',
+  infile = os.path.join(Cfg.val['path_root'], 'mrsnet', 'simulators', 'pygamma', 'metabolite_models',
                         molecules.long_name(metabolite_name).lower() + '.sys')
   spin_system = pg.spin_system()
   spin_system.read(infile)
@@ -57,16 +56,15 @@ def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache
     mol_spectra.append(raw)
 
   # Force gc to try and delete the C++ PyGamma mx object
-  #for acq in mx:
-  #    acq.disown()
-  #    del acq
-  #del mx
+  for acq in mx:
+    del acq
+  del mx
 
   # Finally we cache the spectra
   with open(os.path.join(cache_dir, metabolite_name + '.json'), 'w') as save_file:
     json.dump(mol_spectra, save_file)
 
-def binning(mx, linewidth=1, dt=5e-4, npts=2048):
+def binning(mx, linewidth, dt, npts):
   # add some broadening and decay to the model
   mx.resolution(0.5)              # Combine transitions within 0.5 rad/sec
   mx.broaden(linewidth)

@@ -13,7 +13,7 @@ class Grid:
     return GridIterator(self)
 
   def __str__(self):
-    return "Grid: \n" + "\n".join(["  "+k+": "+str(self.values[k]) for k in self.values])
+    return "Grid:\n" + "\n".join(["  "+k+": "+str(self.values[k]) for k in self.values])
 
   @staticmethod
   def all_combinations_sort(lst):

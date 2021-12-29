@@ -31,6 +31,7 @@ def main():
   add_arguments_default(p_basis)
   add_arguments_metabolites(p_basis)
   add_arguments_basis(p_basis)
+  add_arguments_fft(p_basis)
   p_basis.set_defaults(func=basis)
 
   # Generate simulated dataset
@@ -40,6 +41,7 @@ def main():
   add_arguments_metabolites(p_simulate)
   add_arguments_basis(p_simulate)
   add_arguments_simulate(p_simulate)
+  add_arguments_fft(p_simulate)
   p_simulate.set_defaults(func=simulate)
 
   # Generate all datasets
@@ -54,6 +56,7 @@ def main():
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_compare)
   add_arguments_compare(p_compare)
+  add_arguments_fft(p_compare)
   p_compare.set_defaults(func=compare)
 
   # Train
@@ -120,8 +123,7 @@ def main():
 
 def add_arguments_default(p):
   # Add argumnets for all sub-commands
-  p.add_argument('-v', '--verbose', action='count', help='Increase output verbosity.', default=0)
-  p.add_argument('--no-show', action='store_true', default=False, help='Do not show any plots.')
+  p.add_argument('-v', '--verbose', action='count', help='Increase output verbosity (0: none; 1: main text; 2: +main plots; 3: detailed text; 4: +detailed plots; 5: +tests and debug; 6: +extra plots).', default=0)
 
 def add_arguments_metabolites(p):
   # Add metabolites argument
@@ -140,12 +142,19 @@ def add_arguments_basis(p):
                  nargs='+',
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
-                 help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
+                 help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, nargs='+', default=[1.0],
                  help='Linewidths to be used for simulation (not possible for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
                  help='Pulse sequence (placeholder).')
+
+def add_arguments_fft(p):
+  # Add fft arguments
+  p.add_argument('--sample_rate', type=lambda v : (abs(int(v))//2)*2, default=2000,
+                 help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel).')
+  p.add_argument('--samples', type=lambda v : (abs(int(v))//2)*2, default=4096,
+                 help='FFT time samples for basis/simluation (even, positive integer; ignored for lcmodel).')
 
 def add_arguments_simulate(p):
   # Add dataset simulation arguments
@@ -158,8 +167,6 @@ def add_arguments_simulate(p):
                  help='Maximum sigma for simulated ADC noise (uniform distribution).')
   p.add_argument('--noise_mu', type=float, default=0.0,
                  help='Maximum mu for simulated ADC noise (uniform distribution).')
-  p.add_argument('--show-spectra', action='store_true', default=False,
-                 help='Shows plots of all generated spectra.')
 
 def add_arguments_compare(p):
   # Add compare arguments
@@ -176,7 +183,7 @@ def add_arguments_compare(p):
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
-                 help='Linewidths to be used for simulation (not possible for lcmodel).')
+                 help='Linewidths to be used for simulation (ignored for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
                  help='Pulse sequence (placeholder).')
@@ -200,7 +207,7 @@ def add_arguments_train(p):
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_cnn for autoencoder (see mrsnet/autoencoder.py)') # FIXME: ae_cnn may change
-  p.add_argument('-b', '--batch-size', type=int, default=16,
+  p.add_argument('-b', '--batchsize', type=int, default=16,
                  help='Batch size.')
 
 def add_arguments_aetrain(p):
@@ -226,8 +233,6 @@ def add_arguments_benchmark(p):
   # Add benchmark arguments
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
-  p.add_argument('--show-spectra', action='store_true', default=False,
-                 help='Shows plots of all spectra.')
 
 def basis(args):
   # Basis sub-command
@@ -245,7 +250,9 @@ def basis(args):
       for o in args.omega:
         for l in args.linewidth:
           for p in args.pulse_sequence:
-            bases.add(args.metabolites, s, m, o, l, p, path_basis=Cfg.val['path_basis'])
+            bases.add(args.metabolites, s, m, o, l, p,
+                      args.sample_rate, args.samples,
+                      path_basis=Cfg.val['path_basis'])
   if args.verbose > 0:
     print(bases)
     print("# Generating plots")
@@ -260,7 +267,7 @@ def basis(args):
         print(f"Saving figure {b.name()}")
       for dpi in Cfg.val['image_dpi']:
         plt.savefig(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"-"+d+"@"+str(dpi)+".png"), dpi=dpi)
-      if not args.no_show:
+      if args.verbose > 1:
         fig.set_dpi(Cfg.val['screen_dpi'])
         plt.show(block=True)
       plt.close()
@@ -278,10 +285,16 @@ def simulate(args):
   args.linewidth = sorted(args.linewidth, key=float)
   args.metabolites.sort()
   args.pulse_sequence.sort()
-  name=os.path.join("-".join(args.source),
+  lw = args.linewidth
+  if "lcmodel" in args.source:
+    lw = [None]
+    if len(args.source) > 1:
+      for l in args.linewidths:
+        lw.append(l)
+  name=os.path.join("-".join(args.source)+"_"+str(args.sample_rate)+"_"+str(args.samples),
                     "-".join(args.manufacturer),
                     "-".join([str(k) for k in args.omega]),
-                    "-".join([str(k) for k in args.linewidth]),
+                    "-".join([str(k) for k in lw]),
                     "-".join(args.metabolites),
                     "-".join(args.pulse_sequence),
                     "-".join(args.sample),
@@ -294,7 +307,9 @@ def simulate(args):
       for o in args.omega:
         for l in args.linewidth:
           for ps in args.pulse_sequence:
-            bases.add(args.metabolites, s, m, o, l, ps)
+            bases.add(args.metabolites, s, m, o, l, ps,
+                      args.sample_rate, args.samples,
+                      path_basis=Cfg.val['path_basis'])
           num_bases += 1
   if args.verbose > 0:
     print("# Generating dataset")
@@ -322,11 +337,11 @@ def simulate(args):
       os.remove(f)
     for dpi in Cfg.val['image_dpi']:
       plt.savefig(os.path.join(path,f"concentrations-{norm}@{dpi}.png"), dpi=dpi)
-    if not args.no_show:
+    if args.verbose > 3 or (args.verbose > 1 and norm == "none"):
       fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
     plt.close()
-  if args.show_spectra:
+  if args.verbose > 3:
     for s,c in zip(dataset.spectra,dataset.concentrations):
       spectrum.Spectrum.plot_full_spectrum(s,c,screen_dpi=Cfg.val['screen_dpi'])
       plt.show(block=True)
@@ -347,7 +362,7 @@ def generate_datasets(args):
         na[k[ki]] = [str(val) for val in v[ki]]
       else:
         na[k[ki]] = [str(v[ki])]
-    name=os.path.join("-".join(na['source']),
+    name=os.path.join("-".join(na['source'])+"_"+str(na['sample_rate'][0])+"_"+str(na['samples'][0]),
                       "-".join(na['manufacturer']),
                       "-".join(na['omega']),
                       "-".join(na['linewidth']),
@@ -362,7 +377,7 @@ def generate_datasets(args):
       # Create
       if args.verbose > 0:
         print(f"# Creating {name}")
-      cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate', '--no-show']
+      cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate']
       if args.verbose > 0:
         cmd += ['-v']*args.verbose
       lcmodel = False
@@ -371,7 +386,7 @@ def generate_datasets(args):
         if k[ki] == 'source' and ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
                                   (not isinstance(v[ki],list) and v[ki] == 'lcmodel')):
           lcmodel = True
-        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
+        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel interpreated a None linewidth
           linewidth1 = True
         cmd.append("--"+k[ki])
         if isinstance(v[ki],list):
@@ -422,7 +437,8 @@ def compare(args):
       print("# Setting up basis")
     basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
                         manufacturer=args.manufacturer, omega=args.omega,
-                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence).setup(Cfg.val['path_basis'])
+                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence,
+                        sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'])
     # Analyse with given concentrations
     from mrsnet.compare import compare_basis
     compare_basis(ds, basis,
@@ -440,22 +456,24 @@ def train(args):
   ds_rest = id[-1]
   if args.verbose > 0:
     print(f"# Loading dataset {name} : {ds_rest}")
-  dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
   args.datatype.sort()
-  d_inp, d_out = dataset.export(metabolites=args.metabolites, norm=args.norm,
-                                acquisitions=args.acquisitions, datatype=args.datatype,
-                                verbose=args.verbose)
 
   if args.model[0:4] == 'cnn_':
     from mrsnet.cnn import CNN
-    model = CNN(args.model, args.metabolites, dataset.pulse_sequence,
+    model = CNN(args.model, args.metabolites, ds.pulse_sequence,
                 args.acquisitions, args.datatype, args.norm)
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
     print(f"# Model setup:\n  {str(model)}")
+
+  d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
+                           acquisitions=args.acquisitions, datatype=args.datatype,
+                           high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                           verbose=args.verbose)
 
   if args.validate > 1.0:
     from mrsnet.train import KFold
@@ -475,9 +493,9 @@ def train(args):
   else:
     raise Exception(f"Unknown validation {args.validate}")
   trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
-                Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
+                Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
-                no_show=args.no_show, verbose=args.verbose)
+                verbose=args.verbose)
 
 def aetrain(args):
   # Aetrain sub-command
@@ -548,19 +566,19 @@ def model_selection(args):
   if args.method == "grid":
     from mrsnet.selection import SelectGrid
     selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,
-                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   elif args.method == "qmc":
     from mrsnet.selection import SelectQMC
     selector = SelectQMC(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   elif args.method == "gpo":
     from mrsnet.selection import SelectGPO
     selector = SelectGPO(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   elif args.method == "evo":
     from mrsnet.selection import SelectEvo
     selector = SelectEvo(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.no_show,args.verbose)
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   else:
     raise Exception(f"Unknown model selection method {args.method}")
   selector.optimise(args.collection, models, Cfg.val['path_model'])
@@ -604,19 +622,20 @@ def quantify(args):
     concentrations = os.path.join(args.dataset,"concentrations.json")
     if not os.path.isfile(concentrations):
       concentrations = None
-    ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
-                                                  concentrations=concentrations,
-                                                  metabolites=quantifier.metabolites)
+    ds = dataset.Dataset(args.dataset).load_dicoms(args.dataset,
+                                                   concentrations=concentrations,
+                                                   metabolites=quantifier.metabolites)
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
+                           low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm, ntps=quantifier.fft_samples,
                            verbose=args.verbose)
   from mrsnet.analyse import analyse_model
   id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
   # Store results in data repository
   analyse_model(quantifier, d_inp, d_out, args.dataset,
                 id=[s[id_ref].id for s in ds.spectra],
-                show_conc=True, save_conc=True, no_show=args.no_show,
+                show_conc=True, save_conc=True,
                 verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
 
@@ -652,7 +671,7 @@ def benchmark(args):
                                          concentrations=os.path.join(Cfg.val['path_benchmark'],
                                                                      id, 'concentrations.json'),
                                          metabolites=quantifier.metabolites)
-    if args.show_spectra:
+    if args.verbose > 3:
       for s,c in zip(bm.spectra,bm.concentrations):
         for a in s.keys():
           s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
@@ -660,13 +679,14 @@ def benchmark(args):
           plt.close()
     d_inp, d_out = bm.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                              acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
+                             low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm, ntps=quantifier.fft_samples,
                              verbose=args.verbose)
     from mrsnet.analyse import analyse_model
     id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
     analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size, epochs,
                                                          train_model, trainer, rest),
                   id=[s[id_ref].id for s in bm.spectra],
-                  show_conc=True, save_conc=True, no_show=args.no_show,
+                  show_conc=True, save_conc=True,
                   verbose=args.verbose, prefix=id, image_dpi=Cfg.val['image_dpi'],
                   screen_dpi=Cfg.val['screen_dpi'])
 

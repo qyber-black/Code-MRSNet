@@ -10,180 +10,176 @@ import subprocess
 import json
 import numpy as np
 from scipy.io import loadmat
-from scipy.interpolate import interp1d
 from scipy import signal
 import matplotlib.pyplot as plt
 
-from . import molecules
-from .cfg import Cfg
+from mrsnet import molecules
+from mrsnet.cfg import Cfg
 
-class Spectrum(object):
-  # Spectrum is a class that contains information about one single spectrum
-  # loaded from any source. Time domain data is preferred over frequency
-  # domain when loading.
+class Spectrum:
+  # Spectrum is a class that contains information about a single spectrum.
 
-  def __init__(self, id, source=None, metabolites=None, pulse_sequence=None,
-               acquisition=None, omega=None, linewidth=None, dt=None, center_ppm=0,
-               filter_fft=False, remove_water_peak=False, scale=1.0, raw_adc=[]):
-    if acquisition is None:
-      raise Exception('Please set acquisition for spectrum.')
-    if pulse_sequence == 'megapress' and acquisition not in ['edit_off', 'edit_on', 'difference']:
-      raise Exception('Pulse sequence is megapress, but spectrum_type not in [edit_off, edit_on, difference]: ' + acquisition)
+  def __init__(self, id, pulse_sequence, acquisition, omega,
+               source=None, metabolites=None, linewidth=None):
     self.id = id
-    self.source = source
-    self.metabolites = molecules.short_name(metabolites)
     self.pulse_sequence = pulse_sequence
     self.acquisition = acquisition
     self.omega = omega
+
+    self.source = source
+    self.metabolites = molecules.short_name(metabolites)
     self.linewidth = linewidth
-    self.dt = dt
+
+    self.sample_rate = None
+    self.fft = None
+    self.scale = None
+    self.center_ppm = None
+    self.b0_shift_ppm = None
+
+    self.noise = None
+
+  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
+    self.fft = np.asarray(fft)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
+
+  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
+    self.fft = np.fft.fftshift(np.fft.fft(adc))
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
+
+  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak):
+    self.sample_rate = sample_rate
     self.center_ppm = center_ppm
-
-    self.raw_adc = None
-    self.zero_pad = None
-    self.set_adc(raw_adc)
+    self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
+    if remove_water_peak:
+      self._fft_remove_water_peak()
 
-    self.b0_ppm_shift = 0
-    self.remove_water_peak = remove_water_peak
-    self.filter_fft = filter_fft
+  def get_f(self):
+    return self.fft*self.scale, \
+           np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0 / self.omega + self.center_ppm + self.b0_shift_ppm
 
-    self.adc_noise_mu = 0
-    self.adc_noise_sigma = 0
+  def get_t(self):
+    return np.fft.ifft(np.fft.ifftshift(self.fft * self.scale)), \
+           np.arange(0, len(self.fft), 1) / self.sample_rate
 
-    self.fft_cache = None
-
-  def set_adc(self, adc):
-    if any(np.isnan(adc)):
-      raise Exception('ADC contains nan values')
-    self.raw_adc = adc
-    self.fft_cache = None
-    self.zero_pad = len(adc) * max(Cfg.val['fft_oversample']-1,0)
-
-  def adc(self, pad=True):
-    if pad:
-      return np.append(self.raw_adc * self.scale, np.zeros(self.zero_pad))
-    return self.raw_adc * self.scale
-
-  def adc_len(self, pad=True):
-    if pad:
-      return len(self.raw_adc) + self.zero_pad
-    return len(self.raw_adc)
-
-  def nu(self, npts=None):
-    if npts is None:
-      npts = self.adc_len()
-    nu = np.linspace(-1, 1, npts) / (2.0 * self.dt * self.omega) + self.center_ppm + self.b0_ppm_shift
-    return nu
-
-  def correct_b0(self, ppm_shift=None):
+  def correct_b0(self, shift=None):
     # Find reference peak and adjust nu range via ppm_shift
-    if ppm_shift is None:
-      ppm_shift, _ = self._find_b0_shift()
+    peak_val = 0.0
+    if shift is None:
+      # Pick shift from reference peak
+      self.b0_shift_ppm = 0
+      for pair in molecules.B0_CORRECTION:
+        if pair[0] in self.metabolites:
+          peak, val = self._fft_peak_location(pair[1], Cfg.val['b0_correct_ppm_range'])
+          if peak and peak_val < val:
+            shift = pair[1] - peak
+            peak_val = val
     # Apply Shift
-    self.b0_ppm_shift = ppm_shift
-    return ppm_shift
+    if shift is not None:
+      self.b0_shift_ppm = shift
+    return shift, peak_val
 
-  def _find_b0_shift(self):
-    # Pick shift from largest peak for NAA, Cr reference
-    self.b0_ppm_shift = 0
-    reference_peaks = []
-    if len(self.metabolites) > 0:
-      if 'NAA' in self.metabolites:
-        reference_peaks.append(molecules.NAA_REFERENCE)
-      if 'Cr' in self.metabolites:
-        reference_peaks.append(molecules.CR_REFERENCE)
-    if len(reference_peaks) == 0:
-      return None, None
-    ppm_shift = None
-    peak_v = 0.0
-    for reference_signal in reference_peaks:
-      peak, val, _ = self._fft_peak_location(reference_signal, Cfg.val['b0_correct_ppm_range'])
-      if peak and val > peak_v:
-        ppm_shift = reference_signal - peak
-        peak_v = val
-    return ppm_shift, peak_v
-
-  def _fft_peak_location(self, location, ppm_range, fft=None):
-    nu = self.nu()
-    if fft is None:
-      fft_abs = -np.abs(self.fft())
-    else:
-      fft_abs = -np.abs(fft) # Avoids loop if already called from fft (for remove_water_peak)
-    mean = np.mean(fft_abs)
+  def _fft_peak_location(self, location, ppm_range):
+    fft, nu = self.get_f()
+    fft_abs = -np.abs(fft)
+    cut_off = np.median(fft_abs)
     # finds the highest peak from location +- ppm_range
     peak_idxs = fft_abs.argsort()
     for idx in peak_idxs:
       if abs(location - nu[idx]) < ppm_range:
-        return nu[idx], -fft_abs[idx], idx
-      if fft_abs[idx] < mean:
+        # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2001.
+        # https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
+        # Quinn's second estimator (least RMS error)
+        if idx < 1 or idx >= len(nu) - 1:
+          return nu[idx], -fft_abs[idx] # at boundary (should never really be there)
+        de = (fft[idx].real**2 + fft[idx].imag**2)
+        if np.abs(de) < 1e-10:
+          return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
+        ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
+        dp = ap / (ap-1)
+        am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
+        dm = am / (1-am)
+        dp2 = dp**2
+        dm2 = dm**2
+        f1 = np.sqrt(6.0)/24.0
+        f2 = np.sqrt(2.0/3.0)
+        tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
+        tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
+        d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
+        return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+      if fft_abs[idx] > cut_off:
         break
-    return None, None, None
-
-  def fft(self):
-    if self.fft_cache is None:
-      # fft routines for different input sources
-      fft = np.fft.fftshift(np.fft.fft(self.adc(), self.adc_len()))
-      if self.source == 'pygamma' or self.source == 'fid-a':
-        fft = np.conjugate(np.flip(fft, 0))
-      if self.filter_fft:
-        b, a = signal.butter(1, 0.7)
-        fft = signal.filtfilt(b, a, fft, padlen=150)
-      if self.remove_water_peak:
-        fft = self._fft_remove_water_peak(fft)
-      self.fft_cache = fft
-    return self.fft_cache
+    return None, None
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
-    # Interpolate oversampled (see Cfg and set_adc) spectrum to get fixed fft bins
-    # (avoids issues with b0 correction and simpler than zero padding)
-    nu = self.nu()
+    # Resample fft to prescribed frequency bins via zero filling
+    fft, nu = self.get_f()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
-      raise Exception('Requested ppm rescale range out of range of nu of spectrum. Max:' + str(np.min(nu)) + ' Min: ' + str(np.max(nu)))
+      raise Exception(f"Requested ppm rescale range out of range [{nu[0]},{nu[len(nu)-1]}]")
+    freq_step = (low_ppm-high_ppm)/npts
+    bw = self.sample_rate/2.0/self.omega
+    t_samples = int(2.0*bw/freq_step)
+    rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
+    index = (rnu >= high_ppm) & (rnu <= low_ppm)
+    repeats = 0
+    while len(rnu[index]) != npts:
+      t_samples += 1
+      rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
+      index = (rnu >= high_ppm) & (rnu <= low_ppm)
+      repeats += 1
+      if repeats > Cfg.val['spectrum_rescale_fft_max_repeats']:
+        raise Exception(f"Length error: got {len(rnu[index])}, expected {npts}")
+    ifft = np.fft.ifft(np.fft.ifftshift(self.fft))
+    if t_samples > len(self.fft):
+      ifft = np.append(ifft, np.zeros(t_samples - len(self.fft)))
+    else:
+      ifft = ifft[0:t_samples]
+    rfft = np.fft.fftshift(np.fft.fft(ifft))
+    return rfft[index], rnu[index]
 
-    fft = self.fft()
-    freq_step = (low_ppm-high_ppm)/(npts-1)
-    fp = interp1d(nu, np.angle(fft), "cubic")
-    fm = interp1d(nu, np.abs(fft), "cubic")
-    int_fft = np.multiply(fm(np.arange(high_ppm,low_ppm+freq_step,freq_step)),
-                          np.exp(1j*fp(np.arange(high_ppm,low_ppm+freq_step,freq_step))))
-
-    return int_fft, np.arange(high_ppm,low_ppm+freq_step,freq_step)
-
-  def _fft_remove_water_peak(self, fft, ppm_range=0.6):
+  def _fft_remove_water_peak(self):
     # find the peak then set the range centered around it to the median signal of the fft
-    water_peak_loc, _, _ = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'], fft=fft)
+    water_peak_loc, _ = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'])
     if water_peak_loc is not None:
-      nu = self.nu()
+      fft, nu = self.get_f()
       abs_fft = np.abs(fft)
       mean_abs = np.mean(abs_fft)
       under_mean = 0
-      for jj in range(0, len(fft)):
-        if np.abs(water_peak_loc - nu[jj]) < ppm_range/2.0:
-          if abs_fft[jj] > mean_abs:
+      for jj in range(0, len(abs_fft)):
+        if nu[jj] >= water_peak_loc and nu[jj] < water_peak_loc + Cfg.val['water_peak_ppm_range']/2.0:
+          if np.abs(self.fft[jj]) > mean_abs:
             under_mean = 0
-            fft[jj] = mean_abs * np.exp(1j*np.angle(fft[jj]))
+            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
           elif nu[jj] > water_peak_loc:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
             if under_mean > 5:
               break
-    return fft
+      under_mean = 0
+      for jj in reversed(range(0, len(abs_fft))):
+        if nu[jj] <= water_peak_loc and nu[jj] > water_peak_loc - Cfg.val['water_peak_ppm_range']/2.0:
+          if np.abs(self.fft[jj]) > mean_abs:
+            under_mean = 0
+            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
+          else:
+            # trailing edge detection, stop when the water peak is over
+            under_mean += 1
+            if under_mean > 5:
+              break
 
-  def add_noise(self, mu=0, sigma=0):
-    if self.adc_noise_mu != 0.0 or self.adc_noise_sigma != 0.0:
+  def add_noise_adc_normal(self, mu=0, sigma=0):
+    if self.noise != None:
       raise Exception("Adding noise twice is not advised")
-    self.adc_noise_mu = mu
-    self.adc_noise_sigma = sigma
-    self.fft_cache = None
-    m = np.max(np.abs(self.raw_adc))
-    self.raw_adc += (     np.random.normal(mu, sigma, len(self.raw_adc)) + \
-                     1j * np.random.normal(mu, sigma, len(self.raw_adc))) * m / self.scale
+    self.noise = ("adc", "normal", mu, sigma)
+    adc, _ = self.get_t()
+    m = np.max(np.abs(adc))
+    noise = (     np.random.normal(mu, sigma, len(adc)) +
+             1j * np.random.normal(mu, sigma, len(adc))) * m / self.scale
+    self.fft += np.fft.fftshift(np.fft.fft(noise))
 
   def plot(self, axes, type='fft', mode='magnitude'):
     if type == 'time':
-      Y = self.adc()
-      X = np.arange(0,len(Y)) * self.dt
+      Y, X = self.get_t()
       axes.set_xlabel('Time (s)')
     elif type == 'fft':
       Y, X = self.rescale_fft()
@@ -208,15 +204,19 @@ class Spectrum(object):
 
   def plot_spectrum(self, concentrations={}, screen_dpi=96, type='fft'):
     n_cols = 1
-
     super_title = type.upper() + " "
     if len(concentrations) > 0:
       n_cols = 2
     else:
       super_title += "-".join(self.metabolites[0]) + ' '
-    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + " @ " + str(self.omega) + "Hz Linewidth: " + str(self.linewidth)
-    if self.adc_noise_mu != 0.0 or self.adc_noise_sigma != 0.0:
-      super_title += f" - Noise mu: {self.adc_noise_mu} sigma: {self.adc_noise_sigma}"
+    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} Hz"
+    if self.linewidth != None:
+      super_title += " Linewidth: " + str(self.linewidth)
+    if self.noise != None:
+      if self.noise[0] == "adc" and self.noise[1] == "normal":
+        super_title += f" - ADC Noise N({self.noise[2]},{self.adc_noise[3]})"
+      else:
+        raise Exception("Unknown noise model")
 
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
@@ -251,37 +251,38 @@ class Spectrum(object):
   @staticmethod
   def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
     n_cols = len(spectra)
+    metabolites = spectra[next(iter(spectra))].metabolites # Metabolites have to be the same for all spectra
 
     super_title = type.upper() + " "
     if len(concentrations) > 0:
       n_cols +=1
     else:
-      super_title += "-".join(self.metabolites[0]) + " "
+      super_title += "-".join(metabolites[0]) + " "
     source = set([spectra[a].source for a in spectra])
     pulse_sequence = set([spectra[a].pulse_sequence for a in spectra])
     omega = set([spectra[a].omega for a in spectra])
     linewidth = set([spectra[a].linewidth for a in spectra])
-    adc_noise_mu = set([spectra[a].adc_noise_mu for a in spectra])
-    adc_noise_sigma = set([spectra[a].adc_noise_sigma for a in spectra])
+    noise = set([spectra[a].noise for a in spectra])
     if len(source) != 1 or len(pulse_sequence) != 1 or len(omega) != 1 or len(linewidth) != 1 or \
-       len(adc_noise_mu) != 1 or len(adc_noise_sigma) != 1:
+       len(noise) != 1:
       raise Exception("Spectra differ in more than acqusition")
 
+    omega = next(iter(omega))
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
-                   " @ " + str(next(iter(omega))) + "Hz Linewidth: " + str(next(iter(linewidth)))
-    adc_noise_mu = next(iter(adc_noise_mu))
-    adc_noise_sigma = next(iter(adc_noise_sigma))
-    if adc_noise_mu != 0.0 or adc_noise_sigma != 0.0:
-      super_title += f" - Noise mu: {adc_noise_mu} sigma: {adc_noise_sigma}"
+                   f" @ {omega:.2f} Hz"
+    linewidth = next(iter(linewidth))
+    if linewidth != None:
+      super_title += " Linewidth: " + str(linewidth)
+    noise = next(iter(noise))
+    if noise is not None:
+      if noise[0] == "adc" and noise[1] == "normal":
+        super_title += f" - ADC Noise N({noise[2]},{noise[3]})"
+      else:
+        raise Exception("Unknown noise model")
 
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
       axes = np.reshape(axes, (4, 1))
-    else:
-      axes[0,n_cols-1].remove()
-      axes[1,n_cols-1].remove()
-      axes[2,n_cols-1].remove()
-      axes[3,n_cols-1].remove()
 
     plt.suptitle(super_title)
 
@@ -311,25 +312,129 @@ class Spectrum(object):
       cn = [n for n in concentrations.keys()]
       cv = [concentrations[v] for v in cn]
       ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv)
-      metabolites = spectra[next(iter(spectra))].metabolites
       ax.set_xticks(np.arange(len(metabolites)))
       ax.set_xticklabels(molecules.short_name(cn))
 
     return figure
 
   @staticmethod
+  def comb(f1,s1,f2,s2,id,acq):
+    # Weighted addition of two spectra
+    if s1.pulse_sequence != s2.pulse_sequence:
+      raise Exception("Combing spectra from different pulse sequences")
+    if np.abs(s1.omega - s2.omega) >= 1e-8:
+      raise Exception("Combing spectra with different omega")
+    if s1.source != s2.source:
+      raise Exception("Combing spectra from different sources")
+    metabolites = s1.metabolites
+    for m in s2.metabolites:
+      if m not in metabolites:
+        metabolites.append(m)
+    metabolites.sort()
+    if s1.linewidth != s2.linewidth and np.abs(s1.linewidth - s2.linewidth) >= 1e-8:
+      raise Exception("Combing spectra with different linewidths")
+    s = Spectrum(id=id,
+                 pulse_sequence=s1.pulse_sequence,
+                 acquisition=acq,
+                 omega=(s1.omega+s2.omega)/2.0,
+                 source=s1.source,
+                 metabolites=metabolites,
+                 linewidth=None if s1.linewidth == None else (s1.linewidth + s2.linewidth)/2.0)
+    if s1.center_ppm != s2.center_ppm:
+      raise Exception("Combining spectra with different center_ppm")
+    if s1.b0_shift_ppm != s2.b0_shift_ppm:
+      raise Exception("Combining spectra with different b0_shift_ppm")
+    if s1.sample_rate != s2.sample_rate:
+      raise Exception("Combining spectra with different sample rates")
+    if s1.noise != s2.noise:
+      raise Exception("Combining spectra with different added noise")
+    fft1, _ = s1.get_f()
+    fft2, _ = s2.get_f()
+    s.set_f(f1*fft1 + f2*fft2, s1.sample_rate, center_ppm = s1.center_ppm, b0_shift_ppm = s1.b0_shift_ppm)
+    s.noise = s1.noise
+    return s
+
+  @staticmethod
+  def combs(fs,ss,id,acq):
+    # Weighted sum of spectra
+    for n in range(1,len(ss)):
+      if ss[0].pulse_sequence != ss[n].pulse_sequence:
+        raise Exception("Combing spectra from different pulse sequences")
+      if ss[0].source != ss[n].source:
+        raise Exception("Combing spectra from different sources")
+    avg_omega = np.mean([s.omega for s in ss])
+    if ss[0].linewidth == None:
+      avg_linewidth = None
+    else:
+      avg_linewidth = np.mean([s.linewidth for s in ss])
+    all_metabolites = []
+    for n in range(len(ss)):
+      if np.abs(ss[n].omega - avg_omega) >= 1e-8:
+        raise Exception("Combing spectra with different omega")
+      if (avg_linewidth == None and ss[n].linewidth != None) or \
+         (avg_linewidth != None and ss[n].linewidth == None) or \
+         (avg_linewidth != None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
+        raise Exception("Combing spectra with different linewidths")
+      for m in ss[n].metabolites:
+        if m not in all_metabolites:
+          all_metabolites.append(m)
+    all_metabolites.sort()
+    s = Spectrum(id=id,
+                 pulse_sequence=ss[0].pulse_sequence,
+                 acquisition=acq,
+                 omega=avg_omega,
+                 source=ss[0].source,
+                 metabolites=all_metabolites,
+                 linewidth=avg_linewidth)
+    fft = fs[0] * ss[0].get_f()[0]
+    for n in range(1,len(ss)):
+      if ss[0].center_ppm != ss[n].center_ppm:
+        raise Exception("Combining spectra with different center_ppm")
+      if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
+        raise Exception("Combining spectra with different b0_shift_ppm")
+      if ss[0].sample_rate != ss[n].sample_rate:
+        raise Exception("Combining spectra with different sample rates")
+      if ss[0].noise != ss[n].noise:
+        raise Exception("Combining spectra with different added noise")
+      fft +=  fs[n] * ss[n].get_f()[0]
+    s.set_f(fft, ss[0].sample_rate, center_ppm = ss[0].center_ppm, b0_shift_ppm = ss[0].b0_shift_ppm)
+    s.noise = ss[0].noise
+    return s
+
+  @staticmethod
+  def correct_b0_multi(spectra):
+    # B0 correction across multiple acquisitions
+    for a in spectra:
+      if spectra[a].pulse_sequence != "megapress":
+        raise Exception("Multi-b0-correction only for megapress")
+    b0_shift = None
+    peak_val = 0.0
+    for pair in molecules.B0_CORRECTION:
+      shift, val = spectra['edit_off'].correct_b0()
+      if shift is not None and peak_val < val:
+        b0_shift = shift
+        peak_val = val
+    if b0_shift == None:
+      b0_shift = 0.0 # No shift as no peak found
+    for a in spectra:
+      spectra[a].correct_b0(b0_shift)
+    return b0_shift
+
+  @staticmethod
   def load_fida(fida_file,id):
     fida_data = loadmat(fida_file)
-    return Spectrum(id=id,
-                    source='fid-a',
-                    metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
-                    pulse_sequence='megapress',
-                    acquisition='edit_on' if fida_data['edit'][0][0] != 0 else 'edit_off',
-                    omega=float(fida_data['omega'][0][0]) * molecules.GYROMAGNETIC_RATIO,
-                    linewidth=float(fida_data['linewidth'][0][0]),
-                    dt = np.abs(fida_data['t'][0][0] - fida_data['t'][0][1]),
-                    center_ppm = -np.median(fida_data['nu']),
-                    raw_adc = np.array(fida_data['fid']).flatten())
+    s = Spectrum(id=id,
+                 pulse_sequence='megapress',
+                 acquisition='edit_on' if fida_data['edit'][0][0] != 0 else 'edit_off',
+                 omega=float(fida_data['omega'][0][0]),
+                 source='fid-a',
+                 metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
+                 linewidth=float(fida_data['linewidth'][0][0]))
+    # Time signal produced by fid-a seems mirrored, so need to take the complex conjugate
+    s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
+            1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+            center_ppm = -np.median(fida_data['nu']))
+    return s
 
   @staticmethod
   def load_pygamma(pygamma_dir, metabolite, pulse_sequence, omega, linewidth,
@@ -341,15 +446,9 @@ class Spectrum(object):
     if not os.path.exists(filename):
       if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
-      pygamma_cmd = ['/usr/bin/env', 'python3', os.path.join('mrsnet',
-                      'simulators', 'pygamma', 'pygamma_simulator.py'),
-                     metabolite, str(omega), pulse_sequence, str(linewidth),
-                     str(npts), str(dt), cache_dir]
-      try:
-        p = subprocess.Popen(pygamma_cmd)
-      except OSError as e:
-        raise Exception('PyGamma simulations failed') from e
-      p.wait()
+      from mrsnet.simulators.pygamma.pygamma_simulator import pygamma_spectra_sim
+      pygamma_spectra_sim(metabolite, omega, pulse_sequence,
+                          linewidth, cache_dir, npts, dt)
     specs = []
     with open(filename, 'rb') as load_file:
       for raw in json.load(load_file):
@@ -360,22 +459,22 @@ class Spectrum(object):
             acq = 'edit_on'
           else:
             raise Exception('More than 2 mx objects for megapress? Something is wrong here.')
-        specs.append(Spectrum(id=filename, source='pygamma',
-                              metabolites=[molecules.short_name(metabolite)],
-                              pulse_sequence=pulse_sequence,
-                              acquisition=acq,
-                              omega=omega,
-                              linewidth=linewidth,
-                              dt=dt,
-                              center_ppm=0,
-                              raw_adc = np.array(raw["adc_re"]) + 1j * np.array(raw["adc_im"])))
+        s = Spectrum(id=filename, source='pygamma',
+                     pulse_sequence=pulse_sequence,
+                     metabolites=[molecules.short_name(metabolite)],
+                     acquisition=acq,
+                     omega=omega,
+                     linewidth=linewidth)
+        # Time signal produced by pygamma seems mirrored, so need to take the complex conjugate
+        s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
+                1/dt)
+        specs.append(s)
     return specs
 
   @staticmethod
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
-    # FIXME: lcmodel GABA spectrum - unusual?
     if not os.path.exists(basis_file):
       raise Exception('Basis file does not exist: ' + basis_file)
     specs = []
@@ -452,17 +551,15 @@ class Spectrum(object):
                 center_ppm = -metadata["NMUSED"]["PPMSEP"]
               else:
                 center_ppm = -4.65
-              specs.append(Spectrum(id=os.path.basename(basis_file),
-                                    source='lcmodel',
-                                    metabolites=[metabolite],
-                                    pulse_sequence='megapress',
-                                    acquisition=acquisition,
-                                    omega=metadata["SEQPAR"]['HZPPPM'],
-                                    linewidth=1,
-                                    dt=metadata["BASIS1"]['BADELT'],
-                                    center_ppm=center_ppm,
-                                    raw_adc=adc,
-                                    scale=1.0))
+              s = Spectrum(id=os.path.basename(basis_file),
+                           pulse_sequence='megapress',
+                           acquisition=acquisition,
+                           omega=metadata["SEQPAR"]['HZPPPM'],
+                           source='lcmodel',
+                           metabolites=[metabolite],
+                           linewidth=None)
+              s.set_f(np.fft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
+              specs.append(s)
           elif area != "":
             raise IOError(f"Unknown section in LCModel basis file {area}")
           if line[1:] == "END":
@@ -485,7 +582,7 @@ class Spectrum(object):
   def load_dicom(file, concentrations=None, metabolites=[]):
     if not os.path.exists(file):
         raise Exception('Dicom file does not exist: ' + file)
-    from .qdicom.read_dicom_siemens import read_dicom
+    from mrsnet.qdicom.read_dicom_siemens import read_dicom
     import struct
     # We assume it's a Siemens dicom spectrum, so do not check this
     dicom, info = read_dicom(file)
@@ -500,10 +597,6 @@ class Spectrum(object):
     pulse_sequence = info["[CSA Image Header Info]"]["SequenceName"]
     if pulse_sequence in ['svs_edit', 'svs_ed', 'megapress']:
       pulse_sequence = 'megapress'
-    elif pulse_sequence == 'svs_se' or pulse_sequence == '*svs_se':
-      pulse_sequence = 'press'
-    elif pulse_sequence == 'svs_st':
-      pulse_sequence = 'steam'
     else:
       raise Exception(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
     # Acquisition
@@ -515,19 +608,10 @@ class Spectrum(object):
       elif 'DIFF' in file:
         acquisition = 'difference'
       else:
-        raise Exception('Loaded dicom file of type MEGA-PRESS, but I can\'t figure out which acquisition this '
-                        'is (Edit On, Edit Off or Difference). \n'
-                        'Please manuall specifiy it (add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere).')
-    elif pulse_sequence == 'press':
-      if 'OFF' in file:
-        acquisition = 'edit_off'
-      else:
-        raise Exception('Loaded dicom file of type PRESS, but I can\'t figure out which acquisition this '
-                        'is (Edit Off?). \n'
-                        'Please manuall specifiy it (add "OFF" into the filepath anywhere).')
+        raise Exception('Loaded dicom file for MEGA-PRESS, but acquisition cannot be determined.\n'
+                        'Add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere.')
     else:
-      acquisition = 'unknown'
-      raise Exception('Non-megapress spectra not supported')
+      raise Exception(f"Pulse sequence {pulse_sequence} not supported")
 
     id = dicom[TAG_PATIENT_ID].value
     if len(id) < 1:
@@ -562,17 +646,25 @@ class Spectrum(object):
                 ms = molecules.short_name(m)
                 if ms == "Gln" or ms == "Glu":
                   cs["GlX"] += float(js[ids[l]][m])
-
     spec = Spectrum(id=id,
-                    source='dicom',
-                    metabolites=metabolites,
                     pulse_sequence=pulse_sequence,
                     acquisition=acquisition,
                     omega=omega,
-                    linewidth=-1.0, # Unknown
-                    dt=dt,
-                    center_ppm=-4.7,
-                    raw_adc=data,
-                    remove_water_peak=True)
-
+                    source='dicom',
+                    metabolites=metabolites,
+                    linewidth=None) # Unknown
+    if Cfg.val['filter_dicom'] != None:
+      # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
+      filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
+      filter = np.zeros(len(data))
+      if Cfg.val['filter_dicom'] == 'hamming':
+        filter[0:filter_length//2] = np.hamming(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'hanning':
+        filter[0:filter_length//2] = np.hanning(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'kaiser':
+        filter[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
+      else:
+        raise Exception("Unknown dicom filter")
+      data = np.multiply(data,filter)
+    spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True)
     return spec, cs

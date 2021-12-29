@@ -106,13 +106,14 @@ is available in the new location. MRSNet does not search multiple paths.
 
 MRSNet uses a MRSNET_DEV environment variable for activating test and development
 code. It's values are explained in `mrsnet/cfg.py`, but this is only relevant
-for development and not the general operation.
+for development and not the general operation. Note, operation of this may change
+at any time.
 
 ## Simulating Spectra
 
 To generate a simulated spectra dataset with the standard set of metabolites use
 ```
-./mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10
+./mrsnet.py simulate --source lcmodel --sample random --noise_sigma 0.1 -n 10 -vv
 ```
 This uses the lcmodel basis set (see basis subcommand for other basis sets and
 how to generate them, if needed) to generate 10 spectra, sampling the
@@ -134,11 +135,19 @@ previous section of how to generate these and what these paths are) for 100
 epochs using 5-fold cross validating on the cnn_small_softmax model with some
 verbosity.
 
+MRSNet can run model selection approaches over a set of model parameters
+(currently hardcoded in `mrsnet/selection.py`) and also run the training
+on a remote system using a separate script - see `scheduler/run_scw.sh` for
+an example running on Supercomputing Wales. For example, run
+```
+./mrsnet.py select -d DATASET_PATH -e 100 --validate 0.8 --method grid cnn-simple-all --remote ./scheduler/run_scw.sh:USERNAME:10:15 -vv
+```
+
 ## Running the Benchmark
 
 To run the benchmark dataset on a model run
 ```
-./mrsnet.py benchmark --model MODEL
+./mrsnet.py benchmark --model MODEL -vv
 ```
 where MODEL is the path to the trained tensorflow model in the `data/model-dist`
 or `data/model` folders (the path indicates the parameters used for the model
@@ -150,7 +159,7 @@ folder.
 Quantifying your own spectra in dicom files or spectra joblib files (from
 simulate) is done via
 ```
-./mrsnet.py quantify -d DATASET -m MODEL
+./mrsnet.py quantify -d DATASET -m MODEL -vv
 ```
 DATASET is either a joblib file or a folder with dicom spectra. The MODEL is the
 folder with the trained tensorflow model. Results are stored in the data folder

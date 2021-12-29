@@ -21,7 +21,7 @@
 % editOnFreq            = freqeucny of edit on pulse[ppm]
 % editOffFreq           = frequency of edit off pulse[ppm]
 % editTp                = duration of editing pulses[ms]
-% Npts                  = number of spectral points
+% npts                  = number of spectral points
 % sw                    = spectral width [Hz]
 % Bfield                = magnetic field strength [Tesla]
 % lw                    = linewidth of the output spectrum [Hz]
@@ -35,8 +35,6 @@
 % outOFF            = Simulated ExTE-MEGA-PRESS edit-OFF spectrum.
 % outDIFF           = Simulated ExTE-MEGA-PRESS difference spectrum.
 
-% Minor modifications for MRSNet (Frank C Langbein, Cardiff University, 2020)
-
 if ~exist(save_dir, 'dir')
   mkdir(save_dir);
 end
@@ -44,14 +42,16 @@ for ii=1:length(metabolites)
     for jj=1:length(linewidths)
       spinSys=metabolites{ii}; %spin system to simulate
 
+      gamma=42577000; %gyromagnetic ratio Hz/T
+
       % ************INPUT PARAMETERS**********************************
       editWaveform = 'sampleEditPulse.pta'; %name of editing pulse waveform.
       editOnFreq   = 1.9; %freqeucny of edit on pulse[ppm]
       editOffFreq  = 7.4; %frequency of edit off pulse[ppm]
       editTp       = 20; %duration of editing pulses[ms]
-      % Npts         = 4096; %number of spectral points
+      % npts         = 4096; %number of spectral points
       % sw           = 1250; %spectral width [Hz]
-      % Bfield       = 2.89; %magnetic field strength [Tesla]
+      Bfield       = mrsnet_omega*1e6/gamma; %magnetic field strength [Tesla]
       lw           = linewidths(jj); %linewidth of the output spectrum [Hz]
       taus=[5 ,...  %Time from excitation to 1st refoc pulse [ms]
             17,...  %Time from 1st refoc pulse to 1st editing pulse [ms]
@@ -65,8 +65,6 @@ for ii=1:length(metabolites)
 
       %Load RF waveforms
       editRF=io_loadRFwaveform(editWaveform,'inv',0);
-
-      gamma=42577000; %gyromagnetic ratio
 
       %Load spin systems
       load spinSystems
@@ -91,9 +89,9 @@ for ii=1:length(metabolites)
           for EP2=1:length(editPhCyc2)
               disp(['Executing First Edit phase cycle ' num2str(EP1) ' of ' num2str(length(editPhCyc1)) ', '...
                     ' and Second Edit phase cycle ' num2str(EP2) ' of ' num2str(length(editPhCyc2)) '!!!']);
-              outON_epc{EP1}{EP2}=sim_megapress_shapedEdit(Npts,sw,Bfield,lw,taus,sys,...
+              outON_epc{EP1}{EP2}=sim_megapress_shapedEdit(npts,sw,Bfield,lw,taus,sys,...
                   editRFon,editTp,editPhCyc1(EP1),editPhCyc2(EP2));
-              outOFF_epc{EP1}{EP2}=sim_megapress_shapedEdit(Npts,sw,Bfield,lw,taus,sys,...
+              outOFF_epc{EP1}{EP2}=sim_megapress_shapedEdit(npts,sw,Bfield,lw,taus,sys,...
                   editRFoff,editTp,editPhCyc1(EP1),editPhCyc2(EP2));
               if EP1==1 && EP2==1
                   outON=outON_epc{EP1}{EP2};
@@ -112,19 +110,19 @@ for ii=1:length(metabolites)
       pulse_sequence = 'megapress';
       linewidth = outOFF.linewidth;
       t = outOFF.t;
-      omega = outOFF.Bo;
+      omega = outOFF.Bo * gamma * 1e-6;
       m_name = metabolites{ii};
 
       edit = false;
       fid = outOFF.fids;
       fft = outOFF.specs;
-      f_name = sprintf('FIDA_%s_MEGA-PRESS_EDIT_OFF_LW_%f.mat',m_name, lw);
+      f_name = sprintf('FIDA_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat',m_name, lw, sw, npts, omega);
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
 
       edit = true;
       fid = outON.fids;
       fft = outON.specs;
-      f_name = sprintf('FIDA_%s_MEGA-PRESS_EDIT_ON_LW_%f.mat',m_name, lw);
+      f_name = sprintf('FIDA_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat',m_name, lw, sw, npts, omega);
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
     end
 end

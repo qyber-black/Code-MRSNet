@@ -11,22 +11,29 @@ class Cfg:
   # These are static variables for the class, accessed via the class. No object
   # of this class should be used; all methods are static.
   val = {
+    'path_root': None,
     'path_basis': None,
     'path_simulation': None,
     'path_model': None,
     'path_benchmark': None,
     'figsize': (26.67,15.0),
-    'fft_oversample': 2,
     'b0_correct_ppm_range': 0.25,
-    'water_peak_ppm_range': 0.5,
+    'water_peak_ppm_range': 0.75,
+    'spectrum_rescale_fft_max_repeats': 10,
+    'filter_dicom': None,         # 'hamming' or 'hanning' or 'kaiser' or None
+    'filter_dicom_duration': 1.0, # in seconds; determines length of filter window
+                                  # (we only use the right half of the filter)
+    'filter_dicom_kaiser': 2.5,   # kaiser filter beta shape parameter
+                                  # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [96]#96
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),
-  # but all in use should be in the comments here for reference.
-  dev = set()
+  # but all in use should be in the comments here for reference:
+  # * selectgpo_optimise_noload: do not load existing datapoints for GPO model selection
+  dev_flags = set()
   # check_dataset_export - Test if exporting dataset to tensors is correct in train
   # flag_plots - Show some test graphs for the activated checks
   # feature_selectgpo_optimse_noload - do not load existing results for SelectGPO
@@ -44,8 +51,9 @@ class Cfg:
             Cfg.val[k] = js[k]
           else:
             raise Exception(f"Unknown config file entry {k} in {Cfg.file}")
+    Cfg.val["path_root"] = os.path.dirname(bin_path)
     # Check data folders and create as needed
-    data_dir = os.path.join(os.path.dirname(bin_path),'data')
+    data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {
       "path_basis": "basis",
       "path_simulation": "sim-spectra",
@@ -64,7 +72,11 @@ class Cfg:
     # Dev flags
     if 'MRSNET_DEV' in os.environ:
       for f in os.environ['MRSNET_DEV'].split(":"):
-        Cfg.dev.add(f)
+        Cfg.dev_flags.add(f)
+
+  @staticmethod
+  def dev(flag):
+    return flag in Cfg.dev_flags
 
   @staticmethod
   def _screen_dpi():

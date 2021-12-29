@@ -8,25 +8,25 @@ import os
 import errno
 import subprocess
 
+from mrsnet.cfg import Cfg
 from mrsnet.molecules import GYROMAGNETIC_RATIO
 
-def fida_spectra(metabolite_names, omega, linewidth=1.0, npts=4096, adc_dt=4e-4,
-                 save_dir=os.path.join('data', 'basis', 'fida', 'basis_files')):
-  matlab_command = "addpath(genpath(fullfile(pwd,'simulators','fida'))); "
-  matlab_command += "Bfield=" + str(omega/GYROMAGNETIC_RATIO) + "; "
-  matlab_command += "Npts=" + str(npts) + "; "
-  matlab_command += "sw="+str(1/adc_dt)+"; "
+def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, save_dir):
+  matlab_command = "addpath(genpath(fullfile('"+Cfg.val['path_root']+"','mrsnet','simulators','fida')));"
+  matlab_command += "mrsnet_omega="+str(omega)+";"
+  matlab_command += "npts="+str(npts)+";"
+  matlab_command += "sw="+str(sample_rate)+";"
 
   matlab_command += "metabolites={"
   for m in metabolite_names:
-    matlab_command += '\'' + fida_metabolite_name(m) + '\','
+    matlab_command += "'"+fida_metabolite_name(m)+"',"
   matlab_command = matlab_command.rstrip(',')
-  matlab_command+="}; "
+  matlab_command += "};"
 
-  matlab_command += "linewidths=[" + str(linewidth) + "]; "
-  matlab_command += "save_dir='" + save_dir + "'; "
+  matlab_command += "linewidths=["+str(linewidth)+"];"
+  matlab_command += "save_dir='"+save_dir+"';"
 
-  matlab_command += "run_custom_simMegaPressShapedEdit; exit; exit;"
+  matlab_command += "run_custom_simMegaPressShapedEdit;exit;exit;"
 
   try:
     p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])
@@ -39,9 +39,17 @@ def fida_spectra(metabolite_names, omega, linewidth=1.0, npts=4096, adc_dt=4e-4,
       raise
   p.wait()
 
+fida_metabolite_names = {
+  'naa': 'NAA',
+  'cr': 'Cr',
+  'gaba': 'GABA',
+  'glu': 'Glu',
+  'gln': 'Gln',
+  'lac': 'Lac',
+  'myi': 'Ins',
+  'tau': 'Tau'
+}
+
 def fida_metabolite_name(name):
-  # Converts to the expected value for FID-A. See FID-A/simulationTools/metabolites for options"""
-  name = name.lower()
-  m_names = {'creatine': 'Cr', 'gaba': 'GABA', 'glutamate': 'Glu', 'glutamine': 'Gln', 'lactate': 'Lac',
-             'myo-inositol': 'Ins', 'n-acetylaspartate': 'NAA', 'taurine': 'Tau'}
-  return m_names[name]
+  # Converts to the expected value for FID-A. See FID-A/simulationTools/metabolites for options
+  return fida_metabolite_names[name.lower()]

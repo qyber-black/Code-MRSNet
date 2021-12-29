@@ -27,6 +27,11 @@ class CNN:
     self.datatype = datatype
     self.norm = norm
 
+    # Input data (constant!)
+    self.low_ppm = -1.0
+    self.high_ppm = -4.5
+    self.fft_samples = 2048
+
     self.train_dataset_name = None
     self.cnn = None
 
@@ -122,7 +127,7 @@ class CNN:
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
 
   def train(self, d_inp, d_out, v_inp, v_out, epochs, batch_size,
-            folder, verbose=0,no_show=False, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
+            folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
     if tf.test.gpu_device_name():
       print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
     else:
@@ -202,7 +207,7 @@ class CNN:
       print("      Train          Validation")
       print(f"MSE:  {d_score[0]:.12f} {v_score[0]:.12f}")
       print(f"MAE:  {d_score[1]:.12f} {v_score[1]:.12f}")
-    self._save_results(folder, history.history, d_score, v_score, no_show, image_dpi, screen_dpi)
+    self._save_results(folder, history.history, d_score, v_score, image_dpi, screen_dpi, verbose)
 
     d_res={"MSE":d_score[0],"MAE":d_score[1]}
     v_res={"MSE":v_score[0],"MAE":v_score[1]}
@@ -238,7 +243,7 @@ class CNN:
     model.cnn = load_model(os.path.join(path,"tf_model"))
     return model
 
-  def _save_results(self, folder, history, d_score, v_score, no_show, image_dpi, screen_dpi):
+  def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
     keys = sorted(history.keys())
     # History data
     with open(os.path.join(folder, 'history.csv'), "w") as out_file:
@@ -270,7 +275,7 @@ class CNN:
         axes[2].legend(loc='upper right')
     for dpi in image_dpi:
       plt.savefig(os.path.join(folder, 'history@'+str(dpi)+'.png'), dpi=dpi)
-    if not no_show:
+    if verbose > 1:
       fig.set_dpi(screen_dpi)
       plt.show(block=True)
     plt.close()

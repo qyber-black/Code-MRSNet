@@ -8,10 +8,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from .dataset import Dataset
-from . import molecules
+import mrsnet.molecules as molecules
+from mrsnet.dataset import Dataset
 
-def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
+def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, image_dpi=[300], screen_dpi=96):
   # Compare dataset to spectra generated from basis
   # Setup basis
   if verbose > 0:
@@ -36,13 +36,15 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
   r_inp, r_out = ref_spectra.export(metabolites=ds.metabolites, norm='max',
                                     acquisitions=['difference','edit_off','edit_on'],
                                     datatype=['magnitude','phase','real','imaginary'],
+                                    high_ppm=high_ppm, low_ppm=low_ppm, n_fft_pts=n_fft_pts,
                                     verbose=verbose)
   d_inp, _ = ds.export(metabolites=ds.metabolites, norm='max',
                        acquisitions=['difference','edit_off','edit_on'],
                        datatype=['magnitude','phase','real','imaginary'],
+                       high_ppm=high_ppm, low_ppm=low_ppm, n_fft_pts=n_fft_pts,
                        verbose=verbose)
-  ppm_step = (ds.low_ppm - ds.high_ppm)/(r_inp.shape[-1]-1)
-  nu = np.arange(ds.high_ppm,ds.low_ppm+ppm_step,ppm_step)
+  ppm_step = (low_ppm - high_ppm)/(r_inp.shape[-1]-1)
+  nu = np.arange(high_ppm,low_ppm+ppm_step,ppm_step)
 
   all_diff = np.ndarray((r_inp.shape[1],r_inp.shape[2],r_inp.shape[3]*r_inp.shape[0]))
   for l in range(len(ds.spectra)):
@@ -101,45 +103,6 @@ def compare_basis(ds, basis, verbose=0, image_dpi=[300], screen_dpi=96):
     axs[3,0].set_xlabel("Difference - Error")
     axs[3,1].set_xlabel("Edit Off - Error")
     axs[3,2].set_xlabel("Edif On - Error")
-    plt.show(block=True)
-    plt.close()
-
-  print("# Time Domain Differences over all Spectra (max amplitude normalised to 1)")
-  adc_l = ds.spectra[0]['edit_off'].adc_len(pad=False)
-  spc_l = len(ds.spectra)
-  all_diff = np.ndarray((3,2,spc_l*adc_l))
-  for s in range(len(ref_spectra.spectra)):
-    for l,a in enumerate(["difference","edit_off","edit_on"]):
-      r_data = ref_spectra.spectra[s][a].adc(pad=False)
-      r_data /= np.max(np.abs(r_data))
-      d_data = ds.spectra[s][a].adc(pad=False)
-      d_data /= np.max(np.abs(d_data))
-      r_data = np.interp(np.arange(0,len(d_data),1)*ds.spectra[s][a].dt,
-                         np.arange(0,len(r_data),1)*ref_spectra.spectra[s][a].dt,
-                         r_data)
-      all_diff[l,0,s*adc_l:(s+1)*adc_l] = np.abs(r_data) - np.abs(d_data)
-      all_diff[l,1,s*adc_l:(s+1)*adc_l] = np.angle(r_data) - np.angle(d_data)
-  dd = np.sum(np.abs(all_diff),axis=2) / all_diff.shape[2]
-  m = np.mean(all_diff, axis=2)
-  s = np.std(all_diff, axis=2)
-  print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))
-  print(f"Diff     Magnitude: {dd[0,0]:12f} {m[0,0]:12f} {s[0,0]:12f}")
-  print(f"             Phase: {dd[0,1]:12f} {m[0,1]:12f} {s[0,1]:12f}")
-  print(f"Edit_Off Magnitude: {dd[1,0]:12f} {m[1,0]:12f} {s[1,0]:12f}")
-  print(f"             Phase: {dd[1,1]:12f} {m[1,1]:12f} {s[1,1]:12f}")
-  print(f"Edit_On  Magnitude: {dd[2,0]:12f} {m[2,0]:12f} {s[2,0]:12f}")
-  print(f"             Phase: {dd[2,1]:12f} {m[2,1]:12f} {s[2,1]:12f}")
-  if verbose > 0:
-    fig, axs = plt.subplots(2,3,sharey=True)
-    fig.suptitle("Time Domain Differences over all Spectra (max amplitude normalised to 1)")
-    for l in range(3):
-      for k in range(2):
-        sns.histplot(all_diff[l,k,:], kde=True, ax=axs[k,l])
-    axs[0,0].set_ylabel("Magnitude - Count")
-    axs[1,0].set_ylabel("Phase - Count")
-    axs[1,0].set_xlabel("Difference - Error")
-    axs[1,1].set_xlabel("Edit Off - Error")
-    axs[1,2].set_xlabel("Edif On - Error")
     plt.show(block=True)
     plt.close()
 
