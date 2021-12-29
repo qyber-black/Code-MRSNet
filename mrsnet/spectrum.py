@@ -407,13 +407,7 @@ class Spectrum:
     for a in spectra:
       if spectra[a].pulse_sequence != "megapress":
         raise Exception("Multi-b0-correction only for megapress")
-    b0_shift = None
-    peak_val = 0.0
-    for pair in molecules.B0_CORRECTION:
-      shift, val = spectra['edit_off'].correct_b0()
-      if shift is not None and peak_val < val:
-        b0_shift = shift
-        peak_val = val
+    b0_shift, _ = spectra['edit_off'].correct_b0()
     if b0_shift == None:
       b0_shift = 0.0 # No shift as no peak found
     for a in spectra:
