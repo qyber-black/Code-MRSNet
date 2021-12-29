@@ -172,7 +172,7 @@ def add_arguments_compare(p):
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
+  p.add_argument('--linewidth', type=float, nargs=1, default=[1.0],
                  help='Linewidths to be used for simulation (ignored for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
