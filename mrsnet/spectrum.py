@@ -110,24 +110,48 @@ class Spectrum:
       if abs(location - nu[idx]) < ppm_range:
         # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2001.
         # https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
-        # Quinn's second estimator (least RMS error)
-        if idx < 1 or idx >= len(nu) - 1:
+        if Cfg.val['fft_peak_location_estimator'] == None or idx < 1 or idx >= len(nu) - 1:
           return nu[idx], -fft_abs[idx] # at boundary (should never really be there)
-        de = (fft[idx].real**2 + fft[idx].imag**2)
-        if np.abs(de) < 1e-10:
-          return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
-        ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
-        dp = ap / (ap-1)
-        am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
-        dm = am / (1-am)
-        dp2 = dp**2
-        dm2 = dm**2
-        f1 = np.sqrt(6.0)/24.0
-        f2 = np.sqrt(2.0/3.0)
-        tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
-        tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
-        d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
-        return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+        if Cfg.val['fft_peak_location_estimator'] == 'quadratic':
+          # Quadratic method
+          y1 = -fft_abs[idx-1]
+          y2 = -fft_abs[idx]
+          y3 = -fft_abs[idx+1]
+          de = 2.0 * (2.0*y2 - y1 - y3)
+          if np.abs(de) < 1e-10:
+            return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
+          d = (y3-y1) / de
+          return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+        elif Cfg.val['fft_peak_location_estimator'] == 'quinn2':
+          # Quinn's second estimator (least RMS error)
+          de = (fft[idx].real**2 + fft[idx].imag**2)
+          if np.abs(de) < 1e-10:
+            return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
+          ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
+          dp = ap / (ap-1)
+          am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
+          dm = am / (1-am)
+          dp2 = dp**2
+          dm2 = dm**2
+          f1 = np.sqrt(6.0)/24.0
+          f2 = np.sqrt(2.0/3.0)
+          tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
+          tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
+          d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
+          return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+        elif Cfg.val['fft_peak_location_estimator'] == 'jain':
+          y1 = -fft_abs[idx-1]
+          y2 = -fft_abs[idx]
+          y3 = -fft_abs[idx+1]
+          if y1 > y3:
+            a = y2/y1
+            idx -= 1
+          else:
+            a = y3/y2
+          d = a/(1.0+a)
+          return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+        else:
+          raise Exception(f"Unknown fft peak location estimator {Cfg.val['fft_peak_location_estimator']}")
       if fft_abs[idx] > cut_off:
         break
     return None, None

@@ -17,6 +17,7 @@ class Cfg:
     'path_model': None,
     'path_benchmark': None,
     'figsize': (26.67,15.0),
+    'fft_peak_location_estimator': 'jain' , # 'quadratic' or 'quinn2' or 'jain' or None
     'b0_correct_ppm_range': 0.25,
     'water_peak_ppm_range': 0.75,
     'spectrum_rescale_fft_max_repeats': 10,
