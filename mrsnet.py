@@ -552,10 +552,10 @@ def aetrain(args):
   #        currently not supported and not needed for autoencoder training, but needed after
   #        autoencoder is used for quantification; then needs to be included in splitting methods
   #        as well.
-  trainer.train(model, d_inp, d_inp_noise, args.epochs, args.batch_size,
+  trainer.train(model, d_inp, d_inp_noise, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
-                no_show=args.no_show, verbose=args.verbose)
+                verbose=args.verbose)
 
 def model_selection(args):
   # Select sub-command
