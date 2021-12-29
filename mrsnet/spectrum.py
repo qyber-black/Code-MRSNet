@@ -121,14 +121,13 @@ class Spectrum:
           if np.abs(de) < 1e-10:
             return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
           d = (y3-y1) / de
-          return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
         elif Cfg.val['fft_peak_location_estimator'] == 'quinn2':
           # Quinn's second estimator (least RMS error)
           de = (fft[idx].real**2 + fft[idx].imag**2)
           if np.abs(de) < 1e-10:
             return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
           ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
-          dp = ap / (ap-1)
+          dp = -ap / (1-ap)
           am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
           dm = am / (1-am)
           dp2 = dp**2
@@ -137,9 +136,10 @@ class Spectrum:
           f2 = np.sqrt(2.0/3.0)
           tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
           tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
-          d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
-          return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+          # It seems d has to be negated to move estimator in right direction
+          d = -1 * ((dp+dm)/2.0 + tau_dp2 - tau_dm2)
         elif Cfg.val['fft_peak_location_estimator'] == 'jain':
+          # Jain's method
           y1 = -fft_abs[idx-1]
           y2 = -fft_abs[idx]
           y3 = -fft_abs[idx+1]
@@ -149,9 +149,9 @@ class Spectrum:
           else:
             a = y3/y2
           d = a/(1.0+a)
-          return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
         else:
           raise Exception(f"Unknown fft peak location estimator {Cfg.val['fft_peak_location_estimator']}")
+        return nu[idx] + (nu[1]-nu[0])*d, -fft_abs[idx]
       if fft_abs[idx] > cut_off:
         break
     return None, None
