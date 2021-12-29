@@ -182,7 +182,7 @@ class Basis:
       os.makedirs(os.path.join(path_basis,'basis_files'))
     to_simulate = copy.copy(self.metabolites)
     for file in os.listdir(os.path.join(path_basis,'basis_files')):
-      if file.startswith('FIDA_') and file.endswith('.mat'):
+      if file.startswith('FIDA2D_') and file.endswith('.mat'): # FIXME: FIDA!
         vals = file.split("_")
         try:
           if vals[2].lower() == self.pulse_sequence \

@@ -26,7 +26,8 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, save_dir
   matlab_command += "linewidths=["+str(linewidth)+"];"
   matlab_command += "save_dir='"+save_dir+"';"
 
-  matlab_command += "run_custom_simMegaPressShapedEdit;exit;exit;"
+  #matlab_command += "run_custom_simMegaPressShapedEdit;exit;exit;"
+  matlab_command += "run_custom_simMegaPress_2D;exit;exit;"
 
   try:
     p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])
