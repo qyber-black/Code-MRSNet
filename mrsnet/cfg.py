@@ -25,7 +25,7 @@ class Cfg:
                                   # (we only use the right half of the filter)
     'filter_dicom_kaiser': 2.5,   # kaiser filter beta shape parameter
                                   # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
-    'phase_correct': 'acme',         # 'acme' or 'ernst' or None phase correction algorithm
+    'phase_correct': None,           # 'acme' or 'ernst' or None phase correction algorithm
     'phase_correct_acme_gamma': 100, # penalty weight for acme phase correction
     'default_screen_dpi': 96,
     'screen_dpi': None,
