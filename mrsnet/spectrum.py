@@ -137,7 +137,7 @@ class Spectrum:
           tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
           tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
           # It seems d has to be negated to move estimator in right direction
-          d = -1 * ((dp+dm)/2.0 + tau_dp2 - tau_dm2)
+          d = -1.0 * ((dp+dm)/2.0 + tau_dp2 - tau_dm2)
         elif Cfg.val['fft_peak_location_estimator'] == 'jain':
           # Jain's method
           y1 = -fft_abs[idx-1]
