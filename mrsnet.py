@@ -133,7 +133,7 @@ def add_arguments_basis(p):
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs='+', default=[1.0],
+  p.add_argument('--linewidth', type=float, nargs='+', default=[2.0],
                  help='Linewidths to be used for simulation (not possible for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
@@ -153,7 +153,7 @@ def add_arguments_simulate(p):
                  default=['sobol'], help='Concentration sampling method(s).')
   p.add_argument('--noise_p', type=float, default=1.0,
                  help='Probability of ADC noise applied to spectrum.')
-  p.add_argument('--noise_sigma', type=float, default=0.1,
+  p.add_argument('--noise_sigma', type=float, default=0.03,
                  help='Maximum sigma for simulated ADC noise (uniform distribution).')
   p.add_argument('--noise_mu', type=float, default=0.0,
                  help='Maximum mu for simulated ADC noise (uniform distribution).')
@@ -172,7 +172,7 @@ def add_arguments_compare(p):
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
+  p.add_argument('--linewidth', type=float, default=2.0,
                  help='Linewidths to be used for simulation (ignored for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
@@ -407,7 +407,8 @@ def compare(args):
           concentrations = None
     ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                   concentrations=concentrations,
-                                                  metabolites=args.metabolites)
+                                                  metabolites=args.metabolites,
+                                                  verbose=args.verbose)
   if len(ds.concentrations) > 0:
     # Get basis
     import mrsnet.basis as basis
@@ -542,7 +543,8 @@ def quantify(args):
       concentrations = None
     ds = dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                    concentrations=concentrations,
-                                                   metabolites=quantifier.metabolites)
+                                                   metabolites=quantifier.metabolites,
+                                                   verbose=args.verbose)
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
@@ -588,7 +590,8 @@ def benchmark(args):
     bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
                                          concentrations=os.path.join(Cfg.val['path_benchmark'],
                                                                      id, 'concentrations.json'),
-                                         metabolites=quantifier.metabolites)
+                                         metabolites=quantifier.metabolites,
+                                         verbose=args.verbose)
     if args.verbose > 3:
       for s,c in zip(bm.spectra,bm.concentrations):
         for a in s.keys():
@@ -621,6 +624,11 @@ def get_std_name(name):
   return id
 
 if __name__ == '__main__':
+  # Find base folder
+  bin_path = os.path.realpath(__file__)
+  if not os.path.isfile(bin_path):
+    raise Exception("Cannot find location of mrsnet.py root folder")
+  Cfg.init(bin_path)
   # Only print warnings and errors for tf (set before importing tf)
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -628,9 +636,4 @@ if __name__ == '__main__':
   if not "DISPLAY" in os.environ:
     from matplotlib import use
     use("Agg")
-  # Find base folder
-  bin_path = os.path.realpath(__file__)
-  if not os.path.isfile(bin_path):
-    raise Exception("Cannot find location of mrsnet.py root folder")
-  Cfg.init(bin_path)
   main()

@@ -82,8 +82,7 @@ for ii=1:length(metabolites)
       outON=struct([]);
       outOFF=struct([]);
 
-      %loop through space: Don't forget to initialize the parallel processing
-      %toolbox workers using 'matlabpool open N' (for N workers, 12 max).
+      parpool % Use default pool
 
       for EP1=1:length(editPhCyc1)
           for EP2=1:length(editPhCyc2)
@@ -102,9 +101,6 @@ for ii=1:length(metabolites)
               end
           end
       end
-
-      % figure
-      % plot(outON.ppm, outON.specs, outOFF.ppm, outOFF.specs);
 
       nu = outOFF.ppm;
       pulse_sequence = 'megapress';

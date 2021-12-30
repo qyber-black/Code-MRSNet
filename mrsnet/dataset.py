@@ -28,7 +28,7 @@ class Dataset:
     self.pulse_sequence = None
     self.noise_added = False
 
-  def load_dicoms(self, folder, concentrations=None, metabolites=[]):
+  def load_dicoms(self, folder, concentrations=None, metabolites=[], verbose=0):
     from mrsnet.spectrum import Spectrum
     specs = {}
     concs = {}
@@ -38,7 +38,7 @@ class Dataset:
     for dir, subdirs, files in os.walk(folder):
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
-          s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites)
+          s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites, verbose)
           for m in s.metabolites:
             if m not in self.metabolites:
               self.metabolites.append(m)
@@ -455,12 +455,12 @@ Collections = {
     'source': ['lcmodel','fid-a','pygamma'],
     'manufacturer': ['siemens'],
     'omega': [123.23],
-    'linewidth': [1.0],
+    'linewidth': [2.0],
     'pulse_sequence': ['megapress'],
     'num': [10000],
     'sample': ['random','sobol','dirichlet'],
     'noise_p': [1.0],
-    'noise_sigma': [0.05,0.1],
+    'noise_sigma': [0.03],
     'noise_mu': [0.0],
     'sample_rate': [2000],
     'samples': [4096]
@@ -470,12 +470,12 @@ Collections = {
     'source': [['fid-a','lcmodel','pygamma'],['fid-a','pygamma']],
     'manufacturer': ['siemens'],
     'omega': [123.23],
-    'linewidth': [1.0,[0.75,1.0,1.25]],
+    'linewidth': [2.0,[1.0,2.0,3.0,4.0]],
     'pulse_sequence': ['megapress'],
     'num': [30000],
     'sample': ['sobol'],
     'noise_p': [1.0],
-    'noise_sigma': [0.1],
+    'noise_sigma': [0.03],
     'noise_mu': [0.0],
     'sample_rate': [2000],
     'samples': [4096]
