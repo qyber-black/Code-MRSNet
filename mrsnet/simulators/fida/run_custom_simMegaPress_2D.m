@@ -56,8 +56,8 @@ p.refPhCyc1     = [0,90];                  % phase cycling 1st refocusing pulse 
 p.refPhCyc2     = [0,90];                  % phase cycling 2nd refocusing pulse [degrees]
 p.thkX          = 3;                       % slice thickness x refocusing pulse [cm]
 p.thkY          = 3;                       % slice thickness y refocusing pulse [cm]
-p.x             = 0;%linspace(-2.5,2.5,8);    % X positions to simulate [cm]
-p.y             = 0;%linspace(-2.5,2.5,8);    % y positions to simulate [cm]
+p.x             = linspace(-2.5,2.5,8);    % X positions to simulate [cm]
+p.y             = linspace(-2.5,2.5,8);    % y positions to simulate [cm]
 
 p.editWaveform  = 'sampleEditPulse.pta';   % name of editing pulse waveform
 p.editOnFreq    = 1.900000000000000;       % frequency of edit on  pulse [ppm]
