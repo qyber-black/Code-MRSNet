@@ -1,6 +1,6 @@
 % run_simMegaPressShapedEdit_2D.m
 %
-% SPDX-FileCopyrightText: Copyright (C) 2021  <lw1660@gmail.com> Swansea University
+% SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com>, Swansea University
 % SPDX-License-Identifier: BSD-3-Clause
 %
 % USAGE:
@@ -19,7 +19,7 @@
 
 % OUTPUTS: files only
 %
-% *MEGAPRESS_2D*      output mat file with full data  
+% *MEGAPRESS_2D*      output mat file with full data
 % *MEGAPRESS_EDITOFF  output file with simulated MEGA-PRESS average edit-ON spectrum
 % *MEGAPRESS_EDITON   output file with simulated MEGA-PRESS average edit-OFF spectrum
 
@@ -28,11 +28,11 @@ if ~exist(save_dir, 'dir')
 end
 
 gamma  = 42577000;                         % gyromagnetic ratio (approximate!)
-% Create input structure 
+% Create input structure
 if exist('mrsnet_omega','var')
-   p.Bfield = mrsnet_omega*1e6/gamma;                 % magnetic field strength [Tesla] 
-else  % defined such that gamma*Bfield = 123.2 MHz using FID-A value of gamma = 42577000;  
-   p.Bfield = 2.893649004133784;      
+   p.Bfield = mrsnet_omega*1e6/gamma;                 % magnetic field strength [Tesla]
+else  % defined such that gamma*Bfield = 123.2 MHz using FID-A value of gamma = 42577000;
+   p.Bfield = 2.893649004133784;
 end
 if exist('npts','var')
    p.Npts = npts;
@@ -96,11 +96,11 @@ for ii = 1:length(metabolites)
       pulse_sequence = 'megapress';
       linewidth      = OFF.linewidth;
       omega_out      = OFF.Bo*gamma*1e-6;    % omega = gamma*Bo in MHz
-      m_name         = metabolites{ii};   
+      m_name         = metabolites{ii};
       % fixed parameters
       t    = OFF.t;
       nu   = OFF.ppm;
-      % edit off 
+      % edit off
       edit = false;
       fid  = OFF.fids;
       fft  = OFF.specs;
@@ -114,4 +114,3 @@ for ii = 1:length(metabolites)
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
     end
 end
-

@@ -124,13 +124,13 @@ def add_arguments_metabolites(p):
 def add_arguments_basis(p):
   # Add basis source arguments
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'pygamma'], default=['lcmodel'],
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma'], default=['lcmodel'],
                  nargs='+',
-                 help='Data source(s) for the basis spectra (fid-a requires Matlab).')
+                 help='Data source(s) for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default=['siemens'],
                  nargs='+',
-                 help='Scanner manufacturer (fid-a and pygamma only support siemens).')
+                 help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, nargs='+', default=[2.0],
@@ -165,11 +165,11 @@ def add_arguments_compare(p):
                  default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
                  help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'pygamma'], default='lcmodel',
-                 help='Data source for the basis spectra (fid-a requires Matlab).')
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma'], default='lcmodel',
+                 help='Data source for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default='siemens',
-                 help='Scanner manufacturer (fid-a and pygamma only support siemens).')
+                 help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, default=2.0,

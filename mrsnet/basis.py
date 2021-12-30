@@ -148,9 +148,9 @@ class Basis:
       if self.linewidth != None:
         raise Exception('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
       self._load_lcm(path_basis=os.path.join(path_basis,'lcmodel'))
-    elif self.source == 'fid-a':
+    elif self.source[0:5] == 'fid-a':
       if self.manufacturer == 'siemens':
-        self._load_fida(path_basis=os.path.join(path_basis,'fid-a'))
+        self._load_fida(path_basis=os.path.join(path_basis,self.source),source=self.source)
       else:
         raise Exception('No FID-A simulator for ' + self.manufacturer + ' scanner.')
     elif self.source == 'pygamma':
@@ -177,12 +177,18 @@ class Basis:
       self.metabolites.append("GlX")
       self.metabolites.sort()
 
-  def _load_fida(self, path_basis, second_call=False):
-    if not os.path.join(path_basis,'basis_files'):
+  def _load_fida(self, path_basis, source, second_call=False):
+    if not os.path.isdir(os.path.join(path_basis,'basis_files')):
       os.makedirs(os.path.join(path_basis,'basis_files'))
     to_simulate = copy.copy(self.metabolites)
     for file in os.listdir(os.path.join(path_basis,'basis_files')):
-      if file.startswith('FIDA2D_') and file.endswith('.mat'): # FIXME: FIDA!
+      if source[0:5] != 'fid-a':
+        raise Exception(f"Source is not fid-a: {source}")
+      if source == 'fid-a':
+        start='FIDA_'
+      else:
+        start='FIDA'+source.split("-")[3].upper()+'_'
+      if file.startswith(start) and file.endswith('.mat'):
         vals = file.split("_")
         try:
           if vals[2].lower() == self.pulse_sequence \
@@ -191,7 +197,7 @@ class Basis:
              and int(vals[5]) == self.sample_rate \
              and int(vals[6]) == self.samples \
              and np.abs(float(vals[7][0:-4]) - self.omega) < 1e-2:
-            spec = Spectrum.load_fida(os.path.join(path_basis,'basis_files',file),file[0:-4])
+            spec = Spectrum.load_fida(os.path.join(path_basis,'basis_files',file),file[0:-4],source)
             if len(spec.metabolites) > 1:
               raise Exception("More than one metabolite in FID-A basis")
             if spec.metabolites[0].lower() in [x.lower() for x in self.metabolites] \
@@ -215,8 +221,9 @@ class Basis:
         from mrsnet.simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
                      npts=self.samples, sample_rate=self.sample_rate,
+                     source=source,
                      save_dir=os.path.join(path_basis,'basis_files'))
-        self._load_fida(path_basis, second_call=True)
+        self._load_fida(path_basis, source, second_call=True)
 
   def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), second_call=False):
     # Constants, synchronise with pygamma_simulator (passed as arguments, but defaults hardcoded

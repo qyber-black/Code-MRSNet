@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com> Swansea University
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
@@ -11,7 +12,13 @@ import subprocess
 from mrsnet.cfg import Cfg
 from mrsnet.molecules import GYROMAGNETIC_RATIO
 
-def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, save_dir):
+def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, save_dir):
+  if source == "fid-a":
+    script="run_custom_simMegaPressShapedEdit"
+  elif source =="fid-a-2d":
+    script="run_custom_simMegaPress_2D"
+  else:
+    raise Exception(f"Unknown fid-a basis {source}")
   matlab_command = "addpath(genpath(fullfile('"+Cfg.val['path_root']+"','mrsnet','simulators','fida')));"
   matlab_command += "mrsnet_omega="+str(omega)+";"
   matlab_command += "npts="+str(npts)+";"
@@ -26,8 +33,7 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, save_dir
   matlab_command += "linewidths=["+str(linewidth)+"];"
   matlab_command += "save_dir='"+save_dir+"';"
 
-  #matlab_command += "run_custom_simMegaPressShapedEdit;exit;exit;"
-  matlab_command += "run_custom_simMegaPress_2D;exit;exit;"
+  matlab_command += script+";exit;exit;"
 
   try:
     p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])
