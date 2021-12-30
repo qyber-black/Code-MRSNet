@@ -624,6 +624,11 @@ def get_std_name(name):
   return id
 
 if __name__ == '__main__':
+  # Find base folder
+  bin_path = os.path.realpath(__file__)
+  if not os.path.isfile(bin_path):
+    raise Exception("Cannot find location of mrsnet.py root folder")
+  Cfg.init(bin_path)
   # Only print warnings and errors for tf (set before importing tf)
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -631,9 +636,4 @@ if __name__ == '__main__':
   if not "DISPLAY" in os.environ:
     from matplotlib import use
     use("Agg")
-  # Find base folder
-  bin_path = os.path.realpath(__file__)
-  if not os.path.isfile(bin_path):
-    raise Exception("Cannot find location of mrsnet.py root folder")
-  Cfg.init(bin_path)
   main()

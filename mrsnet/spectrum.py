@@ -18,7 +18,6 @@ from mrsnet.cfg import Cfg
 
 npfft = getattr(__import__(Cfg.val['npfft_module'][0], fromlist=[Cfg.val['npfft_module'][1]]),
                 Cfg.val['npfft_module'][1])
-# )
 
 class Spectrum:
   # Spectrum is a class that contains information about a single spectrum.
