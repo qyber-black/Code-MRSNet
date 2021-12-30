@@ -133,7 +133,7 @@ def add_arguments_basis(p):
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs='+', default=[1.0],
+  p.add_argument('--linewidth', type=float, nargs='+', default=[2.0],
                  help='Linewidths to be used for simulation (not possible for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
@@ -153,7 +153,7 @@ def add_arguments_simulate(p):
                  default=['sobol'], help='Concentration sampling method(s).')
   p.add_argument('--noise_p', type=float, default=1.0,
                  help='Probability of ADC noise applied to spectrum.')
-  p.add_argument('--noise_sigma', type=float, default=0.1,
+  p.add_argument('--noise_sigma', type=float, default=0.03,
                  help='Maximum sigma for simulated ADC noise (uniform distribution).')
   p.add_argument('--noise_mu', type=float, default=0.0,
                  help='Maximum mu for simulated ADC noise (uniform distribution).')
@@ -172,7 +172,7 @@ def add_arguments_compare(p):
                  help='Scanner manufacturer (fid-a and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs=1, default=[1.0],
+  p.add_argument('--linewidth', type=float, default=2.0,
                  help='Linewidths to be used for simulation (ignored for lcmodel).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
@@ -414,9 +414,6 @@ def compare(args):
     import mrsnet.basis as basis
     if args.verbose > 0:
       print("# Setting up basis")
-    if len(args.linewidth) != 1:
-      raise Exception("Compare can only accept one linewidth")
-    args.linewidth = args.linewidth[0]
     basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
                         manufacturer=args.manufacturer, omega=args.omega,
                         linewidth=args.linewidth, pulse_sequence=args.pulse_sequence,

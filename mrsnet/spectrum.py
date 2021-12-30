@@ -247,28 +247,29 @@ class Spectrum:
     if water_peak_loc is not None:
       fft, nu = self.get_f()
       abs_fft = np.abs(fft)
-      mean_abs = np.mean(abs_fft)
+      cut_off = np.median(abs_fft)
       under_mean = 0
+      under_mean_max = 10
       for jj in range(0, len(abs_fft)):
         if nu[jj] >= water_peak_loc and nu[jj] < water_peak_loc + Cfg.val['water_peak_ppm_range']/2.0:
-          if np.abs(self.fft[jj]) > mean_abs:
+          if np.abs(self.fft[jj]) > cut_off:
             under_mean = 0
-            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
+            self.fft[jj] = cut_off * np.exp(1j*np.angle(self.fft[jj]))
           elif nu[jj] > water_peak_loc:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > 5:
+            if under_mean > under_mean_max:
               break
       under_mean = 0
       for jj in reversed(range(0, len(abs_fft))):
         if nu[jj] <= water_peak_loc and nu[jj] > water_peak_loc - Cfg.val['water_peak_ppm_range']/2.0:
-          if np.abs(self.fft[jj]) > mean_abs:
+          if np.abs(self.fft[jj]) > cut_off:
             under_mean = 0
-            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
+            self.fft[jj] = cut_off * np.exp(1j*np.angle(self.fft[jj]))
           else:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > 5:
+            if under_mean > under_mean_max:
               break
 
   def add_noise_adc_normal(self, mu=0, sigma=0):
