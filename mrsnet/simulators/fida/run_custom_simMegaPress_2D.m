@@ -1,6 +1,7 @@
 % run_simMegaPressShapedEdit_2D.m
 %
 % SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com>, Swansea University
+% SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
 % SPDX-License-Identifier: BSD-3-Clause
 %
 % USAGE:
@@ -55,8 +56,8 @@ p.refPhCyc1     = [0,90];                  % phase cycling 1st refocusing pulse 
 p.refPhCyc2     = [0,90];                  % phase cycling 2nd refocusing pulse [degrees]
 p.thkX          = 3;                       % slice thickness x refocusing pulse [cm]
 p.thkY          = 3;                       % slice thickness y refocusing pulse [cm]
-p.x             = linspace(-2.5,2.5,8);    % X positions to simulate [cm]
-p.y             = linspace(-2.5,2.5,8);    % y positions to simulate [cm]
+p.x             = 0;%linspace(-2.5,2.5,8);    % X positions to simulate [cm]
+p.y             = 0;%linspace(-2.5,2.5,8);    % y positions to simulate [cm]
 
 p.editWaveform  = 'sampleEditPulse.pta';   % name of editing pulse waveform
 p.editOnFreq    = 1.900000000000000;       % frequency of edit on  pulse [ppm]
@@ -88,14 +89,14 @@ for ii = 1:length(metabolites)
       sys = eval(['sys' spinSys])
 
       % Run full simulation and save output in f_name
-      f_name = sprintf('FIDA2D_%s_MEGAPRESS_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, mrsnet_omega);
+      f_name = sprintf('FIDA2D_%s_MEGAPRESS_ALL_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, mrsnet_omega);
       [ON,OFF,DIFF] = SimMega2D(sys,p,f_name,save_dir);
 
       % Save average edit ON and OFF spectra separately
       % basic sequence parameters
       pulse_sequence = 'megapress';
       linewidth      = OFF.linewidth;
-      omega_out      = OFF.Bo*gamma*1e-6;    % omega = gamma*Bo in MHz
+      omega          = OFF.Bo*gamma*1e-6;    % omega = gamma*Bo in MHz
       m_name         = metabolites{ii};
       % fixed parameters
       t    = OFF.t;
@@ -104,13 +105,13 @@ for ii = 1:length(metabolites)
       edit = false;
       fid  = OFF.fids;
       fft  = OFF.specs;
-      f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega_out);
+      f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega);
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
       % edit on
       edit = true;
       fid = ON.fids;
       fft = ON.specs;
-      f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega_out);
+      f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega);
       save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
     end
 end

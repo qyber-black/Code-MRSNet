@@ -187,7 +187,11 @@ class Basis:
       if source == 'fid-a':
         start='FIDA_'
       else:
-        start='FIDA'+source.split("-")[3].upper()+'_'
+        source_id = source.split("-")
+        if len(source_id) == 3:
+          start='FIDA'+source_id[2].upper()+'_'
+        else:
+          raise Exception(f"Unknown FID-A source format {source}")
       if file.startswith(start) and file.endswith('.mat'):
         vals = file.split("_")
         try:

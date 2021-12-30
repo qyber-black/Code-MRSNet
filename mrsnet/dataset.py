@@ -239,7 +239,10 @@ class Dataset:
       while n_row * n_col < n_hst:
         n_row += 1
       fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
-      axes = axes.flatten()
+      if isinstance(axes,np.ndarray):
+        axes = axes.flatten()
+      else:
+        axes = np.asarray([axes])
       norm_str = "" if norm == 'none' else f"({norm} normalised) "
       plt.suptitle(f"Concentrations {norm_str}of {self.name}; {len(self.spectra)} spectra")
       cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
