@@ -127,8 +127,6 @@ class Cfg:
     from math import hypot
     try:
       dpi = hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
-      if dpi > Cfg.val['image_dpi'][0]: # screen_dpi bound by image_dpi to avoid huge resolutions
-        return Cfg.val['image_dpi'][0]
-      return dpi
+      return dpi # set in cfg.json if this is not working
     except:
       return Cfg.val['default_screen_dpi']
