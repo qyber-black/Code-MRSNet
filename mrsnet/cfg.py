@@ -10,6 +10,10 @@ class Cfg:
   # Default configuration - do not overwrite here but set alternatives in file
   # These are static variables for the class, accessed via the class. No object
   # of this class should be used; all methods are static.
+  #
+  # Change these values in ROOT_PATH/cfg.json (generated after first run; overwrites
+  # defaults here) or ~/config/mrsnet.json (not generated; overwrites cfg.json and
+  # defaults here).
   val = {
     'path_root': None,
     'path_basis': None,
@@ -48,17 +52,24 @@ class Cfg:
 
   @staticmethod
   def init(bin_path):
-    # Load cfg file - data folders and other Cfg values can be overwritten by config file
-    if os.path.isfile(Cfg.file):
-      import json
-      with open(Cfg.file, "r") as fp:
-        js = json.load(fp)
-        for k in js.keys():
-          if k in Cfg.val:
-            Cfg.val[k] = js[k]
-          else:
-            raise Exception(f"Unknown config file entry {k} in {Cfg.file}")
+    # Root path of mrsnet
     Cfg.val["path_root"] = os.path.dirname(bin_path)
+    # Load cfg file - data folders and other Cfg values can be overwritten by config file
+    # We first load ROOT/cfg.json, if it exists, then the user config file
+    root_cfg_file = os.path.join(Cfg.val["path_root"],'cfg.json')
+    root_cfg_vals = {}
+    for fc in [root_cfg_file, Cfg.file]:
+      if os.path.isfile(fc):
+        with open(fc, "r") as fp:
+          import json
+          js = json.load(fp)
+          if fc == root_cfg_file:
+            root_cfg_vals = js
+          for k in js.keys():
+            if k in Cfg.val:
+              Cfg.val[k] = js[k]
+            else:
+              raise Exception(f"Unknown config file entry {k} in {fc}")
     # Check data folders and create as needed
     data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {
@@ -76,6 +87,22 @@ class Cfg:
     if Cfg.val["screen_dpi"] == None:
       Cfg.val["screen_dpi"] = Cfg._screen_dpi()
     plt.rcParams["figure.figsize"] = Cfg.val['figsize']
+    # Store configs in ROOT/mrsnet.json if it does not exist
+    changed = False
+    del_keys = []
+    for k in root_cfg_vals.keys(): # Do not store paths and remove old values
+      if k[0:5] == 'path_' or k not in Cfg.val:
+        del_keys.append(k)
+        changed = True
+    for k in del_keys:
+      del root_cfg_vals[k]
+    for k in Cfg.val: # Add any new values (except paths)
+      if k[0:5] != 'path_' and k not in root_cfg_vals:
+        root_cfg_vals[k] = Cfg.val[k]
+        changed = True
+    if changed:
+      with open(root_cfg_file, "w") as fp:
+        print(json.dumps(root_cfg_vals, indent=2, sort_keys=True), file=fp)
     # Dev flags
     if 'MRSNET_DEV' in os.environ:
       for f in os.environ['MRSNET_DEV'].split(":"):
