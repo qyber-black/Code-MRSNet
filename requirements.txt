@@ -15,6 +15,7 @@ numpy>=1.21
 plotly>=5.4
 pydicom>=2.2.2
 pydot>=1.4.2
+pyfftw>=0.13
 pygamma>=4.3.4
 requests>=2.26
 scipy>=1.7

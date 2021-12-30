@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 from mrsnet import molecules
 from mrsnet.cfg import Cfg
 
+npfft = getattr(__import__("pyfftw.interfaces", fromlist=["numpy_fft"]), "numpy_fft")
+# Cfg.val['npfft_module'][0])
+
 class Spectrum:
   # Spectrum is a class that contains information about a single spectrum.
 
@@ -45,7 +48,7 @@ class Spectrum:
 
   def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
             phase_correct=False):
-    self.fft = np.fft.fftshift(np.fft.fft(adc))
+    self.fft = npfft.fftshift(npfft.fft(adc))
     self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 
   def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct):
@@ -80,7 +83,7 @@ class Spectrum:
            np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0 / self.omega + self.center_ppm + self.b0_shift_ppm
 
   def get_t(self):
-    return np.fft.ifft(np.fft.ifftshift(self.fft * self.scale)), \
+    return npfft.ifft(npfft.ifftshift(self.fft * self.scale)), \
            np.arange(0, len(self.fft), 1) / self.sample_rate
 
   def correct_b0(self, shift=None):
@@ -233,12 +236,12 @@ class Spectrum:
       repeats += 1
       if repeats > Cfg.val['spectrum_rescale_fft_max_repeats']:
         raise Exception(f"Length error: got {len(rnu[index])}, expected {npts}")
-    ifft = np.fft.ifft(np.fft.ifftshift(self.fft))
+    ifft = npfft.ifft(npfft.ifftshift(self.fft))
     if t_samples > len(self.fft):
       ifft = np.append(ifft, np.zeros(t_samples - len(self.fft)))
     else:
       ifft = ifft[0:t_samples]
-    rfft = np.fft.fftshift(np.fft.fft(ifft))
+    rfft = npfft.fftshift(npfft.fft(ifft))
     return rfft[index], rnu[index]
 
   def _fft_remove_water_peak(self):
@@ -268,7 +271,7 @@ class Spectrum:
           else:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > Cfg.val['water_peak_under_mean_max']::
+            if under_mean > Cfg.val['water_peak_under_mean_max']:
               break
 
   def add_noise_adc_normal(self, mu=0, sigma=0):
@@ -279,7 +282,7 @@ class Spectrum:
     m = np.max(np.abs(adc))
     noise = (     np.random.normal(mu, sigma, len(adc)) +
              1j * np.random.normal(mu, sigma, len(adc))) * m / self.scale
-    self.fft += np.fft.fftshift(np.fft.fft(noise))
+    self.fft += npfft.fftshift(npfft.fft(noise))
 
   def plot(self, axes, type='fft', mode='magnitude'):
     if type == 'time':
@@ -644,7 +647,7 @@ class Spectrum:
               elif ishift < 0:
                 fft[fft.shape[0]-ishift:] = 0.0
               fft_scale = metadata["BASIS"]["TRAMP"]/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
-              adc = np.fft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
+              adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
                 center_ppm = -metadata["NMUSED"]["PPMSEP"]
               else:
@@ -656,7 +659,7 @@ class Spectrum:
                            source='lcmodel',
                            metabolites=[metabolite],
                            linewidth=None)
-              s.set_f(np.fft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
+              s.set_f(npfft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
               specs.append(s)
           elif area != "":
             raise IOError(f"Unknown section in LCModel basis file {area}")

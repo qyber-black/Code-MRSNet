@@ -29,6 +29,8 @@ class Cfg:
                                   # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
     'phase_correct': None,           # 'acme' or 'ernst' or None phase correction algorithm
     'phase_correct_acme_gamma': 100, # penalty weight for acme phase correction
+    'npfft_module': ['pyfftw.interfaces','numpy_fft'], # ['pyfftw.interfaces','numpy_fft'] or
+                                                       # ['numpy','fft'] or ['scipy','fft'], etc.
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]
