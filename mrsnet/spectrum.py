@@ -260,7 +260,7 @@ class Spectrum:
           elif nu[jj] > water_peak_loc:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > Cfg.val['water_peak_under_mean_max']:
+            if under_mean > Cfg.val['water_peak_under_max']:
               break
       under_mean = 0
       for jj in reversed(range(0, len(abs_fft))):
@@ -271,7 +271,7 @@ class Spectrum:
           else:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > Cfg.val['water_peak_under_mean_max']:
+            if under_mean > Cfg.val['water_peak_under_max']:
               break
 
   def add_noise_adc_normal(self, mu=0, sigma=0):

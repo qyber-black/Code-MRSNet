@@ -24,7 +24,7 @@ class Cfg:
     'fft_peak_location_estimator': 'jain' , # 'quadratic' or 'quinn2' or 'jain' or None
     'b0_correct_ppm_range': 0.25,
     'water_peak_ppm_range': 0.75,
-    'water_peak_under_mean_max': 10,
+    'water_peak_under_max': 10,
     'spectrum_rescale_fft_max_repeats': 10,
     'filter_dicom': None,         # 'hamming' or 'hanning' or 'kaiser' or None dicom spectral leaking filter
     'filter_dicom_duration': 1.0, # in seconds; determines length of filter window
@@ -69,7 +69,8 @@ class Cfg:
             if k in Cfg.val:
               Cfg.val[k] = js[k]
             else:
-              raise Exception(f"Unknown config file entry {k} in {fc}")
+              if fc != root_cfg_file: # We fix this here later
+                raise Exception(f"Unknown config file entry {k} in {fc}")
     # Check data folders and create as needed
     data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {
