@@ -16,8 +16,9 @@ import matplotlib.pyplot as plt
 from mrsnet import molecules
 from mrsnet.cfg import Cfg
 
-npfft = getattr(__import__("pyfftw.interfaces", fromlist=["numpy_fft"]), "numpy_fft")
-# Cfg.val['npfft_module'][0])
+npfft = getattr(__import__(Cfg.val['npfft_module'][0], fromlist=[Cfg.val['npfft_module'][1]]),
+                Cfg.val['npfft_module'][1])
+# )
 
 class Spectrum:
   # Spectrum is a class that contains information about a single spectrum.
