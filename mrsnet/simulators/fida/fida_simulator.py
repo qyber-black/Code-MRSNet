@@ -46,17 +46,27 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
       raise
   p.wait()
 
+# See FID-A/simulationTools/metabolites
 fida_metabolite_names = {
-  'naa': 'NAA',
+  'ala': 'Ala',
+  'asp': 'Asp',
   'cr': 'Cr',
   'gaba': 'GABA',
   'glu': 'Glu',
   'gln': 'Gln',
+  'gsh': 'GSH',
+  'gly': 'Gly',
+  'h20': 'H2O'
   'lac': 'Lac',
   'myi': 'Ins',
-  'tau': 'Tau'
+  'naa': 'NAA',
+  'naag': 'NAAG',
+  'pcr': 'PCr',
+  'scyllo': 'Scyllo'
+  'tau': 'Tau',
 }
 
 def fida_metabolite_name(name):
-  # Converts to the expected value for FID-A. See FID-A/simulationTools/metabolites for options
+  # Converts to the expected value for FID-A.
   return fida_metabolite_names[name.lower()]
+  
