@@ -61,14 +61,18 @@ https://langbein.org/mrsnet-paper/
 
 ### Install Instructions (Linux)
 
-1. Clone the repository: `git clone git@qyber.black:mrs/code-mrsnet.git mrsnet`
+1. Clone the repository: 
+   ```
+   git clone git@qyber.black:mrs/code-mrsnet.git mrsnet --recursive --shallow-submodules
+   ```
    (check the clone url, as this  may be different if you use a different
    repository, e.g. from a mirror or alternative versions for development, etc).
+   The `--shallow-submodules` option avoids you download the history of the 
+   submodules used by mrsnet.
 2. Navigate to the directory: `cd mrsnet`
    (make sure to select a branch or tag with `git checkout BRANCH_OR_TAG` for a
    specific version instead of the master branch).
-3. Update submodules: `git submodule update --init --recursive`.
-4. Install the requirements: `pip3 install -r requirements.txt`.
+3. Install the requirements: `pip3 install -r requirements.txt`.
 
 Call `mrsnet.py --help` to get further information about all its sub-commands
 and `mrsnet.py COMMAND --help` for details for each sub-command. The

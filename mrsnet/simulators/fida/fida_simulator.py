@@ -69,4 +69,3 @@ fida_metabolite_names = {
 def fida_metabolite_name(name):
   # Converts to the expected value for FID-A.
   return fida_metabolite_names[name.lower()]
-  
