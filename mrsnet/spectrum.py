@@ -1,7 +1,7 @@
 # mrsnet/spectrum.py - MRSNet - individual spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -66,7 +66,7 @@ class Spectrum:
       if Cfg.val['phase_correct'] == 'acme':
         self._phase_correct_acme()
       elif Cfg.val['phase_correct'] == 'ernst':
-        self._phase_correct_acme()
+        self._phase_correct_ernst()
       else:
         raise Exception(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
       if Cfg.dev('spectrum_set_phase_correct'):
@@ -586,7 +586,7 @@ class Spectrum:
       parse = True
       while parse:
         line = file.readline().strip()
-        if len(line) == 0: # Process last block, then quite
+        if len(line) == 0: # Process last block, then quit
           line="$END"
           parse = False
         if line[0] == '$':
