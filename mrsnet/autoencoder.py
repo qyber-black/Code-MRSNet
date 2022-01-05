@@ -49,6 +49,46 @@ def _dec_convt_layer(m, filter, c, s, pooling, dropout):
   if pooling:
     m.add(UpSampling2D(s))
 
+# Helper to construct dense encoder layer
+def _enc_dense_layer(m,dim,activation,):
+    if activation == 're':
+      m.add(Dense(dim,activation='relu'))
+    elif activation == 'sig':
+      m.add(Dense(dim,activation='sigmoid'))
+    elif activation == 'ta':
+      m.add(Dense(dim, activation='tanh'))
+# Helper to construct dense decoder layer
+def _dec_dense_layer(m,dim,activation,):
+    if activation == 're':
+      m.add(Dense(dim,activation='relu'))
+    elif activation == 'sig':
+      m.add(Dense(dim,activation='sigmoid'))
+    elif activation == 'ta':
+      m.add(Dense(dim, activation='tanh'))
+
+# Dropout layer
+def _drop_out_layer(m,r):
+    m.add(Dropout(r))
+
+# plot diff
+def plot_spectra_(input, contrast, datatype):
+      l = []
+      for i in range(0, 2048):
+          l.append(-4.5+i*3/2048)
+
+      plt.figure()
+      plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
+      plt.plot(l, contrast, color='#4169E1')
+
+      plt.xlim(-4.5, -1.5)
+      plt.ylim()
+
+      plt.xlabel('$Frequency$')
+      plt.ylabel('$Magnitude$')
+
+      plt.title(datatype)
+      plt.legend(loc='best')
+      plt.show()
 # Convolutional autoencoder via Model interface (using Sequential interface internally)
 class ConvAutoEnc(Model):
 
@@ -100,6 +140,43 @@ class ConvAutoEnc(Model):
     x = self.decoder(x)
     return x
 
+#  Fully connected autoencoder via Model interface (using Sequential interface internally)
+class DenseAutoEnc(Model):
+
+  def __init__(self, ae_shape, name='DenseAutoEnc'):
+    super(DenseAutoEnc, self).__init__(name=name)
+    # Encoder
+    self.encoder = tf.keras.Sequential(name='Encoder')
+    self.encoder.add(Flatten())
+    _enc_dense_layer(self.encoder, 1024, "re")
+
+    _enc_dense_layer(self.encoder, 512, "re")
+
+    _enc_dense_layer(self.encoder, 256, "re")
+
+    _enc_dense_layer(self.encoder, 128, "re")
+
+    _enc_dense_layer(self.encoder, 64, "re")
+
+    _enc_dense_layer(self.encoder, 32, "sig")
+    # Decoder
+    self.decoder = tf.keras.Sequential(name='Decoder')
+    _dec_dense_layer(self.decoder, 32, "re")
+    _dec_dense_layer(self.decoder, 64, "re")
+    _dec_dense_layer(self.decoder, 128, "re")
+    _dec_dense_layer(self.decoder, 256, "re")
+    _dec_dense_layer(self.decoder, 512, "re")
+    _dec_dense_layer(self.decoder, 1024, "re")
+    _dec_dense_layer(self.decoder, 2048, "sig")
+    self.decoder.add(Reshape((1, 2048)))
+
+    self.build((None,*ae_shape))
+
+  def call(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
 class Autoencoder:
 
   def __init__(self,
@@ -130,7 +207,8 @@ class Autoencoder:
     if self.model != "ae_cnn": # FIXME: eventually we'll have more models, parameterised/selected via self.model
       raise Exception("Unknown autoencoder model")
     # Define the autoencoder via the functional interface
-    self.ae = ConvAutoEnc(ae_shape=ae_shape)
+    #self.ae = ConvAutoEnc(ae_shape=ae_shape)
+    self.ae = DenseAutoEnc(ae_shape=ae_shape)
 
   def train(self, d_inp, d_out, v_inp, v_out, epochs, batch_size,
             folder, verbose=0,no_show=False, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -151,14 +229,19 @@ class Autoencoder:
     # Autoencoder - flatten tensor as for CNN - FIXME: maybe 3D OK here, no flatting?
     d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_out, dtype=tf.float32)
-    d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
-    d_out = tf.reshape(d_out,(d_out.shape[0],d_out.shape[1]*d_out.shape[2],d_out.shape[3],1))
+    #d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
+    #d_out = tf.reshape(d_out,(d_out.shape[0],d_out.shape[1]*d_out.shape[2],d_out.shape[3],1))
+    d_inp = tf.reshape(d_inp, (d_inp.shape[0], d_inp.shape[1] * d_inp.shape[2], d_inp.shape[3]))
+    d_out = tf.reshape(d_out, (d_out.shape[0], d_out.shape[1] * d_out.shape[2], d_out.shape[3]))
 
     if len(v_inp) > 0:
       v_inp = tf.convert_to_tensor(v_inp, dtype=tf.float32)
       v_out = tf.convert_to_tensor(v_out, dtype=tf.float32)
-      v_inp = tf.reshape(v_inp,(v_inp.shape[0],v_inp.shape[1]*v_inp.shape[2],v_inp.shape[3],1))
-      v_out = tf.reshape(v_out,(v_out.shape[0],v_out.shape[1]*v_out.shape[2],v_out.shape[3],1))
+      #v_inp = tf.reshape(v_inp,(v_inp.shape[0],v_inp.shape[1]*v_inp.shape[2],v_inp.shape[3],1))
+      #v_out = tf.reshape(v_out,(v_out.shape[0],v_out.shape[1]*v_out.shape[2],v_out.shape[3],1))
+      v_inp = tf.reshape(v_inp, (v_inp.shape[0], v_inp.shape[1] * v_inp.shape[2], v_inp.shape[3]))
+      v_out = tf.reshape(v_out, (v_out.shape[0], v_out.shape[1] * v_out.shape[2], v_out.shape[3]))
+
       validation_data = (v_inp,v_out)
     else:
       validation_data = None
@@ -167,7 +250,7 @@ class Autoencoder:
       print("  Input:",d_inp.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Output:",d_out.shape,"[spectrum, acquisition x datatype, frequency]")
 
-    self._construct(d_inp.shape[1:])
+    self._construct(d_inp.shape[1:])# It's ae.shape argument
 
     optimiser = keras.optimizers.Adam(learning_rate=1e-4,
                                       beta_1=0.9,
@@ -217,6 +300,17 @@ class Autoencoder:
 
     le = len(history.history['loss'])
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
+
+
+    x_test_n = tf.convert_to_tensor(d_out, dtype=tf.float32)
+    x_test_n = tf.reshape(x_test_n, (3500, 1, 2048))
+    x_test = tf.convert_to_tensor(d_inp, dtype=tf.float32)
+    x_test = tf.reshape(x_test, (3500, 1, 2048))
+    encoder_imgs = self.ae.encoder(x_test_n[0]).numpy()
+    decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
+    plot_spectra_(decoder_imgs[0, 0], x_test_n[0, 0], 'Contrast with Noise_spectra')
+    plot_spectra_(decoder_imgs[0, 0], x_test[0, 0], 'Contrast with Clean_spectra')
+
 
     if verbose > 0:
       print("# Evaluating")
