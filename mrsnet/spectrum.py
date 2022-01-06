@@ -646,7 +646,8 @@ class Spectrum:
                 fft[:ishift] = 0.0
               elif ishift < 0:
                 fft[fft.shape[0]-ishift:] = 0.0
-              fft_scale = metadata["BASIS"]["TRAMP"]/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
+              # ON = OFF + 2*diff
+              fft_scale = metadata["BASIS"]["TRAMP"]*(100.0/metadata["BASIS"]["CONC"])/metadata["BASIS"]["VOLUME"]
               adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
                 center_ppm = -metadata["NMUSED"]["PPMSEP"]
