@@ -36,6 +36,7 @@ class Cfg:
     'phase_correct_acme_gamma': 100, # penalty weight for acme phase correction
     'npfft_module': ['pyfftw.interfaces','numpy_fft'], # ['pyfftw.interfaces','numpy_fft'] or
                                                        # ['numpy','fft'] or ['scipy','fft'], etc.
+    'lcmodel_megapress_difference_variant': 'kasier', # kasier or govindaraju
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]

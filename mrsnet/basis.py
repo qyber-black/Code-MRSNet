@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import mrsnet.molecules as molecules
+from mrsnet.cfg import Cfg
 from mrsnet.spectrum import Spectrum
 
 class BasisCollection:
@@ -256,7 +257,7 @@ class Basis:
     else:
       raise Exception('No LCModel basis set for ' + self.pulse_sequence + ' pulse sequence')
     for a in acqs:
-      diff_var_str = '_kasier' if a == 'difference' else ''
+      diff_var_str = ("_"+Cfg.val['lcmodel_megapress_difference_variant']) if a == 'difference' else ''
       specs = Spectrum.load_lcm(os.path.join(path_basis,'basis_files',
                                 p_str+"_"+a+"_"+m_str+"_3T"+diff_var_str+".basis"),
                                 a, self.omega, self.metabolites)
