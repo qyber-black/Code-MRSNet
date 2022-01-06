@@ -5,6 +5,7 @@
 
 import os
 import matplotlib.pyplot as plt
+import json
 
 class Cfg:
   # Default configuration - do not overwrite here but set alternatives in file
@@ -61,7 +62,6 @@ class Cfg:
     for fc in [root_cfg_file, Cfg.file]:
       if os.path.isfile(fc):
         with open(fc, "r") as fp:
-          import json
           js = json.load(fp)
           if fc == root_cfg_file:
             root_cfg_vals = js
