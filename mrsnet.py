@@ -3,7 +3,7 @@
 # mrsnet.py - MRSNet - command line MRSNet interface
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # See --help for arguments, uses sub-commands
@@ -48,7 +48,7 @@ def main():
   p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate standard datasets.',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_gen_ds)
-  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (single_source-sampler-noise, multi_source-linewidth; see mrsnet.dataset.Collection)')
+  p_gen_ds.add_argument('collection', type=str, help='Dataset collection json filename')
   p_gen_ds.set_defaults(func=generate_datasets)
 
   # Compare spectra
@@ -80,7 +80,7 @@ def main():
                         help='Maximum number of repeats (for qmc, gpo, evo).')
   p_select.add_argument('--remote', type=str, default='',
                         help='Remote execution: scheduler:user:[max_parallel_tasks=10:[wait_minutes=15]]')
-  p_select.add_argument('collection', type=str, help='Model collection name (see mrsnet.selection.Collection)')
+  p_select.add_argument('collection', type=str, help='Model collection json filename')
   p_select.set_defaults(func=model_selection)
 
   # Quantify
@@ -329,8 +329,7 @@ def generate_datasets(args):
   # Generate datasets sub-command
   import subprocess
   import mrsnet.grid as grid
-  from mrsnet.dataset import Collections
-  datasets = Collections[args.collection]
+  datasets = grid.Grid.load(args.collection)
   k = [str(k) for k in datasets.values.keys()]
   for v in datasets:
     # Check if it exists already
@@ -479,9 +478,9 @@ def train(args):
 def model_selection(args):
   # Select sub-command
   import subprocess
-  from mrsnet.selection import Collections
+  import mrsnet.grid as grid
   args.metabolites.sort()
-  models = Collections[args.collection]
+  models = grid.Grid.load(args.collection)
   if args.method == "grid":
     from mrsnet.selection import SelectGrid
     selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,

@@ -1,7 +1,7 @@
 # mrsnet/dataset.py - MRSNet - spectra dataset
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -451,36 +451,3 @@ class Dataset:
     elif norm != 'none':
       raise Exception(f"Unknown norm {norm}")
     return out
-
-Collections = {
-  'single_source-sampler-noise': Grid({
-    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
-    'source': ['lcmodel','fid-a','pygamma'],
-    'manufacturer': ['siemens'],
-    'omega': [123.23],
-    'linewidth': [2.0],
-    'pulse_sequence': ['megapress'],
-    'num': [10000],
-    'sample': ['random','sobol','dirichlet'],
-    'noise_p': [1.0],
-    'noise_sigma': [0.03],
-    'noise_mu': [0.0],
-    'sample_rate': [2000],
-    'samples': [4096]
-  }),
-  'multi_source-linewidths': Grid({
-    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
-    'source': [['fid-a','lcmodel','pygamma'],['fid-a','pygamma']],
-    'manufacturer': ['siemens'],
-    'omega': [123.23],
-    'linewidth': [2.0,[1.0,2.0,3.0,4.0]],
-    'pulse_sequence': ['megapress'],
-    'num': [30000],
-    'sample': ['sobol'],
-    'noise_p': [1.0],
-    'noise_sigma': [0.03],
-    'noise_mu': [0.0],
-    'sample_rate': [2000],
-    'samples': [4096]
-  })
-}

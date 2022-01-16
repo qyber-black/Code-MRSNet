@@ -1,6 +1,6 @@
 # mrsnet/selection.py - MRSNet - model selection
 #
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -671,36 +671,3 @@ def _get_std_name(name):
       break
   id.reverse()
   return id
-
-Collections = {
-  # Parameter lists (i.e. lists for single arguments); must be sorted (same as mrsnet.py sort)!
-  'cnn-simple-all': Grid({
-    'norm':         ['sum','max'],
-    'acquisitions': [['difference','edit_off'],['difference','edit_on'],
-                     ['edit_off','edit_on'],['difference','edit_off','edit_on']],
-    'datatype':     [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
-    'model':        ['cnn_small_softmax','cnn_medium_softmax','cnn_large_softmax',
-                     'cnn_small_sigmoid_pool','cnn_medium_sigmoid_pool','cnn_large_sigmoid_pool'],
-    'batch_size':   [16,32,64]
-  }),
-  'cnn-para-all': Grid({
-    'norm':             ['sum', 'max'],
-    'acquisitions':     [['difference','edit_off','edit_on'],['difference','edit_on'],
-                         ['difference','edit_off'],['edit_off','edit_on']],
-    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
-    'model':            ['cnn'],
-    'model_S1':         [-2,2],
-    'model_S2':         [-3,-2,2,3],
-    'model_C1':         [3,5,7,9,11],
-    'model_C2':         [3,5,7,9],
-    'model_C3':         [3,5,7],
-    'model_C4':         [3,5],
-    'model_O1':         [0.0,0.3],
-    'model_O2':         [0.0,0.3],
-    'model_F1':         [256],
-    'model_F2':         [512],
-    'model_D':          [1024],
-    'model_ACTIVATION': ['softmax','sigmoid'],
-    'batch_size':       [16,32,64]
-  })
-}
