@@ -524,13 +524,17 @@ class Spectrum:
   @staticmethod
   def load_fida(fida_file,id,source):
     fida_data = loadmat(fida_file)
+    if 'linewidth' in fida_data:
+      lw = float(fida_data['linewidth'][0][0])
+    else:
+      lw = None
     s = Spectrum(id=id,
                  pulse_sequence='megapress',
                  acquisition='edit_on' if fida_data['edit'][0][0] != 0 else 'edit_off',
                  omega=float(fida_data['omega'][0][0]),
                  source=source,
                  metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
-                 linewidth=float(fida_data['linewidth'][0][0]))
+                 linewidth=lw)
     # Time signal produced by fid-a seems mirrored, so need to take the complex conjugate
     s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
             1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),

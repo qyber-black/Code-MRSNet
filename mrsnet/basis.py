@@ -86,6 +86,10 @@ class Basis:
       self.linewidth = None # Unknown
       self.sample_rate = 2000 # Taken from lcmodel basis file
       self.samples = 8192 # Taken from lcmodel basis file
+    elif  self.source == "su-3tskyra":
+      self.linewidth = None # Unknown
+      self.sample_rate = 2000 # Fixed, see filename
+      self.samples = 2048 # Fixed, see filename
     else:
       self.linewidth = linewidth
       self.sample_rate = sample_rate
@@ -154,6 +158,13 @@ class Basis:
         self._load_fida(path_basis=os.path.join(path_basis,self.source),source=self.source)
       else:
         raise Exception('No FID-A simulator for ' + self.manufacturer + ' scanner.')
+    elif self.source == 'su-3tskyra':
+      if self.manufacturer == 'siemens':
+        if self.linewidth != None:
+          raise Exception('Cannot supply SU-3TSkyra basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
+        self._load_su3t(path_basis=os.path.join(path_basis,self.source),source=self.source)
+      else:
+        raise Exception('No SU-3TSkyra basis for ' + self.manufacturer + ' scanner.')
     elif self.source == 'pygamma':
       if self.manufacturer == 'siemens':
         self._load_pygamma(path_basis=os.path.join(path_basis,'pygamma'))
@@ -179,20 +190,20 @@ class Basis:
       self.metabolites.sort()
 
   def _load_fida(self, path_basis, source, second_call=False):
+    if source[0:5] != 'fid-a':
+      raise Exception(f"Source is not fid-a: {source}")
+    if source == 'fid-a':
+      start='FIDA_'
+    else:
+      source_id = source.split("-")
+      if len(source_id) == 3:
+        start='FIDA'+source_id[2].upper()+'_'
+      else:
+        raise Exception(f"Unknown FID-A source format {source}")
     if not os.path.isdir(os.path.join(path_basis,'basis_files')):
       os.makedirs(os.path.join(path_basis,'basis_files'))
     to_simulate = copy.copy(self.metabolites)
     for file in os.listdir(os.path.join(path_basis,'basis_files')):
-      if source[0:5] != 'fid-a':
-        raise Exception(f"Source is not fid-a: {source}")
-      if source == 'fid-a':
-        start='FIDA_'
-      else:
-        source_id = source.split("-")
-        if len(source_id) == 3:
-          start='FIDA'+source_id[2].upper()+'_'
-        else:
-          raise Exception(f"Unknown FID-A source format {source}")
       if file.startswith(start) and file.endswith('.mat'):
         vals = file.split("_")
         try:
@@ -229,6 +240,35 @@ class Basis:
                      source=source,
                      save_dir=os.path.join(path_basis,'basis_files'))
         self._load_fida(path_basis, source, second_call=True)
+
+  def _load_su3t(self, path_basis, source):
+    if source != 'su-3tskyra':
+      raise Exception(f"Unknown source: {source}")
+    to_load = copy.copy(self.metabolites)
+    for file in os.listdir(path_basis):
+      if file.startswith("SU3T_") and file.endswith('.mat'):
+        vals = file.split("_")
+        try:
+          if vals[2].lower() == self.pulse_sequence \
+             and (vals[3] == "EDITON" or vals[3] == "EDITOFF") \
+             and int(vals[4]) == self.sample_rate \
+             and int(vals[5]) == self.samples:
+            spec = Spectrum.load_fida(os.path.join(path_basis,file),file[0:-4],source)
+            if len(spec.metabolites) > 1:
+              raise Exception("More than one metabolite in FID-A basis")
+            if spec.metabolites[0].lower() in [x.lower() for x in self.metabolites] \
+               and np.abs(spec.omega - self.omega) < 1e-2 \
+               and spec.sample_rate == self.sample_rate \
+               and len(spec.fft) == self.samples:
+              if spec.metabolites[0] not in self.spectra:
+                self.spectra[spec.metabolites[0]] = {}
+              self.spectra[spec.metabolites[0]][spec.acquisition] = spec
+              if spec.metabolites[0] in to_load:
+                to_load.remove(spec.metabolites[0])
+        except:
+          pass
+    if len(to_load) > 0:
+      raise Exception("Metabolites missing from basis: " + str(to_load))
 
   def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), second_call=False):
     # Constants, synchronise with pygamma_simulator (passed as arguments, but defaults hardcoded

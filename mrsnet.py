@@ -125,7 +125,7 @@ def add_arguments_metabolites(p):
 def add_arguments_basis(p):
   # Add basis source arguments
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma'], default=['lcmodel'],
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', 'su-3tskyra'], default=['fid-a'],
                  nargs='+',
                  help='Data source(s) for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
@@ -135,7 +135,7 @@ def add_arguments_basis(p):
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, nargs='+', default=[2.0],
-                 help='Linewidths to be used for simulation (not possible for lcmodel).')
+                 help='Linewidths to be used for simulation (not possible for lcmodel, su-3tskyra).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
                  help='Pulse sequence (placeholder).')
@@ -143,9 +143,9 @@ def add_arguments_basis(p):
 def add_arguments_fft(p):
   # Add fft arguments
   p.add_argument('--sample_rate', type=lambda v : (abs(int(v))//2)*2, default=2000,
-                 help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel).')
+                 help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel, su-3tskyra).')
   p.add_argument('--samples', type=lambda v : (abs(int(v))//2)*2, default=4096,
-                 help='FFT time samples for basis/simluation (even, positive integer; ignored for lcmodel).')
+                 help='FFT time samples for basis/simluation (even, positive integer; ignored for lcmodel, su-3tskyra).')
 
 def add_arguments_simulate(p):
   # Add dataset simulation arguments
@@ -168,7 +168,7 @@ def add_arguments_compare(p):
                  default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
                  help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma'], default='lcmodel',
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', 'su-3tskyra'], default='lcmodel',
                  help='Data source for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default='siemens',
@@ -176,7 +176,7 @@ def add_arguments_compare(p):
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
   p.add_argument('--linewidth', type=float, default=2.0,
-                 help='Linewidths to be used for simulation (ignored for lcmodel).')
+                 help='Linewidths to be used for simulation (ignored for lcmodel, su-3tskyra).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
                  help='Pulse sequence (placeholder).')
@@ -206,13 +206,11 @@ def add_arguments_train(p):
 def add_arguments_quantify(p):
   # Add quantification arguments
   p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
-  p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
-                 default=os.path.join('data', 'model', 'MRSNet_LCModel'))
+  p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def add_arguments_benchmark(p):
   # Add benchmark arguments
-  p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
-                 default=os.path.join('data', 'model', 'MRSNet_LCModel'))
+  p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def basis(args):
   # Basis sub-command
@@ -266,7 +264,7 @@ def simulate(args):
   args.metabolites.sort()
   args.pulse_sequence.sort()
   lw = args.linewidth
-  if "lcmodel" in args.source:
+  if "lcmodel" in args.source or "su-3tskyra" in args.source:
     lw = [None]
     if len(args.source) > 1:
       for l in args.linewidths:
@@ -373,13 +371,16 @@ def generate_datasets(args):
       cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate']
       if args.verbose > 0:
         cmd += ['-v']*args.verbose
-      lcmodel = False
+      skip_lw = False
       linewidth1 = False
       for ki in range(0,len(k)):
-        if k[ki] == 'source' and ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
-                                  (not isinstance(v[ki],list) and v[ki] == 'lcmodel')):
-          lcmodel = True
-        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel interpreated a None linewidth
+        if k[ki] == 'source':
+          if ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
+              (not isinstance(v[ki],list) and v[ki] == 'lcmodel') or
+              (isinstance(v[ki],list) and 'su-3tskyra' in v[ki]) or
+              (not isinstance(v[ki],list) and v[ki] == 'su-3tskyra')):
+            skip_lw = True
+        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel/su-3tskyra interpreated a None linewidth
           linewidth1 = True
         cmd.append("--"+k[ki])
         if isinstance(v[ki],list):
@@ -387,7 +388,7 @@ def generate_datasets(args):
             cmd.append(str(val))
         else:
           cmd.append(str(v[ki]))
-      if not lcmodel or linewidth1: # Skip unsupported linwidths for lcmodel
+      if not skip_lw or linewidth1: # Skip unsupported linwidths for lcmodel
         if args.verbose > 0:
           print('# Run '+' '.join(cmd[3:]))
         try:

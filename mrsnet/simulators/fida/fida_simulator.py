@@ -56,13 +56,13 @@ fida_metabolite_names = {
   'gln': 'Gln',
   'gsh': 'GSH',
   'gly': 'Gly',
-  'h20': 'H2O'
+  'h20': 'H2O',
   'lac': 'Lac',
   'myi': 'Ins',
   'naa': 'NAA',
   'naag': 'NAAG',
   'pcr': 'PCr',
-  'scyllo': 'Scyllo'
+  'scyllo': 'Scyllo',
   'tau': 'Tau',
 }
 
