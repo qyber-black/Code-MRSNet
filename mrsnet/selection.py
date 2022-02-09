@@ -303,10 +303,10 @@ class Select:
       if len(fold) == 0:
         with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        train_p = [data['wasserstein_distance_error']]
+        train_p = [data['total']['abserror']['mean']] # total MAE
         with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        val_p = [data['wasserstein_distance_error']]
+        val_p = [data['total']['abserror']['mean']] # total MAE
       else:
         train_p = []
         val_p = []
@@ -314,10 +314,10 @@ class Select:
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
           with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
             data = json.load(f)
-          train_p.append(data['wasserstein_distance_error'])
+          train_p.append(data['total']['abserror']['mean']) # total MAE
           with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
             data = json.load(f)
-          val_p.append(data['wasserstein_distance_error'])
+          val_p.append(data['total']['abserror']['mean']) # total MAE
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
@@ -388,7 +388,7 @@ class Select:
     ax.legend(loc="upper right", frameon=True)
     ax.set(xlim=(0,np.max([np.max([self.val_performance[idx[p]] for p in range(0,top_n)]),
                            np.max([self.train_performance[idx[p]] for p in range(0,top_n)])])),
-           ylabel="", xlabel="Wasserstein Distance Error")
+           ylabel="", xlabel="Mean Absolute Concentration Error")
     fig.tight_layout()
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"errors@"+str(dpi)+".png"), dpi=dpi)

@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 from tqdm import tqdm
-from scipy.stats import wasserstein_distance
 
 from mrsnet.analyse import analyse_model
 from mrsnet.getfolder import get_folder
@@ -59,8 +58,8 @@ class Train:
   def _cross_validate(self, model, epochs, batch_size, d_inp, d_out, folder,
                       train_dataset_name, verbose, image_dpi, screen_dpi):
     # Cross valildation
-    train_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
-    val_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
+    train_res = { 'error': [None]*self.k, 'MAE': [None]*self.k }
+    val_res = { 'error': [None]*self.k, 'MAE': [None]*self.k }
     for val_fold in range(0,self.k):
       if verbose > 0:
         print(f"# Fold {val_fold} of {self.k}")
@@ -85,11 +84,11 @@ class Train:
       _, info, err = analyse_model(model, d_inp[train_sel], d_out[train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
 
-      train_res['wdq'][val_fold] = info['wasserstein_distance_error']
+      train_res['MAE'][val_fold] = info['total']['abserror']['mean']
       train_res['error'][val_fold] = err
       _, info, err = analyse_model(model, d_inp[val_sel], d_out[val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      val_res['wdq'][val_fold] = info['wasserstein_distance_error']
+      val_res['MAE'][val_fold] = info['total']['abserror']['mean']
       val_res['error'][val_fold] = err
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
@@ -102,7 +101,7 @@ class Train:
 
     # Pairwise Wasserstein distance between validation error distributions
     if verbose > 0:
-      print("# Wasserstein distance")
+      print("# Wasserstein distance between fold error distributions")
     max_wd_err = 0.0
     max_wd_aerr = 0.0
     for k1 in range(1,self.k):

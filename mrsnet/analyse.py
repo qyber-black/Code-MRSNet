@@ -13,7 +13,6 @@ import csv
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import linregress
-from scipy.stats import wasserstein_distance
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False,
                   verbose=0, image_dpi=[300], screen_dpi=96):
@@ -176,6 +175,8 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
         'std_err': std_err
       },
     }
+  if verbose > 0:
+    print(f"  Total mean absolute error: ({prefix}): {info['total']['abserror']['mean']}")
 
   axes[0,len(model.metabolites)].plot([0, 1], [0, 1], label='true line')
   sns.regplot(y=pre_all, x=out_all, ax=axes[0,len(model.metabolites)])
@@ -185,15 +186,6 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
   axes[0,len(model.metabolites)].set_ylim([0,1])
   sns.histplot(error, kde=True, ax=axes[1,len(model.metabolites)])
   axes[1,len(model.metabolites)].set_xlabel("Error")
-
-  # Quality of distribution - wasserstein distance to ideal distribution
-  wd = wasserstein_distance(error,
-                            np.array([0]),
-                            np.ones(error.shape[0])/error.shape[0],
-                            np.ones(1))
-  info["wasserstein_distance_error"] = wd
-  if verbose > 0:
-    print(f"  Wasserstein distance error ({prefix}): {wd}")
 
   with open(os.path.join(folder, prefix+"_concentration_errors.json"), 'w') as f:
     print(json.dumps(info, indent=2, sort_keys=True), file=f)
