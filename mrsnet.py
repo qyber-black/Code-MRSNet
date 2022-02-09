@@ -470,7 +470,7 @@ def train(args):
     trainer = NoValidation()
   else:
     raise Exception(f"Unknown validation {args.validate}")
-  trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
+  trainer.train(model, d_inp, d_out, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
@@ -519,7 +519,7 @@ def quantify(args):
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
-      batch_size = id[k+6]
+      batchsize = id[k+6]
       epochs = id[k+7]
       train_model = id[k+8]
       trainer = id[k+9]
@@ -528,10 +528,10 @@ def quantify(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print(f"# Loading model {name} : {batch_size} : {epochs} {train_model} : {trainer} : {rest}")
+    print(f"# Loading model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
   if ds is None:
@@ -547,8 +547,8 @@ def quantify(args):
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
-                           low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm, ntps=quantifier.fft_samples,
-                           verbose=args.verbose)
+                           low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm,
+                           n_fft_pts=quantifier.fft_samples, verbose=args.verbose)
   from mrsnet.analyse import analyse_model
   id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
   # Store results in data repository
@@ -567,7 +567,7 @@ def benchmark(args):
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
-      batch_size = id[k+6]
+      batchsize = id[k+6]
       epochs = id[k+7]
       train_model = id[k+8]
       trainer = id[k+9]
@@ -576,39 +576,41 @@ def benchmark(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print(f"# Model {name} : {batch_size} : {epochs} : {train_model} : {trainer} : {rest}")
+    print(f"# Model {name} : {batchsize} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
   import mrsnet.dataset as dataset
   for id in ['E1', 'E2', 'E3', 'E4a', 'E4b', 'E4c', 'E4d']:
-    if args.verbose > 0:
-      print(f"# Loading Benchmark {id}")
-    bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
-                                         concentrations=os.path.join(Cfg.val['path_benchmark'],
-                                                                     id, 'concentrations.json'),
-                                         metabolites=quantifier.metabolites,
-                                         verbose=args.verbose)
-    if args.verbose > 3:
-      for s,c in zip(bm.spectra,bm.concentrations):
-        for a in s.keys():
-          s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
-          plt.show(block=True)
-          plt.close()
-    d_inp, d_out = bm.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
-                             acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
-                             low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm, ntps=quantifier.fft_samples,
-                             verbose=args.verbose)
-    from mrsnet.analyse import analyse_model
-    id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
-    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size, epochs,
-                                                         train_model, trainer, rest),
-                  id=[s[id_ref].id for s in bm.spectra],
-                  show_conc=True, save_conc=True,
-                  verbose=args.verbose, prefix=id, image_dpi=Cfg.val['image_dpi'],
-                  screen_dpi=Cfg.val['screen_dpi'])
+    for variant in ['MEGA_Combi_WS_ON', 'MEGA_RAW_Combi_WS_ON']:
+      if args.verbose > 0:
+        print(f"# Loading Benchmark {id}")
+      bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, variant),
+                                           concentrations=os.path.join(Cfg.val['path_benchmark'],
+                                                                       id, 'concentrations.json'),
+                                           metabolites=quantifier.metabolites,
+                                           verbose=args.verbose)
+      if args.verbose > 3:
+        for s,c in zip(bm.spectra,bm.concentrations):
+          for a in s.keys():
+            s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
+            plt.show(block=True)
+            plt.close()
+      d_inp, d_out = bm.export(metabolites=quantifier.metabolites, n_fft_pts=quantifier.fft_samples,
+                                high_ppm=quantifier.high_ppm, low_ppm=quantifier.low_ppm,
+                                norm=quantifier.norm, acquisitions=quantifier.acquisitions,
+                                datatype=quantifier.datatype,
+                                verbose=args.verbose)
+      from mrsnet.analyse import analyse_model
+      id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
+      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batchsize, epochs,
+                                                           train_model, trainer, rest),
+                    id=[s[id_ref].id for s in bm.spectra],
+                    show_conc=True, save_conc=True,
+                    verbose=args.verbose, prefix=id+":"+variant, image_dpi=Cfg.val['image_dpi'],
+                    screen_dpi=Cfg.val['screen_dpi'])
 
 def get_std_name(name):
   _, path = os.path.splitdrive(name)

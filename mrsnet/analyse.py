@@ -85,7 +85,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
   abserror_std = np.std(abserror,axis=0)
   abserror_min = np.min(abserror,axis=0)
   abserror_max = np.max(abserror,axis=0)
-  info = {}
+  info = { 'prefix': prefix }
 
   # Per metabolite plots/data
   fig, axes =  plt.subplots(2,len(model.metabolites)+1)
