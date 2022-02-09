@@ -7,32 +7,35 @@
 # Molecule names understood by MRNet; mapping long-name to range of short-names.
 # Preferred short name is the first in the array, e.g. for myo-inositol 'MyI' will be chosen over 'mi'
 NAMES = {
-  'N-Acetylaspartate': ['NAA'],
+  'Alanine': ['ala'],
+  'Aspartate': ['asp'],
   'Creatine': ['Cr', 'cre'],
-  'GABA': ['GABA'],
   'Choline-truncated': ['Cho'],
+  'DSS': ['DSS'],
+  'GABA': ['GABA'],
   'Glutamate': ['Glu'],
   'Glutamine': ['Gln'],
   'GlutaX': ['GlX'],
   'Glutathione': ['gsh'],
   'Glycine': ['Gly'],
+  'Water': ['H2O'],
   'Lactate': ['Lac'],
   'Myo-Inositol': ['MyI', 'mi', 'ins'],
+  'N-Acetylaspartate': ['NAA'],
   'N-Acetylaspartylglutamic': ['NAAG'],
   'NAAG-truncated-siemens': ['NAAG-SIE'],
   'Phosphocreatine': ['PCr', 'pch'],
-  'Taurine': ['Tau'],
-  'Water': ['H2O'],
-  'DSS': ['DSS'],
-  'Alanine': ['ala'],
-  'Aspartate': ['asp'],
-  'Scyllo-Inositol': ['scyllo']
+  'Scyllo-Inositol': ['scyllo'],
+  'Taurine': ['Tau']
 }
 
-NAA_REFERENCE = -2.01
-CR_REFERENCE = -3.015
-WATER_REFERENCE = -4.75             # Temperature dependant, avoid using if at all possible
-GYROMAGNETIC_RATIO = 42.57747892    # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
+# B0 correction metabolites with reference peak location
+# Priority list - first metabolite peak found is used
+B0_CORRECTION = [ ('NAA', -2.01),
+                  ('Cr', -3.015) ]
+
+WATER_REFERENCE = -4.75           # Temperature dependant, avoid using if at all possible
+GYROMAGNETIC_RATIO = 42.577478518 # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
 
 def convert_names(molecules, shorten=False):
   # Standardise molecule names to short or long form

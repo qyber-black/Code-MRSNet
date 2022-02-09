@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [submodule "mrsnet/simulators/fida/FID-A"]
 	path = mrsnet/simulators/fida/FID-A
-	url = git@github.com:CIC-methods/FID-A.git
+	url = https://github.com/CIC-methods/FID-A.git
 [submodule "mrsnet/qdicom"]
 	path = mrsnet/qdicom
 	url = git@qyber.black:pca/code-qdicom-utilities.git
