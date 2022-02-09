@@ -176,7 +176,7 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
       },
     }
   if verbose > 0:
-    print(f"  Total mean absolute error: ({prefix}): {info['total']['abserror']['mean']}")
+    print(f"  Total mean absolute error ({prefix}): {info['total']['abserror']['mean']}")
 
   axes[0,len(model.metabolites)].plot([0, 1], [0, 1], label='true line')
   sns.regplot(y=pre_all, x=out_all, ax=axes[0,len(model.metabolites)])

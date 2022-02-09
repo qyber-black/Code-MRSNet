@@ -20,7 +20,15 @@ from mrsnet.cfg import Cfg
 class Select:
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
     from mrsnet.dataset import Dataset
-    if os.path.isfile(os.path.join(dataset,"spectra.joblib")):
+    if os.path.isfile(os.path.join(dataset,"spectra_noisy.joblib")):
+      id = _get_std_name(dataset)
+      name = os.path.join(*id[-9:-1])
+      self.ds_rest = id[-1]
+      if verbose > 0:
+        print(f"# Loading dataset {name} : {self.ds_rest}")
+      ds = Dataset.load(dataset)
+      self.pulse_sequence = ds.pulse_sequence
+    elif os.path.isfile(os.path.join(dataset,"spectra_clean.joblib")):
       id = _get_std_name(dataset)
       name = os.path.join(*id[-9:-1])
       self.ds_rest = id[-1]

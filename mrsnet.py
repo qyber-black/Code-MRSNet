@@ -101,10 +101,11 @@ def main():
     if "GlX" in args.metabolites and ("Gln" in args.metabolites or "Glu" in args.metabolites):
       raise Exception("GlX with Gln or Glu is not possible")
   if hasattr(args,"noise_p"):
-    if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0):
+    if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0) or args.noise_type == "none":
       args.noise_p = 0.0
       args.noise_sigma = 0.0
       args.noise_mu = 0.0
+      args.noise_type = "none"
 
   if hasattr(args,"func"):
     args.func(args)
@@ -152,7 +153,9 @@ def add_arguments_simulate(p):
   p.add_argument('--sample', nargs='+', choices=['random', 'dirichlet', 'sobol', 'dirichlet-zeros', 'random-zeros', 'sobol-zeros', 'random-one', 'dirichlet-one', 'sobol-one'],
                  default=['sobol'], help='Concentration sampling method(s).')
   p.add_argument('--noise_p', type=float, default=1.0,
-                 help='Probability of ADC noise applied to spectrum.')
+                 help='Probability of ADC noise applied to spectrum. If noise is requested, clean spectra are also saved.')
+  p.add_argument('--noise_type', choices=['none', 'adc_normal'], default="adc_normal",
+                 help='Type of noise to be added.')
   p.add_argument('--noise_sigma', type=float, default=0.03,
                  help='Maximum sigma for simulated ADC noise (uniform distribution).')
   p.add_argument('--noise_mu', type=float, default=0.0,
@@ -160,7 +163,7 @@ def add_arguments_simulate(p):
 
 def add_arguments_compare(p):
   # Add compare arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
+  p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID or dicom folder)')
   p.add_argument('--metabolites', type=lambda s : molecules.short_name(s), nargs='+',
                  default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
                  help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
@@ -180,7 +183,7 @@ def add_arguments_compare(p):
 
 def add_arguments_train_select(p):
   # Add training/selection arguments
-  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
+  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
                  help='Number of training epochs.')
   p.add_argument('-k', '--validate', type=float, default=0.7,
@@ -202,7 +205,7 @@ def add_arguments_train(p):
 
 def add_arguments_quantify(p):
   # Add quantification arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
+  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
   p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
                  default=os.path.join('data', 'model', 'MRSNet_LCModel'))
 
@@ -275,7 +278,7 @@ def simulate(args):
                     "-".join(args.metabolites),
                     "-".join(args.pulse_sequence),
                     "-".join(args.sample),
-                    str(args.noise_p)+"-"+str(args.noise_mu)+"-"+str(args.noise_sigma))
+                    str(args.noise_p)+"-"+args.noise_type+"-"+str(args.noise_mu)+"-"+str(args.noise_sigma))
 
   bases = basis.BasisCollection()
   num_bases = 0
@@ -301,10 +304,17 @@ def simulate(args):
     if args.verbose > 0:
       print(f"Generating {n} spectra for {b}")
     dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
-  dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
+  # Save without noise
   if args.verbose > 0:
-    print(f"Saving dataset {dataset.name}")
+    print(f"Saving dataset without noise: {dataset.name}")
   path = dataset.save(Cfg.val["path_simulation"])
+  # Save with noise
+  if args.noise_p > 0.0:
+    dataset.add_noise(args.noise_p, args.noise_type, args.noise_mu, args.noise_sigma, verbose=args.verbose)
+    if args.verbose > 0:
+      print(f"Saving dataset with noise: {dataset.name}")
+    path = dataset.save(Cfg.val["path_simulation"], path)
+  # Plots
   if args.verbose > 0:
     print("Plotting concentrations")
   for norm in ['none', 'sum', 'max']:
@@ -346,8 +356,14 @@ def generate_datasets(args):
                       "-".join(na['metabolites']),
                       "-".join(na['pulse_sequence']),
                       "-".join(na['sample']),
-                      na['noise_p'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
-    if os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra.joblib")):
+                      na['noise_p'][0]+"-"+na['noise_type'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
+    if (os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")) or
+        os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib"))):
+      if na['noise_p'][0] > 0.0:
+        if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib")):
+          raise Exception("No noisy dataset, even if requested: "+Cfg.val['path_simulation'],name,na['num'][0]+"-1")
+      if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")):
+        raise Exception("Only noisy dataset exists for "+Cfg.val['path_simulation'],name,na['num'][0]+"-1")
       if args.verbose > 0:
         print(f"# Exists: {name}:{na['num'][0]}")
     else:
@@ -387,7 +403,14 @@ def compare(args):
   # Compare sub-command
   import mrsnet.dataset as dataset
   import numpy as np
-  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+  if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")):
+    id = get_std_name(args.dataset)
+    name = os.path.join(*id[-9:-1])
+    ds_rest = id[-1]
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  elif os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
     id = get_std_name(args.dataset)
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
@@ -505,7 +528,14 @@ def quantify(args):
   # Quantify sub-command
   import mrsnet.dataset as dataset
   import numpy as np
-  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+  if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")):
+    id = get_std_name(args.dataset)
+    name = os.path.join(*id[-9:-1])
+    ds_rest = id[-1]
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  elif os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
     id = get_std_name(args.dataset)
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]

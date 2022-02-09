@@ -187,13 +187,16 @@ class Dataset:
       self.spectra.append(s)
       self.concentrations.append(c)
 
-  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose):
+  def add_noise(self, noise_p, noise_type, noise_mu, noise_sigma, verbose):
     # Add noise to all spectra
     if self.noise_added:
       raise Exception("Noise added twice to dataset")
-    if noise_p > 0.0:
+    if noise_p > 0.0 and noise_type != "none":
       if verbose > 0:
-        print(f"Adding noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
+        if noise_type == "adc_normal":
+          print(f"Adding ADC noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
+        else:
+          raise Exception("Unknown noise type "+noise_type)
       self.noise_added = True
       num = len(self.spectra)
       n_add = np.random.uniform(0.0,1.0,num)
@@ -206,7 +209,10 @@ class Dataset:
           # Add noise
           for a in self.spectra[idx]:
             if a != 'difference':
-              self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
+              if noise_type == "adc_normal":
+                self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
+              else:
+                raise Exception("Unknonw noise type "+noise_type)
           if 'difference' in self.spectra[idx]:
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
@@ -220,15 +226,22 @@ class Dataset:
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
-  def save(self, path):
+  def save(self, path, folder=None):
     from mrsnet.getfolder import get_folder
-    folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
-    joblib.dump(self, os.path.join(folder, "spectra.joblib"))
+    if folder == None:
+      folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
+    if self.noise_added:
+      fn = "spectra_noisy.joblib"
+    else:
+      fn = "spectra_clean.joblib"
+    joblib.dump(self, os.path.join(folder, fn))
     return folder
 
   @staticmethod
-  def load(folder):
-    return joblib.load(os.path.join(folder, "spectra.joblib"))
+  def load(folder, force_clean=False):
+    if not force_clean and os.path.isfile(os.path.join(folder, "spectra_noisy.joblib")):
+      return joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
+    return joblib.load(os.path.join(folder, "spectra_clean.joblib"))
 
   def plot_concentrations(self, norm='none'):
     if len(self.concentrations) > 0:
@@ -271,7 +284,12 @@ class Dataset:
     if len(self.spectra) > 0:
       if verbose > 0:
         print("Converting spectra to tensor")
-      d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
+      if Cfg.val['npfft_module'][0] == "pyfftw.interfaces":
+        nj=1 # pyfftw causes segmentgation fault in parallel execution
+      else:
+        nj=-1
+      print(nj)
+      d_inp = joblib.Parallel(n_jobs=nj, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, high_ppm, low_ppm, n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
       d_inp = np.array(d_inp, dtype=np.float64)
@@ -282,7 +300,7 @@ class Dataset:
     if len(self.concentrations) > 0:
       if verbose > 0:
         print("Converting concentrations to tensor")
-      d_out = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
+      d_out = joblib.Parallel(n_jobs=nj, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
                     metabolites, norm)
                 for c in tqdm(self.concentrations, disable=(verbose<1)))
       d_out = np.array(d_out, dtype=np.float64)
