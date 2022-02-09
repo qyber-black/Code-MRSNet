@@ -73,7 +73,7 @@ https://langbein.org/mrsnet-paper/
    cd mrsnet
    ```
    Make sure to select a branch or tag with `git checkout BRANCH_OR_TAG` for a
-   specific version instead of the master branch.
+   specific version instead of the main branch.
 3. Update submodules:
    ```
    git submodule update --init --recursive
