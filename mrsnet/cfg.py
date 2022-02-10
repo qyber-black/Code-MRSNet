@@ -34,9 +34,14 @@ class Cfg:
                                   # (0: rectangular; 5,6 ~hamming,hanning; 8.6 ~blackman; 14 default)
     'phase_correct': None,           # 'acme' or 'ernst' or None phase correction algorithm
     'phase_correct_acme_gamma': 100, # penalty weight for acme phase correction
-    'npfft_module': ['pyfftw.interfaces','numpy_fft'], # ['pyfftw.interfaces','numpy_fft'] or
-                                                       # ['numpy','fft'] or ['scipy','fft'], etc.
+    'npfft_module': ['numpy','fft'], # ['pyfftw.interfaces','numpy_fft'] (currently not parallel) or
+                                     # ['numpy','fft'] or ['scipy','fft'], etc.
     'lcmodel_megapress_difference_variant': 'kasier', # kasier or govindaraju
+    'base_learning_rate': 1e-4, # Learning rate for batch size 16 (scaled linearly
+                                # with batch_size - https://arxiv.org/abs/1706.02677)
+    'beta1': 0.9, # Adam beta1
+    'beta2': 0.999, # Adam beta2
+    'epsilon': 1e-8, # Adam epsilon
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300]

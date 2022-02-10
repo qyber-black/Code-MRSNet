@@ -201,7 +201,7 @@ def add_arguments_train(p):
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details.')
   p.add_argument('-b', '--batchsize', type=int, default=16,
-                 help='Batch size.')
+                 help='Batch size (per GPU if multi-GPU).')
 
 def add_arguments_quantify(p):
   # Add quantification arguments
@@ -232,7 +232,6 @@ def basis(args):
                       args.sample_rate, args.samples,
                       path_basis=Cfg.val['path_basis'])
   if args.verbose > 0:
-    print(bases)
     print("# Generating plots")
   for b in bases:
     if args.verbose > 0:
@@ -404,14 +403,8 @@ def compare(args):
   # Compare sub-command
   import mrsnet.dataset as dataset
   import numpy as np
-  if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")):
-    id = get_std_name(args.dataset)
-    name = os.path.join(*id[-9:-1])
-    ds_rest = id[-1]
-    if args.verbose > 0:
-      print(f"# Loading dataset {name} : {ds_rest}")
-    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
-  elif os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
+  if (os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")) or
+      os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib"))):
     id = get_std_name(args.dataset)
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
@@ -456,26 +449,26 @@ def train(args):
   id = get_std_name(args.dataset)
   name = os.path.join(*id[-9:-1])
   ds_rest = id[-1]
-  if args.verbose > 0:
-    print(f"# Loading dataset {name} : {ds_rest}")
-  ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
   args.datatype.sort()
 
   if args.model[0:4] == 'cnn_':
     from mrsnet.cnn import CNN
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
     model = CNN(args.model, args.metabolites, ds.pulse_sequence,
                 args.acquisitions, args.datatype, args.norm)
+    d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
+                             acquisitions=args.acquisitions, datatype=args.datatype,
+                             high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                             verbose=args.verbose)
+    data = [d_inp, d_out]
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
-    print(f"# Model setup:\n  {str(model)}")
-
-  d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
-                           acquisitions=args.acquisitions, datatype=args.datatype,
-                           high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                           verbose=args.verbose)
+    print(f"# Model:\n  {str(model)}")
 
   if args.validate > 1.0:
     from mrsnet.train import KFold
@@ -494,7 +487,7 @@ def train(args):
     trainer = NoValidation()
   else:
     raise Exception(f"Unknown validation {args.validate}")
-  trainer.train(model, d_inp, d_out, args.epochs, args.batchsize,
+  trainer.train(model, data, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
@@ -657,6 +650,8 @@ def get_std_name(name):
 
 if __name__ == '__main__':
   # Find base folder
+  if not os.name == 'posix':
+    print("**WARNING - MRSNet only runs reliably and is only supported on Linux/POSIX**")
   bin_path = os.path.realpath(__file__)
   if not os.path.isfile(bin_path):
     raise Exception("Cannot find location of mrsnet.py root folder")

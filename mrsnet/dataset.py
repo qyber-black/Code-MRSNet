@@ -226,22 +226,40 @@ class Dataset:
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
-  def save(self, path, folder=None):
+  def save(self, path, folder=None, spectra_only=False):
     from mrsnet.getfolder import get_folder
     if folder == None:
       folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
+    if not spectra_only:
+      joblib.dump({
+          'name': self.name,
+          'metabolites': self.metabolites,
+          'concentrations': self.concentrations,
+          'pulse_sequence': self.pulse_sequence
+        }, os.path.join(folder, 'info.joblib'))
     if self.noise_added:
       fn = "spectra_noisy.joblib"
     else:
       fn = "spectra_clean.joblib"
-    joblib.dump(self, os.path.join(folder, fn))
+    joblib.dump(self.spectra, os.path.join(folder, fn))
     return folder
 
   @staticmethod
   def load(folder, force_clean=False):
+    info = joblib.load(os.path.join(folder, "info.joblib"))
     if not force_clean and os.path.isfile(os.path.join(folder, "spectra_noisy.joblib")):
-      return joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
-    return joblib.load(os.path.join(folder, "spectra_clean.joblib"))
+      spectra = joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
+      noise = False
+    else:
+      spectra = joblib.load(os.path.join(folder, "spectra_clean.joblib"))
+      noise = True
+    ds = Dataset(info['name'])
+    ds.metabolites = info['metabolites']
+    ds.spectra = spectra
+    ds.concentrations = info['concentrations']
+    ds.pulse_sequence = info['pulse_sequence']
+    ds.noise_added = noise
+    return ds
 
   def plot_concentrations(self, norm='none'):
     if len(self.concentrations) > 0:
@@ -288,7 +306,6 @@ class Dataset:
         nj=1 # pyfftw causes segmentgation fault in parallel execution
       else:
         nj=-1
-      print(nj)
       d_inp = joblib.Parallel(n_jobs=nj, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, high_ppm, low_ppm, n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
