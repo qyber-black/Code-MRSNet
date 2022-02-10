@@ -18,6 +18,8 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import load_model
 
+from mrsnet.cfg import Cfg
+
 class CNN:
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
     self.model = model
@@ -126,12 +128,20 @@ class CNN:
       self.cnn.add(Dropout(dropout2))
     self.cnn.add(Dense(output_shape[-1], activation=output_act))
 
-  def train(self, d_inp, d_out, v_inp, v_out, epochs, batch_size,
+  def train(self, d_data, v_data, epochs, batch_size,
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
-    if tf.test.gpu_device_name():
-      print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+    devices = tf.config.list_logical_devices("GPU")
+    if len(devices) < 1:
+      print("**WARNING, we do not have a GPU for Tensorflow!**")
+      devices = []
     else:
-      print("WARNING, we do not have a default GPU for Tensorflow!")
+      devices = [devices[l].name for l in range(0,len(devices))]
+      if verbose > 0:
+        print(f"GPU Devices: {devices}")
+    if len(d_data) != 2:
+      raise Exception("d_data argument must be a list [inp,out]")
+    if v_data != None and len(v_data) != 2:
+      raise Exception("v_data argument must be a list [inp,out]")
 
     if len(train_dataset_name) > 0:
       self.train_dataset_name = train_dataset_name
@@ -142,28 +152,48 @@ class CNN:
     if verbose > 0:
       print(f"# Train CNN {str(self)}")
 
-    d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
-    d_out = tf.convert_to_tensor(d_out, dtype=tf.float32)
+    d_inp = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
+    d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
     d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
+    train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
 
-    if len(v_inp) > 0:
-      v_inp = tf.convert_to_tensor(v_inp, dtype=tf.float32)
-      v_out = tf.convert_to_tensor(v_out, dtype=tf.float32)
+    if v_data != None:
+      v_inp = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
+      v_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
       v_inp = tf.reshape(v_inp,(v_inp.shape[0],v_inp.shape[1]*v_inp.shape[2],v_inp.shape[3],1))
-      validation_data = (v_inp,v_out)
+      validation_data = tf.data.Dataset.from_tensor_slices((v_inp, v_out))
     else:
       validation_data = None
+
+    learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
 
     if verbose > 1:
       print("  Input:",d_inp.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Output:",d_out.shape,"[spectrum, metabolite_concentration]")
-    self._construct(d_inp.shape[1:],d_out.shape[1:])
-    optimiser = keras.optimizers.Adam(learning_rate=1e-4,
-                                      beta_1=0.9,
-                                      beta_2=0.999)
-    self.cnn.compile(loss='mse',
-                     optimizer=optimiser,
-                     metrics=['mae'])
+    if len(devices) > 1:
+      # Multi-GPU training
+      dev_multiplier = len(devices)
+      mirrored_strategy = tf.distribute.MirroredStrategy(devices=devices)
+      with mirrored_strategy.scope():
+        self._construct(d_inp.shape[1:],d_out.shape[1:])
+        optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
+                                          beta_1=Cfg.val['beta1'],
+                                          beta_2=Cfg.val['beta2'],
+                                          epsilon=Cfg.val['epsilon'])
+        self.cnn.compile(loss='mse',
+                         optimizer=optimiser,
+                         metrics=['mae'])
+    else:
+      # Single GPU / CPU training
+      dev_multiplier = 1
+      self._construct(d_inp.shape[1:],d_out.shape[1:])
+      optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
+                                        beta_1=Cfg.val['beta1'],
+                                        beta_2=Cfg.val['beta2'],
+                                        epsilon=Cfg.val['epsilon'])
+      self.cnn.compile(loss='mse',
+                       optimizer=optimiser,
+                       metrics=['mae'])
 
     for dpi in image_dpi:
       plot_model(self.cnn,
@@ -185,12 +215,18 @@ class CNN:
                                                verbose=(verbose > 0),
                                                restore_best_weights=True),
                  timer]
-    history = self.cnn.fit(x=d_inp,
-                           y=d_out,
-                           batch_size=batch_size,
+
+    # Dataset options
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
+
+    # Train
+    history = self.cnn.fit(train_data,
+                           validation_data=validation_data,
                            epochs=epochs,
                            verbose=(verbose > 0)*2,
-                           validation_data=validation_data,
                            shuffle=True,
                            callbacks=callbacks)
     le = len(history.history['loss'])
@@ -199,7 +235,7 @@ class CNN:
     if verbose > 0:
       print("# Evaluating")
     d_score = self.cnn.evaluate(d_inp, d_out, verbose=(verbose > 0)*2)
-    if len(v_inp) > 0:
+    if v_data != None:
       v_score = self.cnn.evaluate(v_inp, v_out, verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan])
@@ -217,7 +253,10 @@ class CNN:
     if reshape:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
-    return np.array(self.cnn.predict(x=d_inp,verbose=(verbose>0)*2,batch_size=32),dtype=np.float64)
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    data = tf.data.Dataset.from_tensor_slices((d_inp)).batch(32).with_options(options)
+    return np.array(self.cnn.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 
   def save(self, folder):
     path=os.path.join(folder, "tf_model")

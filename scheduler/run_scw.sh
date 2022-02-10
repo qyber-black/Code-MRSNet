@@ -87,7 +87,7 @@ elif [ "$cmd" == run ]; then
   DATASET="`echo $DATASET | sed -e 's,^.*/sim-spectra/,,'`"
   echo "# Sync'ing dataset $DATASET"
   ssh ${user}@${host} 'mkdir -p 'code-mrsnet/data/sim-spectra/$DATASET
-  rsync -a --progress data/sim-spectra/$DATASET/spectra.joblib ${user}@${host}:code-mrsnet/data/sim-spectra/$DATASET/spectra.joblib
+  rsync -a --progress data/sim-spectra/$DATASET/*.joblib ${user}@${host}:code-mrsnet/data/sim-spectra/$DATASET
 
   echo "# Schedule job"
   DATASET_ID="`echo $DATASET | sed -e s,/,_,g`"
@@ -103,19 +103,21 @@ elif [ "$cmd" == run ]; then
 #SBATCH --job-name=${id}
 #SBATCH --output=${folder}/out
 #SBATCH --error=${folder}/err
-#SBATCH --time=1-00:00
-#SBATCH --ntasks=1
-#SBATCH --mem-per-cpu=32768
-#SBATCH --ntasks-per-node=1
 #SBATCH -p gpu_v100,gpu
-#SBATCH --gres=gpu:1
+#SBARCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem-per-cpu=32768
+#SBATCH --gres=gpu:2
+#SBATCH --time=1-00:00:00
 
 module load python/3.9.2
-module load CUDA/11.2
+module load CUDA/11.5
 
 export PATH=~/.local/bin:\$PATH
 export PYTHONPATH=~/.local/lib/python3.9/site-packages:\$PYTHONPATH
-export LD_LIBRARY_PATH=~/.local/lib64:\$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=~/.local/cuda/lib:~/.local/lib:\$LD_LIBRARY_PATH
 
 cd ~/code-mrsnet
 
