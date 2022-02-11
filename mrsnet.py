@@ -519,8 +519,29 @@ def aetrain(args):
     if dataset.noise_added:
       raise Exception("Dataset contains noisy data, not suitable for autoencoder training")
     # Add noise and export again (concentrations/output remains the same)
-    dataset.add_noise(args.noise_p,args.noise_mu,args.noise_sigma,verbose=args.verbose)
-    d_inp_noise, _ = dataset.export(metabolites=args.metabolites, norm=args.norm,
+
+    #dataset.add_noise(args.noise_p,args.noise_mu,args.noise_sigma,verbose=args.verbose) # (1)
+    #if args.verbose > 0:
+      #print(f"Saving dataset with noise")
+    #dataset.save_noise(Cfg.val["path_simulation"]) # (2)
+
+    # FIXME: (1) AND (2) above are the functions of generating and saving the noisy spectra, save_noise() is in dataset.py, it works exactly like the previous save() function,
+    #        (3) below is loading the noisy spectra
+    #        After I generate the spectra without the noise in /0.0-0.0-0.0/5000-1 using simulate(), and I want to store the nosiy spectra which generated based on the /0.0-0.0-0.0/5000-1,
+    #        I will call the aetrain with (1) and (2) activated and (3) deactivated, when the code running to the training part I use the ctrl^C to call it off and I will have a nosiy spectra in /0.0-0.0-0.0/5000-1n
+    #        This action only can be performed once, because of the naming issue, if you use the 5000-1 to generate and store nosiy spectra in the second time,
+    #        it will store in 5000-2n by its automatic setting in get-folder() which is confusing with the relation between 5000-2 and 5000-2n
+    #        So the dataset correspondent relationship are 5000-1 to 5000-1n , 5000-2 to 5000-2n, 5000-3 to 5000-3n, etc. The 5000-"num"n generated based on the 5000-"num"
+    #        Once I get the nosiy spectra in 5000-1n for example, (1) and (2) would be deactivated, I only need the (3) activated to load the 5000-1n and let it train
+    #        Sorry for this mess, it's very silly. Because it's an one-time job so after I created the noisy spectra I needed, I didn't continue to optimize the logic of the code
+
+    # Using fixed noisy dataset from folder "Cfg.val['path_simulation'] name, num of spectra, -num, n"
+    import mrsnet.dataset as dataset_n
+    dataset_noisy = dataset_n.Dataset.load(os.path.join(Cfg.val['path_simulation'], name, ds_rest+"n")) # (3)
+    args.metabolites.sort()
+    args.acquisitions.sort()
+    args.datatype.sort()
+    d_inp_noise, _ = dataset_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                     acquisitions=args.acquisitions, datatype=args.datatype,
                                     export_concentrations=False, verbose=args.verbose)
     model = Autoencoder(args.model, args.metabolites, dataset.pulse_sequence,
@@ -552,7 +573,7 @@ def aetrain(args):
   #        currently not supported and not needed for autoencoder training, but needed after
   #        autoencoder is used for quantification; then needs to be included in splitting methods
   #        as well.
-  trainer.train(model, d_inp, d_inp_noise, args.epochs, args.batchsize,
+  trainer.train(model, d_inp_noise, d_inp, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
