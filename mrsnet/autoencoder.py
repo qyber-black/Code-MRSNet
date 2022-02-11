@@ -18,6 +18,7 @@ from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import load_model
 
+from mrsnet.cfg import Cfg
 from .cnn import TimeHistory
 
 # Helper to construct convolutional encoder layer
@@ -300,7 +301,7 @@ class Autoencoder:
         print(f"GPU Devices: {devices}")
     if len(d_data) != 3:
       raise Exception("d_data argument must be a list [spectra_in,spectra_out,conc]")
-    if v_data != None and len(v_data) != 2:
+    if v_data != None and len(v_data) != 3:
       raise Exception("v_data argument must be a list [spectra_in,spectra_out,conc]")
 
     if len(train_dataset_name) > 0:
@@ -363,7 +364,7 @@ class Autoencoder:
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
-        self.cnn.compile(loss=loss,
+        self.ae.compile(loss=loss,
                          optimizer=optimiser,
                          metrics=['mae'])
     else:
@@ -374,9 +375,9 @@ class Autoencoder:
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
                                         epsilon=Cfg.val['epsilon'])
-      self.cnn.compile(loss=loss,
-                       optimizer=optimiser,
-                       metrics=['mae'])
+      self.ae.compile(loss=loss,
+                      optimizer=optimiser,
+                      metrics=['mae'])
 
     for dpi in image_dpi:
       plot_model(self.ae.encoder,
@@ -416,41 +417,40 @@ class Autoencoder:
     ae_val_data = ae_val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
-    history = self.cnn.fit(ae_train_data,
-                           validation_data=ae_val_data,
-                           epochs=epochs,
-                           verbose=(verbose > 0)*2,
-                           shuffle=True,
-                           callbacks=callbacks)
+    history = self.ae.fit(ae_train_data,
+                          validation_data=ae_val_data,
+                          epochs=epochs,
+                          verbose=(verbose > 0)*2,
+                          shuffle=True,
+                          callbacks=callbacks)
     le = len(history.history['loss'])
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
-
     # FIXME: comparison of input/output
 
-    # Noisy spectra dataset to test the performance of the reconstruction, It's An isolated variable to prevent if I mess up with the future d_inp variable, to keep the consistency of the d_inp
-    x_test_n = tf.reshape(d_inp, (d_inp.shape[0], 1, 2048))
-    # Clean spectra dataset to test the performance of the reconstruction
-    x_test = tf.reshape(d_out, (d_out.shape[0], 1, 2048))
+    ## # Noisy spectra dataset to test the performance of the reconstruction, It's An isolated variable to prevent if I mess up with the future d_inp variable, to keep the consistency of the d_inp
+    ## x_test_n = tf.reshape(d_spectra_in, (d_spectra_in.shape[0], 1, 2048))
+    ## # Clean spectra dataset to test the performance of the reconstruction
+    ## x_test = tf.reshape(d_spectra_out, (d_spectra_out.shape[0], 1, 2048))
 
-    # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
-    if self.datatype[0] == "magnitude":
-      os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
-      save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
-    elif self.datatype[0] == "real":
-      os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-      save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
-    elif self.datatype[0] == "imaginary":
-      os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-      save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+    ## # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
+    ## if self.datatype[0] == "magnitude":
+    ##   os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
+    ##   save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
+    ## elif self.datatype[0] == "real":
+    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
+    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+    ## elif self.datatype[0] == "imaginary":
+    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
+    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
 
     # Print out the plots of first 5 noisy spectra that being put into the autoencoder and its comparison:"Clean spectra"
-    for i in range(5):
-      encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
-      decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
+    ## for i in range(5):
+    ##   encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
+    ##   decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
 
-      plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
-      plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
+    ##   plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
+    ##   plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
 
     ######################
 
@@ -462,7 +462,7 @@ class Autoencoder:
     else:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
-      print(f"{' '*len(loss)}   Train          Validation")
+      print("%s   Train          Validation" % (' '*len(loss)))
       print("%s:  %.12f %.12f" % (loss.upper(), d_score[0], v_score[0]))
       print("%s:  %.12f %.12f" % (loss.upper(), d_score[1], v_score[1]))
     self._save_results(folder, "ae", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
@@ -508,7 +508,7 @@ class Autoencoder:
     model.ae = load_model(os.path.join(path,"tf_ae_model"))
     return model
 
-  def _save_results(self, folder, prefix, history, d_score, v_score, loss, no_show, image_dpi, screen_dpi):
+  def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
     keys = sorted(history.keys())
     # History data
     with open(os.path.join(folder, prefix+'_history.csv'), "w") as out_file:

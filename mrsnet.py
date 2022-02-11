@@ -466,6 +466,7 @@ def train(args):
                              high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                              verbose=args.verbose)
     data = [d_inp, d_out]
+    data_name = ds.name+"_"+ds_rest
   elif args.model[0:3] == 'ae_':
     from mrsnet.autoencoder import Autoencoder
     if args.verbose > 0:
@@ -475,16 +476,16 @@ def train(args):
     # Load clean dataset, if dataset loaded was actualy noisy;
     # otherwise we loaded clean dataset and use it as input and output for the autoencoder
     if ds_noisy.noise_added:
-      if args.verbose > 0:
+      if args.verbose > 2:
         print("Noisy dataset loaded")
       ds_clean = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest), force_clean=True)
-      if args.verbose > 0:
+      if args.verbose > 2:
         print("Clean dataset loaded")
     else:
       if args.verbose > 0:
         print("Training on clean dataset")
-    model = Autoencoder(args.model, args.metabolites, dataset.pulse_sequence,
-                        args.acquisitions, args.datatype, args.norm
+    model = Autoencoder(args.model, args.metabolites, ds_noisy.pulse_sequence,
+                        args.acquisitions, args.datatype, args.norm)
     d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                       acquisitions=args.acquisitions, datatype=args.datatype,
                                       high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
@@ -497,6 +498,7 @@ def train(args):
     else:
       d_clean = d_noise
     data = [d_noise, d_clean, d_conc]
+    data_name = ds_noisy.name+"_"+ds_rest
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
@@ -520,7 +522,7 @@ def train(args):
   else:
     raise Exception(f"Unknown validation {args.validate}")
   trainer.train(model, data, args.epochs, args.batchsize,
-                Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
+                Cfg.val['path_model'], train_dataset_name=data_name,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
 

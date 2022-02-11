@@ -251,11 +251,11 @@ class Dataset:
     if not force_clean and os.path.isfile(os.path.join(folder, "spectra_noisy.joblib")):
       if not info_only:
         spectra = joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
-      noise = False
+      noise = True
     else:
       if not info_only:
         spectra = joblib.load(os.path.join(folder, "spectra_clean.joblib"))
-      noise = True
+      noise = False
     ds = Dataset(info['name'])
     ds.metabolites = info['metabolites']
     ds.spectra = spectra
