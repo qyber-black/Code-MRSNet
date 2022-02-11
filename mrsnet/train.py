@@ -57,7 +57,7 @@ class Train:
     plt.close()
 
   def _cross_validate(self, model, epochs, batch_size, data, folder,
-                      train_dataset_name, verbose, image_dpi, screen_dpi): # FIXME: check
+                      train_dataset_name, verbose, image_dpi, screen_dpi):
     # Cross valildation
     train_res = { 'error': [None]*self.k }
     val_res = { 'error': [None]*self.k }
