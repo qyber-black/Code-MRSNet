@@ -11,7 +11,6 @@
 # FIXME - Changes for autoencoder:
 #diff --git c/mrsnet.py w/mrsnet.py
 #diff --git c/mrsnet/autoencoder.py w/mrsnet/autoencoder.py
-#diff --git c/mrsnet/dataset.py w/mrsnet/dataset.py
 
 import os
 import glob
