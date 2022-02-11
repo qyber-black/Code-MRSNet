@@ -25,8 +25,8 @@ class Train:
   def _plot_distributions(self,d_out,folder,image_dpi,screen_dpi,verbose):
     # Plot distributions
     if len(d_out.shape) != 2:
+      # FIXME: has to be adapted for autoencoders to process output, not just concentrations
       return # Nothing to plot, d_out is not a concentration tensor
-             # FIXME: has to be adapted for autoencoders to process concentrations, once used for quantification
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if self.k > 1:
@@ -85,6 +85,7 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
+      # FIXME: deal with None result from analyse_model and take errors from training directly
       _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
       train_res['error'][val_fold] = err
