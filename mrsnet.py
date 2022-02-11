@@ -9,7 +9,6 @@
 # See --help for arguments, uses sub-commands
 
 # FIXME - Changes for autoencoder:
-#diff --git c/mrsnet.py w/mrsnet.py
 #diff --git c/mrsnet/autoencoder.py w/mrsnet/autoencoder.py
 
 import os
@@ -71,16 +70,6 @@ def main():
   add_arguments_train_select(p_train)
   add_arguments_train(p_train)
   p_train.set_defaults(func=train)
-
-  # AETrain
-  p_aetrain = subparsers.add_parser('aetrain', help='Train autoencoder model on dataset.',
-                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  add_arguments_default(p_aetrain)
-  add_arguments_metabolites(p_aetrain)
-  add_arguments_train_select(p_aetrain)
-  add_arguments_train(p_aetrain)
-  add_arguments_aetrain(p_aetrain)
-  p_aetrain.set_defaults(func=aetrain)
 
   # Model selection
   p_select = subparsers.add_parser('select', help='Model selection on dataset.',
@@ -213,22 +202,10 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_cnn for autoencoder (see mrsnet/autoencoder.py)') # FIXME: ae_cnn may change
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_[cnn,dense] for autoencoder (see mrsnet/autoencoder.py)')
+                 #FIXME: expand ae_ string with architecture options
   p.add_argument('-b', '--batchsize', type=int, default=16,
                  help='Batch size (per GPU if multi-GPU).')
-
-def add_arguments_aetrain(p):
-  # Adding aetrain arguments
-  for action in p._actions:
-    # Overwrite model default for autoencoder
-    if action.dest == 'model':
-      action.default = 'ae_cnn' # FIXME: may have to adjust name once we have more options
-  p.add_argument('--noise_p', type=float, default=1.0,
-                   help='Probability of ADC noise applied to spectrum.')
-  p.add_argument('--noise_sigma', type=float, default=0.1,
-                   help='Maximum sigma for simulated ADC noise (uniform distribution).')
-  p.add_argument('--noise_mu', type=float, default=0.0,
-                   help='Maximum mu for simulated ADC noise (uniform distribution).')
 
 def add_arguments_quantify(p):
   # Add quantification arguments
@@ -491,6 +468,37 @@ def train(args):
                              high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                              verbose=args.verbose)
     data = [d_inp, d_out]
+  elif args.model[0:3] == 'ae_':
+    from mrsnet.autoencoder import Autoencoder
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    # Load noisy dataset first
+    ds_noisy = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+    # Load clean dataset, if dataset loaded was actualy noisy;
+    # otherwise we loaded clean dataset and use it as input and output for the autoencoder
+    if ds_noisy.noise_added:
+      if args.verbose > 0:
+        print("Noisy dataset loaded")
+      ds_clean = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest), force_clean=True)
+      if args.verbose > 0:
+        print("Clean dataset loaded")
+    else:
+      if args.verbose > 0:
+        print("Training on clean dataset")
+    model = Autoencoder(args.model, args.metabolites, dataset.pulse_sequence,
+                        args.acquisitions, args.datatype, args.norm
+    d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+                                      acquisitions=args.acquisitions, datatype=args.datatype,
+                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                      verbose=args.verbose)
+    if ds_noisy.noise_added:
+      d_clean, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+                                   acquisitions=args.acquisitions, datatype=args.datatype,
+                                   high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                   export_concentrations=False, verbose=args.verbose)
+    else:
+      d_clean = d_noise
+    data = [d_noise, d_clean, d_conc]
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
@@ -515,87 +523,6 @@ def train(args):
     raise Exception(f"Unknown validation {args.validate}")
   trainer.train(model, data, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
-                image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
-                verbose=args.verbose)
-
-def aetrain(args):
-  # Aetrain sub-command
-  import mrsnet.dataset as dataset
-  # Standardise name, but could be path anyway
-  id = get_std_name(args.dataset)
-  name = os.path.join(*id[-9:-1])
-  ds_rest = id[-1]
-  if args.verbose > 0:
-    print("# Loading dataset %s : %s" % (name,ds_rest))
-  dataset = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
-  args.metabolites.sort()
-  args.acquisitions.sort()
-  args.datatype.sort()
-  d_inp, d_out = dataset.export(metabolites=args.metabolites, norm=args.norm,
-                                acquisitions=args.acquisitions, datatype=args.datatype,
-                                verbose=args.verbose)
-
-  if args.model[0:3] == 'ae_':
-    from mrsnet.autoencoder import Autoencoder
-    if dataset.noise_added:
-      raise Exception("Dataset contains noisy data, not suitable for autoencoder training")
-    # Add noise and export again (concentrations/output remains the same)
-
-    #dataset.add_noise(args.noise_p,args.noise_mu,args.noise_sigma,verbose=args.verbose) # (1)
-    #if args.verbose > 0:
-      #print(f"Saving dataset with noise")
-    #dataset.save_noise(Cfg.val["path_simulation"]) # (2)
-
-    # FIXME: (1) AND (2) above are the functions of generating and saving the noisy spectra, save_noise() is in dataset.py, it works exactly like the previous save() function,
-    #        (3) below is loading the noisy spectra
-    #        After I generate the spectra without the noise in /0.0-0.0-0.0/5000-1 using simulate(), and I want to store the nosiy spectra which generated based on the /0.0-0.0-0.0/5000-1,
-    #        I will call the aetrain with (1) and (2) activated and (3) deactivated, when the code running to the training part I use the ctrl^C to call it off and I will have a nosiy spectra in /0.0-0.0-0.0/5000-1n
-    #        This action only can be performed once, because of the naming issue, if you use the 5000-1 to generate and store nosiy spectra in the second time,
-    #        it will store in 5000-2n by its automatic setting in get-folder() which is confusing with the relation between 5000-2 and 5000-2n
-    #        So the dataset correspondent relationship are 5000-1 to 5000-1n , 5000-2 to 5000-2n, 5000-3 to 5000-3n, etc. The 5000-"num"n generated based on the 5000-"num"
-    #        Once I get the nosiy spectra in 5000-1n for example, (1) and (2) would be deactivated, I only need the (3) activated to load the 5000-1n and let it train
-    #        Sorry for this mess, it's very silly. Because it's an one-time job so after I created the noisy spectra I needed, I didn't continue to optimize the logic of the code
-
-    # Using fixed noisy dataset from folder "Cfg.val['path_simulation'] name, num of spectra, -num, n"
-    import mrsnet.dataset as dataset_n
-    dataset_noisy = dataset_n.Dataset.load(os.path.join(Cfg.val['path_simulation'], name, ds_rest+"n")) # (3)
-    args.metabolites.sort()
-    args.acquisitions.sort()
-    args.datatype.sort()
-    d_inp_noise, _ = dataset_noisy.export(metabolites=args.metabolites, norm=args.norm,
-                                    acquisitions=args.acquisitions, datatype=args.datatype,
-                                    export_concentrations=False, verbose=args.verbose)
-    model = Autoencoder(args.model, args.metabolites, dataset.pulse_sequence,
-                        args.acquisitions, args.datatype, args.norm)
-  else:
-    raise Exception("Unknown model %s" % args.model)
-
-  if args.verbose > 0:
-    print("# Model setup:\n  %s" % str(model))
-
-  if args.validate > 1.0:
-    from mrsnet.train import KFold
-    trainer = KFold(k=int(args.validate))
-  elif args.validate < -1.0:
-    from mrsnet.train import DuplexKFold
-    trainer = DuplexKFold(k=int(-args.validate))
-  elif args.validate > 0.0:
-    from mrsnet.train import Split
-    trainer = Split(p=args.validate)
-  elif args.validate < 0.0:
-    from mrsnet.train import DuplexSplit
-    trainer = DuplexSplit(p=-args.validate)
-  elif args.validate == 0.0:
-    from mrsnet.train import NoValidation
-    trainer = NoValidation()
-  else:
-    raise Exception("Unknown validation %f" % args.validate)
-  # FIXME: concentrations d_out have to be passed separately to train, also for split there
-  #        currently not supported and not needed for autoencoder training, but needed after
-  #        autoencoder is used for quantification; then needs to be included in splitting methods
-  #        as well.
-  trainer.train(model, d_inp_noise, d_inp, args.epochs, args.batchsize,
-                Cfg.val['path_model'], train_dataset_name=dataset.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
 
@@ -767,7 +694,7 @@ if __name__ == '__main__':
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
   # Headless mode
-  from matplotlib import use
   if not "DISPLAY" in os.environ:
+    from matplotlib import use
     use("Agg")
   main()
