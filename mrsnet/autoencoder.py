@@ -71,7 +71,7 @@ def _drop_out_layer(m,r):
     m.add(Dropout(r))
 
 # plot difference
-def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
+def plot_spectra_(input, contrast_input, title, data, location, num,datatype,show):
       l = []
       for i in range(0, 2048):
           l.append(-4.5+i*3/2048)
@@ -93,8 +93,9 @@ def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
           print('The plot will not be shown.')
       else:
 
-       plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
-      plt.show()
+          plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
+      if show is True:
+       plt.show()
 # Convolutional autoencoder via Model interface (using Sequential interface internally)
 class ConvAutoEnc(Model):
 
@@ -215,15 +216,15 @@ class DenseAutoEnc_r_i(Model):
     _enc_dense_layer(self.encoder, 128, "ta")
     _drop_out_layer(self.encoder, 0.3)
     _enc_dense_layer(self.encoder, 64, "ta")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 32, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 32, "ta")
     #_enc_dense_layer(self.encoder, 32, "sig")
     #_drop_out_layer(self.encoder, 0.3)
     #_enc_dense_layer(self.encoder, 16, "ta")
     #_drop_out_layer(self.encoder, 0.3)
     #_enc_dense_layer(self.encoder, 8, "ta")
     #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 8, "sig")
+    #_enc_dense_layer(self.encoder, 8, "sig") # Marking point
 
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
@@ -384,24 +385,24 @@ class Autoencoder:
     # Clean spectra dataset to test the performance of the reconstruction
     x_test = tf.reshape(d_out, (d_out.shape[0], 1, 2048))
 
-    # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
+    # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time Marking point
     if self.datatype[0] == "magnitude":
-        os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
-        save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
+        os.makedirs(folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/"
     elif self.datatype[0] == "real":
-        os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-        save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+        os.makedirs(folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/"
     elif self.datatype[0] == "imaginary":
-        os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-        save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+        os.makedirs(folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/"
 
     # Print out the plots of first 5 noisy spectra that being put into the autoencoder and its comparison:"Clean spectra"
-    for i in range(5):
+    for i in range(3):
      encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
      decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
 
-     plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
-     plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
+     plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0],True)
+     plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0],True)
 
 
     if verbose > 0:
@@ -414,7 +415,7 @@ class Autoencoder:
     if verbose > 0:
       print("      Train          Validation")
       print('HUBER:  %.12f %.12f' % (d_score[0], v_score[0]))
-      print('HUBER:  %.12f %.12f' % (d_score[1], v_score[1]))
+      print('MAE:  %.12f %.12f' % (d_score[1], v_score[1]))
     self._save_results(folder, history.history, d_score, v_score, no_show, image_dpi, screen_dpi)
 
     d_res={"HUBER":d_score[0],"MAE":d_score[1]}
