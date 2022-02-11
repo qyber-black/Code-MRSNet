@@ -289,7 +289,6 @@ def simulate(args):
                       path_basis=Cfg.val['path_basis'])
           num_bases += 1
   if args.verbose > 0:
-    print(bases)
     print("# Generating dataset")
   # Generate datasets
   dataset = dataset.Dataset(name)
@@ -465,6 +464,7 @@ def train(args):
                              high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                              verbose=args.verbose)
     data = [d_inp, d_out]
+    data_name = ds.name+"_"+ds_rest
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
@@ -488,7 +488,7 @@ def train(args):
   else:
     raise Exception(f"Unknown validation {args.validate}")
   trainer.train(model, data, args.epochs, args.batchsize,
-                Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
+                Cfg.val['path_model'], train_dataset_name=data_name,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
 
@@ -643,7 +643,7 @@ def get_std_name(name):
     path, folder = os.path.split(path)
     if folder != "":
       id.append(folder)
-    if path == "":
+    if path == "" or path == '/':
       break
   id.reverse()
   return id
