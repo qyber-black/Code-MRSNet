@@ -29,7 +29,7 @@ class CNN:
     self.datatype = datatype
     self.norm = norm
 
-    # Input data (constant!)
+    # Input spectra data (constant!)
     self.low_ppm = -1.0
     self.high_ppm = -4.5
     self.fft_samples = 2048
@@ -139,9 +139,9 @@ class CNN:
       if verbose > 0:
         print(f"GPU Devices: {devices}")
     if len(d_data) != 2:
-      raise Exception("d_data argument must be a list [inp,out]")
+      raise Exception("d_data argument must be a list [spectra,conc]")
     if v_data != None and len(v_data) != 2:
-      raise Exception("v_data argument must be a list [inp,out]")
+      raise Exception("v_data argument must be a list [spectra,conc]")
 
     if len(train_dataset_name) > 0:
       self.train_dataset_name = train_dataset_name
@@ -165,11 +165,12 @@ class CNN:
     else:
       validation_data = None
 
-    learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-
     if verbose > 1:
       print("  Input:",d_inp.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Output:",d_out.shape,"[spectrum, metabolite_concentration]")
+
+    learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
+
     if len(devices) > 1:
       # Multi-GPU training
       dev_multiplier = len(devices)

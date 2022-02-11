@@ -4,12 +4,10 @@
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # See --help for arguments, uses sub-commands
-
-# FIXME - Changes for autoencoder:
-#diff --git c/mrsnet/autoencoder.py w/mrsnet/autoencoder.py
 
 import os
 import glob
@@ -202,7 +200,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_[cnn,dense] for autoencoder (see mrsnet/autoencoder.py)')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_[cnn,fc] for autoencoder (see mrsnet/autoencoder.py)')
                  #FIXME: expand ae_ string with architecture options
   p.add_argument('-b', '--batchsize', type=int, default=16,
                  help='Batch size (per GPU if multi-GPU).')
