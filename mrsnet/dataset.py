@@ -226,6 +226,12 @@ class Dataset:
     joblib.dump(self, os.path.join(folder, "spectra.joblib"))
     return folder
 
+  def save_noise(self, path):
+    from mrsnet.getfolder import get_folder
+    folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s"+"n")
+    joblib.dump(self, os.path.join(folder, "spectra.joblib"))
+    return folder
+
   @staticmethod
   def load(folder):
     return joblib.load(os.path.join(folder, "spectra.joblib"))
