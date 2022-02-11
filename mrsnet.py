@@ -8,6 +8,15 @@
 #
 # See --help for arguments, uses sub-commands
 
+# FIXME - Changes for autoencoder:
+#diff --git c/.gitignore w/.gitignore
+#diff --git c/mrsnet.py w/mrsnet.py
+#diff --git c/mrsnet/analyse.py w/mrsnet/analyse.py
+#diff --git c/mrsnet/autoencoder.py w/mrsnet/autoencoder.py
+#diff --git c/mrsnet/cfg.py w/mrsnet/cfg.py
+#diff --git c/mrsnet/dataset.py w/mrsnet/dataset.py
+#diff --git c/mrsnet/train.py w/mrsnet/train.py
+
 import os
 import glob
 import sys
