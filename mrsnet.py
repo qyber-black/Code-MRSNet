@@ -74,10 +74,10 @@ def main():
   add_arguments_default(p_select)
   add_arguments_metabolites(p_select)
   add_arguments_train_select(p_select)
-  p_select.add_argument('--method', choices=['grid', 'qmc', 'gpo', 'evo'], default='random',
+  p_select.add_argument('--method', choices=['grid', 'qmc', 'gpo', 'ga'], default='random',
                         help='Model selection approach')
   p_select.add_argument('-r', '--repeats', type=int, default=100,
-                        help='Maximum number of repeats (for qmc, gpo, evo).')
+                        help='Maximum number of repeats (for qmc, gpo, ga).')
   p_select.add_argument('--remote', type=str, default='',
                         help='Remote execution: scheduler:user:[max_parallel_tasks=10:[wait_minutes=15]]')
   p_select.add_argument('collection', type=str, help='Model collection json filename')
@@ -310,7 +310,7 @@ def simulate(args):
     dataset.add_noise(args.noise_p, args.noise_type, args.noise_mu, args.noise_sigma, verbose=args.verbose)
     if args.verbose > 0:
       print(f"Saving dataset with noise: {dataset.name}")
-    path = dataset.save(Cfg.val["path_simulation"], path)
+    path = dataset.save(Cfg.val["path_simulation"], path, spectra_only=True)
   # Plots
   if args.verbose > 0:
     print("Plotting concentrations")
@@ -510,10 +510,10 @@ def model_selection(args):
     from mrsnet.selection import SelectGPO
     selector = SelectGPO(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
-  elif args.method == "evo":
-    from mrsnet.selection import SelectEvo
-    selector = SelectEvo(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
+  elif args.method == "ga":
+    from mrsnet.selection import SelectGA
+    selector = SelectGA(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
+                        Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   else:
     raise Exception(f"Unknown model selection method {args.method}")
   selector.optimise(args.collection, models, Cfg.val['path_model'])

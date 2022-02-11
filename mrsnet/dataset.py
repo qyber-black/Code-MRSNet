@@ -245,13 +245,16 @@ class Dataset:
     return folder
 
   @staticmethod
-  def load(folder, force_clean=False):
+  def load(folder, force_clean=False, info_only=False):
     info = joblib.load(os.path.join(folder, "info.joblib"))
+    spectra = None
     if not force_clean and os.path.isfile(os.path.join(folder, "spectra_noisy.joblib")):
-      spectra = joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
+      if not info_only:
+        spectra = joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
       noise = False
     else:
-      spectra = joblib.load(os.path.join(folder, "spectra_clean.joblib"))
+      if not info_only:
+        spectra = joblib.load(os.path.join(folder, "spectra_clean.joblib"))
       noise = True
     ds = Dataset(info['name'])
     ds.metabolites = info['metabolites']
@@ -303,10 +306,11 @@ class Dataset:
       if verbose > 0:
         print("Converting spectra to tensor")
       if Cfg.val['npfft_module'][0] == "pyfftw.interfaces":
-        nj=1 # pyfftw causes segmentgation fault in parallel execution
-      else:
-        nj=-1
-      d_inp = joblib.Parallel(n_jobs=nj, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
+        # pyfftw causes segmentation fault in parallel execution without this
+        import pyfftw
+        pyfftw.interfaces.cache.enable()
+        pyfftw.interfaces.cache.set_keepalive_time(60)
+      d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, high_ppm, low_ppm, n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
       d_inp = np.array(d_inp, dtype=np.float64)
@@ -317,7 +321,7 @@ class Dataset:
     if len(self.concentrations) > 0:
       if verbose > 0:
         print("Converting concentrations to tensor")
-      d_out = joblib.Parallel(n_jobs=nj, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
+      d_out = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
                     metabolites, norm)
                 for c in tqdm(self.concentrations, disable=(verbose<1)))
       d_out = np.array(d_out, dtype=np.float64)

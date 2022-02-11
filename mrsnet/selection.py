@@ -26,7 +26,7 @@ class Select:
       self.ds_rest = id[-1]
       if verbose > 0:
         print(f"# Loading dataset {name} : {self.ds_rest}")
-      ds = Dataset.load(dataset)
+      ds = Dataset.load(dataset, info_only=True)
       self.pulse_sequence = ds.pulse_sequence
     elif os.path.isfile(os.path.join(dataset,"spectra_clean.joblib")):
       id = _get_std_name(dataset)
@@ -34,11 +34,10 @@ class Select:
       self.ds_rest = id[-1]
       if verbose > 0:
         print(f"# Loading dataset {name} : {self.ds_rest}")
-      ds = Dataset.load(dataset)
+      ds = Dataset.load(dataset, info_only=True)
       self.pulse_sequence = ds.pulse_sequence
     else:
       raise Exception("Cannot find dataset")
-      ds = None # Load later, as dicom and we don't know metabolites
     self.metabolites = metabolites
     self.dataset = dataset
     self.epochs = epochs
@@ -338,7 +337,9 @@ class Select:
     var_keys.sort()
     fix_keys.sort()
     # Results folder
-    folder = os.path.join(self.dataset,collection_name+"-"+str(self.epochs))
+    basename = os.path.basename(collection_name).replace(".json","")
+    from mrsnet.getfolder import get_folder
+    folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-%s")
     if not os.path.exists(folder):
       os.makedirs(folder)
     # Store performance data
@@ -578,7 +579,7 @@ class SelectGPO(Select):
     XDiff = [0]
     XLast = Xdata[-1,:]
     if self.verbose > 0:
-      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n)} samples")
+      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
 
     # Optimisation iterations
     current_iter = len(self.key_vals)
@@ -660,13 +661,123 @@ class SelectGPO(Select):
       plt.show(block=True)
     plt.close()
 
-class SelectEvo(Select):
+class SelectGA(Select):
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
-    super(SelectEvo, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super(SelectGA, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
+    self.last_fitness = 0
 
   def optimise(self, collection_name, models, path_model):
-    raise Exception("Not implemented")
+    import pygad
+    if self.verbose > 0:
+      print("# GA Model Selection")
+    keys = [k for k in models.values.keys()]
+    var_keys = [k for k in keys if len(models.values[k]) > 1]
+    fix_keys = [k for k in keys if len(models.values[k]) == 1]
+    total = np.prod([len(models.values[k]) for k in keys])
+    global ga_aux
+    ga_aux = {
+      'select': self,
+      'keys': keys,
+      'var_keys': var_keys,
+      'fix_keys': fix_keys,
+      'models': models,
+      'path_model': path_model,
+      'last_fitness': 0
+    }
+    # GA Setup
+    pop = int(min(0.01*total,Cfg.val["ga_max_init_pop"]))
+    num_parents_mating = Cfg.val["ga_num_parents_mating"]
+    gene_space = []
+    gene_len = []
+    for k in range(0,len(var_keys)):
+      gene_space.append(np.arange(0,len(models.values[var_keys[k]])))
+      gene_len.append(len(gene_space[-1]))
+    dim = len(var_keys)
+    import math
+    skip = math.floor(math.log(pop*dim,2))
+    initial_population = np.ndarray((pop,dim))
+    select = sobol_seq.i4_sobol_generate(dim, pop+skip)[skip:,:]
+    for l in range(0,select.shape[0]):
+      initial_population[l,:] = np.floor(select[l] * gene_len)
+    ga_instance = pygad.GA(num_generations=self.repeats,
+                           num_parents_mating=num_parents_mating,
+                           initial_population=initial_population,
+                           gene_type=int,
+                           gene_space=gene_space,
+                           parent_selection_type="sus",
+                           crossover_type="single_point",
+                           crossover_probability=0.25,
+                           mutation_type="adaptive",
+                           mutation_probability=(0.25,0.1),
+                           mutation_percent_genes=(25,10),
+                           fitness_func=_ga_fitness_func,
+                           on_generation=_ga_on_generation,
+                           suppress_warnings=(self.verbose<5),
+                           allow_duplicate_genes=False)
+    # Running GA
+    ga_instance.run()
+    # Best solution.
+    solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
+    if self.verbose > 0:
+      print(f"Best solution: {solution} - fitness {solution_fitness} @ gen {ga_instance.best_solution_generation}")
+      l = 0
+      for k in keys:
+        if k in ga_aux['fix_keys']:
+          print(f"   {k} = {ga_aux['models'].values[k][0]}")
+        else:
+          print(f"  *{k} = {ga_aux['models'].values[k][solution[l]]}")
+          l += 1
+    # Store performance info
+    self._save_performance(collection_name+"-ga", var_keys, fix_keys)
+
+def _ga_fitness_func(solution, solution_idx):
+  global ga_aux
+  # Setup arguments
+  key_vals = {}
+  l = 0
+  for k in ga_aux['keys']:
+    if k in ga_aux['fix_keys']:
+      key_vals[k] = ga_aux['models'].values[k][0]
+    else:
+      key_vals[k] = ga_aux['models'].values[k][solution[l]]
+      l += 1
+  ga_aux['select']._add_task(key_vals, ga_aux['path_model'])
+  if ga_aux['select'].verbose > 0:
+    print(f"Evaluating {solution}")
+    print(f"  {[key_vals[k] for k in ga_aux['keys']]}")
+  # Run
+  if ga_aux['select'].verbose < 5:
+    v = ga_aux['select'].verbose
+    ga_aux['select'].verbose = 0
+  ga_aux['select']._run_tasks()
+  if ga_aux['select'].verbose < 5:
+    ga_aux['select'].verbose = v
+  # Gather result
+  val = None
+  for k in range(0,len(ga_aux['select'].key_vals)):
+    match = True
+    kv = ga_aux['select'].key_vals[k]
+    for l in range(0,len(ga_aux['var_keys'])):
+      lv = ga_aux['var_keys'][l]
+      if kv[lv] != ga_aux['models'].values[lv][solution[l]]:
+        match = False
+        break
+    if match:
+      val = ga_aux['select'].val_performance[k][0]
+      break
+  if val == None:
+    raise Exception("Could not find result")
+  if ga_aux['select'].verbose > 0:
+    print(f" = {val}")
+  return 1/(val+1e-8)
+
+def _ga_on_generation(ga_instance):
+  global ga_aux
+  if ga_aux['select'].verbose > 0:
+    print(f"# Generation: {ga_instance.generations_completed}")
+    print(f"  Fitness: {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]} - Delta:  {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1] - ga_aux['last_fitness']}")
+  ga_aux['last_fitness'] = ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]
 
 def _get_std_name(name):
   _, path = os.path.splitdrive(name)
