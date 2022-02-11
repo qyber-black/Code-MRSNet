@@ -70,24 +70,30 @@ def _dec_dense_layer(m,dim,activation,):
 def _drop_out_layer(m,r):
     m.add(Dropout(r))
 
-# plot diff
-def plot_spectra_(input, contrast, datatype):
+# plot difference
+def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
       l = []
       for i in range(0, 2048):
           l.append(-4.5+i*3/2048)
 
       plt.figure()
       plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
-      plt.plot(l, contrast, color='#4169E1')
+      plt.plot(l, contrast_input, label=data, color='#4169E1')
 
       plt.xlim(-4.5, -1.5)
       plt.ylim()
 
       plt.xlabel('$Frequency$')
-      plt.ylabel('$Magnitude$')
+      plt.ylabel(datatype) # Magnitude Phase Imaginary Real
 
-      plt.title(datatype)
+      plt.title(title+'_'+num)
       plt.legend(loc='best')
+
+      if int(num)<0:
+          print('The plot will not be shown.')
+      else:
+
+       plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
       plt.show()
 # Convolutional autoencoder via Model interface (using Sequential interface internally)
 class ConvAutoEnc(Model):
@@ -140,34 +146,46 @@ class ConvAutoEnc(Model):
     x = self.decoder(x)
     return x
 
-#  Fully connected autoencoder via Model interface (using Sequential interface internally)
-class DenseAutoEnc(Model):
+#  Fully connected autoencoder via Model interface (using Sequential interface internally) For magnitude
+class DenseAutoEnc_mag(Model):
 
-  def __init__(self, ae_shape, name='DenseAutoEnc'):
-    super(DenseAutoEnc, self).__init__(name=name)
+  def __init__(self, ae_shape, name='DenseAutoEnc_mag'):
+    super(DenseAutoEnc_mag, self).__init__(name=name)
     # Encoder
     self.encoder = tf.keras.Sequential(name='Encoder')
     self.encoder.add(Flatten())
-    _enc_dense_layer(self.encoder, 1024, "re")
+    _enc_dense_layer(self.encoder, 2048, "ta")
+    _drop_out_layer(self.encoder,0.3)
+    _enc_dense_layer(self.encoder, 1024, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 512, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 256, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 128, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 64, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 32, "ta")
+    #_enc_dense_layer(self.encoder, 32, "sig")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 16, "ta")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 8, "ta")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 8, "sig")
 
-    _enc_dense_layer(self.encoder, 512, "re")
-
-    _enc_dense_layer(self.encoder, 256, "re")
-
-    _enc_dense_layer(self.encoder, 128, "re")
-
-    _enc_dense_layer(self.encoder, 64, "re")
-
-    _enc_dense_layer(self.encoder, 32, "sig")
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
-    _dec_dense_layer(self.decoder, 32, "re")
-    _dec_dense_layer(self.decoder, 64, "re")
-    _dec_dense_layer(self.decoder, 128, "re")
-    _dec_dense_layer(self.decoder, 256, "re")
-    _dec_dense_layer(self.decoder, 512, "re")
-    _dec_dense_layer(self.decoder, 1024, "re")
-    _dec_dense_layer(self.decoder, 2048, "sig")
+    #_dec_dense_layer(self.decoder, 8, "ta")
+    #_dec_dense_layer(self.decoder, 16, "ta")
+    _dec_dense_layer(self.decoder, 32, "ta")
+    _dec_dense_layer(self.decoder, 64, "ta")
+    _dec_dense_layer(self.decoder, 128, "ta")
+    _dec_dense_layer(self.decoder, 256, "ta")
+    _dec_dense_layer(self.decoder, 512, "ta")
+    _dec_dense_layer(self.decoder, 1024, "ta")
+    _dec_dense_layer(self.decoder, 2048, "ta")
     self.decoder.add(Reshape((1, 2048)))
 
     self.build((None,*ae_shape))
@@ -176,6 +194,57 @@ class DenseAutoEnc(Model):
         x = self.encoder(x)
         x = self.decoder(x)
         return x
+
+#  Fully connected autoencoder via Model interface (using Sequential interface internally) For Real:r and Imaginary:i
+
+class DenseAutoEnc_r_i(Model):
+
+  def __init__(self, ae_shape, name='DenseAutoEnc_r_i'):
+    super(DenseAutoEnc_r_i, self).__init__(name=name)
+    # Encoder
+    self.encoder = tf.keras.Sequential(name='Encoder')
+    self.encoder.add(Flatten())
+    _enc_dense_layer(self.encoder, 2048, "ta")
+    _drop_out_layer(self.encoder,0.3)
+    _enc_dense_layer(self.encoder, 1024, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 512, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 256, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 128, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 64, "ta")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 32, "ta")
+    #_enc_dense_layer(self.encoder, 32, "sig")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 16, "ta")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 8, "ta")
+    #_drop_out_layer(self.encoder, 0.3)
+    #_enc_dense_layer(self.encoder, 8, "sig")
+
+    # Decoder
+    self.decoder = tf.keras.Sequential(name='Decoder')
+    _dec_dense_layer(self.decoder, 8, "ta")
+    _dec_dense_layer(self.decoder, 16, "ta")
+    _dec_dense_layer(self.decoder, 32, "ta")
+    _dec_dense_layer(self.decoder, 64, "ta")
+    _dec_dense_layer(self.decoder, 128, "ta")
+    _dec_dense_layer(self.decoder, 256, "ta")
+    _dec_dense_layer(self.decoder, 512, "ta")
+    _dec_dense_layer(self.decoder, 1024, "ta")
+    _dec_dense_layer(self.decoder, 2048, "ta")
+    self.decoder.add(Reshape((1, 2048)))
+
+    self.build((None,*ae_shape))
+
+  def call(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
 
 class Autoencoder:
 
@@ -208,7 +277,13 @@ class Autoencoder:
       raise Exception("Unknown autoencoder model")
     # Define the autoencoder via the functional interface
     #self.ae = ConvAutoEnc(ae_shape=ae_shape)
-    self.ae = DenseAutoEnc(ae_shape=ae_shape)
+    if self.datatype[0] == "magnitude":
+      self.ae = DenseAutoEnc_mag(ae_shape=ae_shape)
+    elif self.datatype[0] == "real":
+      self.ae = DenseAutoEnc_r_i(ae_shape=ae_shape)
+    elif self.datatype[0]== "imaginary":
+      self.ae = DenseAutoEnc_r_i(ae_shape=ae_shape)
+
 
   def train(self, d_inp, d_out, v_inp, v_out, epochs, batch_size,
             folder, verbose=0,no_show=False, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -227,12 +302,14 @@ class Autoencoder:
       print("# Train Autoencoder %s" % str(self))
 
     # Autoencoder - flatten tensor as for CNN - FIXME: maybe 3D OK here, no flatting?
+
     d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_out, dtype=tf.float32)
     #d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
     #d_out = tf.reshape(d_out,(d_out.shape[0],d_out.shape[1]*d_out.shape[2],d_out.shape[3],1))
     d_inp = tf.reshape(d_inp, (d_inp.shape[0], d_inp.shape[1] * d_inp.shape[2], d_inp.shape[3]))
     d_out = tf.reshape(d_out, (d_out.shape[0], d_out.shape[1] * d_out.shape[2], d_out.shape[3]))
+
 
     if len(v_inp) > 0:
       v_inp = tf.convert_to_tensor(v_inp, dtype=tf.float32)
@@ -255,7 +332,7 @@ class Autoencoder:
     optimiser = keras.optimizers.Adam(learning_rate=1e-4,
                                       beta_1=0.9,
                                       beta_2=0.999)
-    self.ae.compile(loss='mse',
+    self.ae.compile(loss='huber_loss',
                     optimizer=optimiser,
                     metrics=['mae'])
 
@@ -302,14 +379,29 @@ class Autoencoder:
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
 
-    x_test_n = tf.convert_to_tensor(d_out, dtype=tf.float32)
-    x_test_n = tf.reshape(x_test_n, (3500, 1, 2048))
-    x_test = tf.convert_to_tensor(d_inp, dtype=tf.float32)
-    x_test = tf.reshape(x_test, (3500, 1, 2048))
-    encoder_imgs = self.ae.encoder(x_test_n[0]).numpy()
-    decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
-    plot_spectra_(decoder_imgs[0, 0], x_test_n[0, 0], 'Contrast with Noise_spectra')
-    plot_spectra_(decoder_imgs[0, 0], x_test[0, 0], 'Contrast with Clean_spectra')
+    # Noisy spectra dataset to test the performance of the reconstruction, It's An isolated variable to prevent if I mess up with the future d_inp variable, to keep the consistency of the d_inp
+    x_test_n = tf.reshape(d_inp, (d_inp.shape[0], 1, 2048))
+    # Clean spectra dataset to test the performance of the reconstruction
+    x_test = tf.reshape(d_out, (d_out.shape[0], 1, 2048))
+
+    # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
+    if self.datatype[0] == "magnitude":
+        os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
+    elif self.datatype[0] == "real":
+        os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+    elif self.datatype[0] == "imaginary":
+        os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+
+    # Print out the plots of first 5 noisy spectra that being put into the autoencoder and its comparison:"Clean spectra"
+    for i in range(5):
+     encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
+     decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
+
+     plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
+     plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
 
 
     if verbose > 0:
@@ -321,12 +413,12 @@ class Autoencoder:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
       print("      Train          Validation")
-      print('MSE:  %.12f %.12f' % (d_score[0], v_score[0]))
-      print('MAE:  %.12f %.12f' % (d_score[1], v_score[1]))
+      print('HUBER:  %.12f %.12f' % (d_score[0], v_score[0]))
+      print('HUBER:  %.12f %.12f' % (d_score[1], v_score[1]))
     self._save_results(folder, history.history, d_score, v_score, no_show, image_dpi, screen_dpi)
 
-    d_res={"MSE":d_score[0],"MAE":d_score[1]}
-    v_res={"MSE":v_score[0],"MAE":v_score[1]}
+    d_res={"HUBER":d_score[0],"MAE":d_score[1]}
+    v_res={"HUBER":v_score[0],"MAE":v_score[1]}
     return d_res, v_res
 
   # FIXME: if this is not defined, analyse_model will not analyse concentration predictions and quantify does not work
@@ -369,7 +461,7 @@ class Autoencoder:
       writer.writerows([[self.model+" Training Results"],
                         [""],
                         ["",     "Train",    "Validation"],
-                        ["MSE",  d_score[0], v_score[0]],
+                        ["HUBER",  d_score[0], v_score[0]],
                         ["MAE",  d_score[1], v_score[1]],
                         [""],
                         ["History"]])
@@ -379,9 +471,9 @@ class Autoencoder:
     fig, axes = plt.subplots(1, 3)
     fig.suptitle("%s Training Results" % self.model)
     for key in keys:
-      if 'mse' in key or 'loss' in key:
+      if 'huber' in key or 'loss' in key:
         axes[0].semilogy(history[key], label=key)
-        axes[0].set_ylabel('MSE')
+        axes[0].set_ylabel('HUBER')
         axes[0].legend(loc='upper right')
       if 'mae' in key:
         axes[1].semilogy(history[key], label=key)
