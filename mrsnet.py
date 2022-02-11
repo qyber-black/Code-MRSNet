@@ -3,7 +3,7 @@
 # mrsnet.py - MRSNet - command line MRSNet interface
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # See --help for arguments, uses sub-commands
@@ -48,7 +48,7 @@ def main():
   p_gen_ds = subparsers.add_parser('generate_datasets', help='Generate standard datasets.',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   add_arguments_default(p_gen_ds)
-  p_gen_ds.add_argument('collection', type=str, help='Dataset collection name (single_source-sampler-noise, multi_source-linewidth; see mrsnet.dataset.Collection)')
+  p_gen_ds.add_argument('collection', type=str, help='Dataset collection json filename')
   p_gen_ds.set_defaults(func=generate_datasets)
 
   # Compare spectra
@@ -84,13 +84,13 @@ def main():
   add_arguments_default(p_select)
   add_arguments_metabolites(p_select)
   add_arguments_train_select(p_select)
-  p_select.add_argument('--method', choices=['grid', 'qmc', 'gpo', 'evo'], default='random',
+  p_select.add_argument('--method', choices=['grid', 'qmc', 'gpo', 'ga'], default='random',
                         help='Model selection approach')
   p_select.add_argument('-r', '--repeats', type=int, default=100,
-                        help='Maximum number of repeats (for qmc, gpo, evo).')
+                        help='Maximum number of repeats (for qmc, gpo, ga).')
   p_select.add_argument('--remote', type=str, default='',
                         help='Remote execution: scheduler:user:[max_parallel_tasks=10:[wait_minutes=15]]')
-  p_select.add_argument('collection', type=str, help='Model collection name (see mrsnet.selection.Collection)')
+  p_select.add_argument('collection', type=str, help='Model collection json filename')
   p_select.set_defaults(func=model_selection)
 
   # Quantify
@@ -111,10 +111,11 @@ def main():
     if "GlX" in args.metabolites and ("Gln" in args.metabolites or "Glu" in args.metabolites):
       raise Exception("GlX with Gln or Glu is not possible")
   if hasattr(args,"noise_p"):
-    if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0):
+    if args.noise_p <= 0.0 or (args.noise_sigma <= 0.0 and args.noise_mu <= 0.0) or args.noise_type == "none":
       args.noise_p = 0.0
       args.noise_sigma = 0.0
       args.noise_mu = 0.0
+      args.noise_type = "none"
 
   if hasattr(args,"func"):
     args.func(args)
@@ -134,17 +135,17 @@ def add_arguments_metabolites(p):
 def add_arguments_basis(p):
   # Add basis source arguments
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'pygamma'], default=['lcmodel'],
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', 'su-3tskyra'], default=['fid-a'],
                  nargs='+',
-                 help='Data source(s) for the basis spectra (fid-a requires Matlab).')
+                 help='Data source(s) for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default=['siemens'],
                  nargs='+',
-                 help='Scanner manufacturer (fid-a and pygamma only support siemens).')
+                 help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs='+', default=[1.0],
-                 help='Linewidths to be used for simulation (not possible for lcmodel).')
+  p.add_argument('--linewidth', type=float, nargs='+', default=[2.0],
+                 help='Linewidths to be used for simulation (not possible for lcmodel, su-3tskyra).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
                  help='Pulse sequence (placeholder).')
@@ -152,9 +153,9 @@ def add_arguments_basis(p):
 def add_arguments_fft(p):
   # Add fft arguments
   p.add_argument('--sample_rate', type=lambda v : (abs(int(v))//2)*2, default=2000,
-                 help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel).')
+                 help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel, su-3tskyra).')
   p.add_argument('--samples', type=lambda v : (abs(int(v))//2)*2, default=4096,
-                 help='FFT time samples for basis/simluation (even, positive integer; ignored for lcmodel).')
+                 help='FFT time samples for basis/simluation (even, positive integer; ignored for lcmodel, su-3tskyra).')
 
 def add_arguments_simulate(p):
   # Add dataset simulation arguments
@@ -162,35 +163,37 @@ def add_arguments_simulate(p):
   p.add_argument('--sample', nargs='+', choices=['random', 'dirichlet', 'sobol', 'dirichlet-zeros', 'random-zeros', 'sobol-zeros', 'random-one', 'dirichlet-one', 'sobol-one'],
                  default=['sobol'], help='Concentration sampling method(s).')
   p.add_argument('--noise_p', type=float, default=1.0,
-                 help='Probability of ADC noise applied to spectrum.')
-  p.add_argument('--noise_sigma', type=float, default=0.1,
+                 help='Probability of ADC noise applied to spectrum. If noise is requested, clean spectra are also saved.')
+  p.add_argument('--noise_type', choices=['none', 'adc_normal'], default="adc_normal",
+                 help='Type of noise to be added.')
+  p.add_argument('--noise_sigma', type=float, default=0.03,
                  help='Maximum sigma for simulated ADC noise (uniform distribution).')
   p.add_argument('--noise_mu', type=float, default=0.0,
                  help='Maximum mu for simulated ADC noise (uniform distribution).')
 
 def add_arguments_compare(p):
   # Add compare arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
+  p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID or dicom folder)')
   p.add_argument('--metabolites', type=lambda s : molecules.short_name(s), nargs='+',
                  default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
                  help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'pygamma'], default='lcmodel',
-                 help='Data source for the basis spectra (fid-a requires Matlab).')
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', 'su-3tskyra'], default='lcmodel',
+                 help='Data source for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'phillips'], default='siemens',
-                 help='Scanner manufacturer (fid-a and pygamma only support siemens).')
+                 help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs=1, default=1.0,
-                 help='Linewidths to be used for simulation (ignored for lcmodel).')
+  p.add_argument('--linewidth', type=float, default=2.0,
+                 help='Linewidths to be used for simulation (ignored for lcmodel, su-3tskyra).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
                  choices=['megapress'], default="megapress",
                  help='Pulse sequence (placeholder).')
 
 def add_arguments_train_select(p):
   # Add training/selection arguments
-  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
+  p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
                  help='Number of training epochs.')
   p.add_argument('-k', '--validate', type=float, default=0.7,
@@ -208,7 +211,7 @@ def add_arguments_train(p):
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_cnn for autoencoder (see mrsnet/autoencoder.py)') # FIXME: ae_cnn may change
   p.add_argument('-b', '--batchsize', type=int, default=16,
-                 help='Batch size.')
+                 help='Batch size (per GPU if multi-GPU).')
 
 def add_arguments_aetrain(p):
   # Adding aetrain arguments
@@ -225,14 +228,12 @@ def add_arguments_aetrain(p):
 
 def add_arguments_quantify(p):
   # Add quantification arguments
-  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
-  p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
-                 default=os.path.join('data', 'model', 'MRSNet_LCModel'))
+  p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OEMGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
+  p.add_argument('-m', '--model', help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def add_arguments_benchmark(p):
   # Add benchmark arguments
-  p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).',
-                 default=os.path.join('data', 'model', 'MRSNet_LCModel'))
+  p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def basis(args):
   # Basis sub-command
@@ -254,7 +255,6 @@ def basis(args):
                       args.sample_rate, args.samples,
                       path_basis=Cfg.val['path_basis'])
   if args.verbose > 0:
-    print(bases)
     print("# Generating plots")
   for b in bases:
     if args.verbose > 0:
@@ -286,7 +286,7 @@ def simulate(args):
   args.metabolites.sort()
   args.pulse_sequence.sort()
   lw = args.linewidth
-  if "lcmodel" in args.source:
+  if "lcmodel" in args.source or "su-3tskyra" in args.source:
     lw = [None]
     if len(args.source) > 1:
       for l in args.linewidths:
@@ -298,7 +298,7 @@ def simulate(args):
                     "-".join(args.metabolites),
                     "-".join(args.pulse_sequence),
                     "-".join(args.sample),
-                    str(args.noise_p)+"-"+str(args.noise_mu)+"-"+str(args.noise_sigma))
+                    str(args.noise_p)+"-"+args.noise_type+"-"+str(args.noise_mu)+"-"+str(args.noise_sigma))
 
   bases = basis.BasisCollection()
   num_bases = 0
@@ -323,10 +323,17 @@ def simulate(args):
     if args.verbose > 0:
       print(f"Generating {n} spectra for {b}")
     dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
-  dataset.add_noise(args.noise_p, args.noise_mu, args.noise_sigma, verbose=args.verbose)
+  # Save without noise
   if args.verbose > 0:
-    print(f"Saving dataset {dataset.name}")
+    print(f"Saving dataset without noise: {dataset.name}")
   path = dataset.save(Cfg.val["path_simulation"])
+  # Save with noise
+  if args.noise_p > 0.0:
+    dataset.add_noise(args.noise_p, args.noise_type, args.noise_mu, args.noise_sigma, verbose=args.verbose)
+    if args.verbose > 0:
+      print(f"Saving dataset with noise: {dataset.name}")
+    path = dataset.save(Cfg.val["path_simulation"], path, spectra_only=True)
+  # Plots
   if args.verbose > 0:
     print("Plotting concentrations")
   for norm in ['none', 'sum', 'max']:
@@ -351,8 +358,7 @@ def generate_datasets(args):
   # Generate datasets sub-command
   import subprocess
   import mrsnet.grid as grid
-  from mrsnet.dataset import Collections
-  datasets = Collections[args.collection]
+  datasets = grid.Grid.load(args.collection)
   k = [str(k) for k in datasets.values.keys()]
   for v in datasets:
     # Check if it exists already
@@ -369,8 +375,14 @@ def generate_datasets(args):
                       "-".join(na['metabolites']),
                       "-".join(na['pulse_sequence']),
                       "-".join(na['sample']),
-                      na['noise_p'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
-    if os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra.joblib")):
+                      na['noise_p'][0]+"-"+na['noise_type'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
+    if (os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")) or
+        os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib"))):
+      if na['noise_p'][0] > 0.0:
+        if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib")):
+          raise Exception("No noisy dataset, even if requested: "+Cfg.val['path_simulation'],name,na['num'][0]+"-1")
+      if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")):
+        raise Exception("Only noisy dataset exists for "+Cfg.val['path_simulation'],name,na['num'][0]+"-1")
       if args.verbose > 0:
         print(f"# Exists: {name}:{na['num'][0]}")
     else:
@@ -380,13 +392,16 @@ def generate_datasets(args):
       cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'simulate']
       if args.verbose > 0:
         cmd += ['-v']*args.verbose
-      lcmodel = False
+      skip_lw = False
       linewidth1 = False
       for ki in range(0,len(k)):
-        if k[ki] == 'source' and ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
-                                  (not isinstance(v[ki],list) and v[ki] == 'lcmodel')):
-          lcmodel = True
-        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel interpreated a None linewidth
+        if k[ki] == 'source':
+          if ((isinstance(v[ki],list) and 'lcmodel' in v[ki]) or
+              (not isinstance(v[ki],list) and v[ki] == 'lcmodel') or
+              (isinstance(v[ki],list) and 'su-3tskyra' in v[ki]) or
+              (not isinstance(v[ki],list) and v[ki] == 'su-3tskyra')):
+            skip_lw = True
+        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel/su-3tskyra interpreated a None linewidth
           linewidth1 = True
         cmd.append("--"+k[ki])
         if isinstance(v[ki],list):
@@ -394,7 +409,7 @@ def generate_datasets(args):
             cmd.append(str(val))
         else:
           cmd.append(str(v[ki]))
-      if not lcmodel or linewidth1: # Skip unsupported linwidths for lcmodel
+      if not skip_lw or linewidth1: # Skip unsupported linwidths for lcmodel
         if args.verbose > 0:
           print('# Run '+' '.join(cmd[3:]))
         try:
@@ -410,7 +425,8 @@ def compare(args):
   # Compare sub-command
   import mrsnet.dataset as dataset
   import numpy as np
-  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+  if (os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")) or
+      os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib"))):
     id = get_std_name(args.dataset)
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
@@ -429,7 +445,8 @@ def compare(args):
           concentrations = None
     ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                   concentrations=concentrations,
-                                                  metabolites=args.metabolites)
+                                                  metabolites=args.metabolites,
+                                                  verbose=args.verbose)
   if len(ds.concentrations) > 0:
     # Get basis
     import mrsnet.basis as basis
@@ -454,26 +471,26 @@ def train(args):
   id = get_std_name(args.dataset)
   name = os.path.join(*id[-9:-1])
   ds_rest = id[-1]
-  if args.verbose > 0:
-    print(f"# Loading dataset {name} : {ds_rest}")
-  ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
   args.metabolites.sort()
   args.acquisitions.sort()
   args.datatype.sort()
 
   if args.model[0:4] == 'cnn_':
     from mrsnet.cnn import CNN
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
     model = CNN(args.model, args.metabolites, ds.pulse_sequence,
                 args.acquisitions, args.datatype, args.norm)
+    d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
+                             acquisitions=args.acquisitions, datatype=args.datatype,
+                             high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                             verbose=args.verbose)
+    data = [d_inp, d_out]
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
-    print(f"# Model setup:\n  {str(model)}")
-
-  d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
-                           acquisitions=args.acquisitions, datatype=args.datatype,
-                           high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                           verbose=args.verbose)
+    print(f"# Model:\n  {str(model)}")
 
   if args.validate > 1.0:
     from mrsnet.train import KFold
@@ -492,7 +509,7 @@ def train(args):
     trainer = NoValidation()
   else:
     raise Exception(f"Unknown validation {args.validate}")
-  trainer.train(model, d_inp, d_out, args.epochs, args.batch_size,
+  trainer.train(model, data, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=ds.name+"_"+ds_rest,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
@@ -581,9 +598,9 @@ def aetrain(args):
 def model_selection(args):
   # Select sub-command
   import subprocess
-  from mrsnet.selection import Collections
+  import mrsnet.grid as grid
   args.metabolites.sort()
-  models = Collections[args.collection]
+  models = grid.Grid.load(args.collection)
   if args.method == "grid":
     from mrsnet.selection import SelectGrid
     selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,
@@ -596,10 +613,10 @@ def model_selection(args):
     from mrsnet.selection import SelectGPO
     selector = SelectGPO(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
-  elif args.method == "evo":
-    from mrsnet.selection import SelectEvo
-    selector = SelectEvo(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
+  elif args.method == "ga":
+    from mrsnet.selection import SelectGA
+    selector = SelectGA(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
+                        Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   else:
     raise Exception(f"Unknown model selection method {args.method}")
   selector.optimise(args.collection, models, Cfg.val['path_model'])
@@ -608,7 +625,14 @@ def quantify(args):
   # Quantify sub-command
   import mrsnet.dataset as dataset
   import numpy as np
-  if os.path.isfile(os.path.join(args.dataset,"spectra.joblib")):
+  if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")):
+    id = get_std_name(args.dataset)
+    name = os.path.join(*id[-9:-1])
+    ds_rest = id[-1]
+    if args.verbose > 0:
+      print(f"# Loading dataset {name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+  elif os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
     id = get_std_name(args.dataset)
     name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
@@ -622,7 +646,7 @@ def quantify(args):
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
-      batch_size = id[k+6]
+      batchsize = id[k+6]
       epochs = id[k+7]
       train_model = id[k+8]
       trainer = id[k+9]
@@ -631,10 +655,10 @@ def quantify(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print(f"# Loading model {name} : {batch_size} : {epochs} {train_model} : {trainer} : {rest}")
+    print(f"# Loading model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
   if ds is None:
@@ -645,12 +669,13 @@ def quantify(args):
       concentrations = None
     ds = dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                    concentrations=concentrations,
-                                                   metabolites=quantifier.metabolites)
+                                                   metabolites=quantifier.metabolites,
+                                                   verbose=args.verbose)
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
-                           low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm, ntps=quantifier.fft_samples,
-                           verbose=args.verbose)
+                           low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm,
+                           n_fft_pts=quantifier.fft_samples, verbose=args.verbose)
   from mrsnet.analyse import analyse_model
   id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
   # Store results in data repository
@@ -669,7 +694,7 @@ def benchmark(args):
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_':
       name = os.path.join(*id[k:k+6])
-      batch_size = id[k+6]
+      batchsize = id[k+6]
       epochs = id[k+7]
       train_model = id[k+8]
       trainer = id[k+9]
@@ -678,38 +703,41 @@ def benchmark(args):
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
-    print(f"# Model {name} : {batch_size} : {epochs} : {train_model} : {trainer} : {rest}")
+    print(f"# Model {name} : {batchsize} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batch_size, epochs, train_model, trainer, rest))
+    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
   else:
     raise Exception("Unknown model "+name)
   import mrsnet.dataset as dataset
   for id in ['E1', 'E2', 'E3', 'E4a', 'E4b', 'E4c', 'E4d']:
-    if args.verbose > 0:
-      print(f"# Loading Benchmark {id}")
-    bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, 'MEGA_Combi_WS_ON'),
-                                         concentrations=os.path.join(Cfg.val['path_benchmark'],
-                                                                     id, 'concentrations.json'),
-                                         metabolites=quantifier.metabolites)
-    if args.verbose > 3:
-      for s,c in zip(bm.spectra,bm.concentrations):
-        for a in s.keys():
-          s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
-          plt.show(block=True)
-          plt.close()
-    d_inp, d_out = bm.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
-                             acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
-                             low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm, ntps=quantifier.fft_samples,
-                             verbose=args.verbose)
-    from mrsnet.analyse import analyse_model
-    id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
-    analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batch_size, epochs,
-                                                         train_model, trainer, rest),
-                  id=[s[id_ref].id for s in bm.spectra],
-                  show_conc=True, save_conc=True,
-                  verbose=args.verbose, prefix=id, image_dpi=Cfg.val['image_dpi'],
-                  screen_dpi=Cfg.val['screen_dpi'])
+    for variant in ['MEGA_Combi_WS_ON', 'MEGA_RAW_Combi_WS_ON']:
+      if args.verbose > 0:
+        print(f"# Loading Benchmark {id}")
+      bm = dataset.Dataset(id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], id, variant),
+                                           concentrations=os.path.join(Cfg.val['path_benchmark'],
+                                                                       id, 'concentrations.json'),
+                                           metabolites=quantifier.metabolites,
+                                           verbose=args.verbose)
+      if args.verbose > 3:
+        for s,c in zip(bm.spectra,bm.concentrations):
+          for a in s.keys():
+            s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
+            plt.show(block=True)
+            plt.close()
+      d_inp, d_out = bm.export(metabolites=quantifier.metabolites, n_fft_pts=quantifier.fft_samples,
+                                high_ppm=quantifier.high_ppm, low_ppm=quantifier.low_ppm,
+                                norm=quantifier.norm, acquisitions=quantifier.acquisitions,
+                                datatype=quantifier.datatype,
+                                verbose=args.verbose)
+      from mrsnet.analyse import analyse_model
+      id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
+      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batchsize, epochs,
+                                                           train_model, trainer, rest),
+                    id=[s[id_ref].id for s in bm.spectra],
+                    show_conc=True, save_conc=True,
+                    verbose=args.verbose, prefix=id+":"+variant, image_dpi=Cfg.val['image_dpi'],
+                    screen_dpi=Cfg.val['screen_dpi'])
 
 def get_std_name(name):
   _, path = os.path.splitdrive(name)
@@ -724,6 +752,13 @@ def get_std_name(name):
   return id
 
 if __name__ == '__main__':
+  # Find base folder
+  if not os.name == 'posix':
+    print("**WARNING - MRSNet only runs reliably and is only supported on Linux/POSIX**")
+  bin_path = os.path.realpath(__file__)
+  if not os.path.isfile(bin_path):
+    raise Exception("Cannot find location of mrsnet.py root folder")
+  Cfg.init(bin_path)
   # Only print warnings and errors for tf (set before importing tf)
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -731,11 +766,4 @@ if __name__ == '__main__':
   from matplotlib import use
   if not "DISPLAY" in os.environ:
     use("Agg")
-  #else:
-  #use("Qt5Agg")
-  # Find base folder
-  bin_path = os.path.realpath(__file__)
-  if not os.path.isfile(bin_path):
-    raise Exception("Cannot find location of mrsnet.py root folder")
-  Cfg.init(bin_path)
   main()

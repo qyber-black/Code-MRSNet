@@ -1,7 +1,7 @@
 # mrsnet/spectrum.py - MRSNet - individual spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 
 from mrsnet import molecules
 from mrsnet.cfg import Cfg
+
+npfft = getattr(__import__(Cfg.val['npfft_module'][0], fromlist=[Cfg.val['npfft_module'][1]]),
+                Cfg.val['npfft_module'][1])
 
 class Spectrum:
   # Spectrum is a class that contains information about a single spectrum.
@@ -38,19 +41,40 @@ class Spectrum:
 
     self.noise = None
 
-  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
+  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
+            phase_correct=False):
     self.fft = np.asarray(fft)
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 
-  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False):
-    self.fft = np.fft.fftshift(np.fft.fft(adc))
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak)
+  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
+            phase_correct=False):
+    self.fft = npfft.fftshift(npfft.fft(adc))
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 
-  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak):
+  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct):
     self.sample_rate = sample_rate
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
+    if phase_correct and Cfg.val['phase_correct'] != None: # Only phase correct if also configured
+      if Cfg.dev('spectrum_set_phase_correct'):
+        fig, axs = plt.subplots(1,2)
+        freq, nu = self.get_f()
+        axs[0].plot(nu, np.real(freq), color='r')
+        axs[0].plot(nu, np.imag(freq), color='g')
+        axs[0].set_title("Raw Dicom Data")
+      if Cfg.val['phase_correct'] == 'acme':
+        self._phase_correct_acme()
+      elif Cfg.val['phase_correct'] == 'ernst':
+        self._phase_correct_ernst()
+      else:
+        raise Exception(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
+      if Cfg.dev('spectrum_set_phase_correct'):
+        freq, nu = self.get_f()
+        axs[1].plot(nu, np.real(freq), color='r')
+        axs[1].plot(nu, np.imag(freq), color='g')
+        axs[1].set_title("Phase Corrected Dicom Data")
+        plt.show()
     if remove_water_peak:
       self._fft_remove_water_peak()
 
@@ -59,7 +83,7 @@ class Spectrum:
            np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0 / self.omega + self.center_ppm + self.b0_shift_ppm
 
   def get_t(self):
-    return np.fft.ifft(np.fft.ifftshift(self.fft * self.scale)), \
+    return npfft.ifft(npfft.ifftshift(self.fft * self.scale)), \
            np.arange(0, len(self.fft), 1) / self.sample_rate
 
   def correct_b0(self, shift=None):
@@ -89,27 +113,110 @@ class Spectrum:
       if abs(location - nu[idx]) < ppm_range:
         # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2001.
         # https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
-        # Quinn's second estimator (least RMS error)
-        if idx < 1 or idx >= len(nu) - 1:
+        if Cfg.val['fft_peak_location_estimator'] == None or idx < 1 or idx >= len(nu) - 1:
           return nu[idx], -fft_abs[idx] # at boundary (should never really be there)
-        de = (fft[idx].real**2 + fft[idx].imag**2)
-        if np.abs(de) < 1e-10:
-          return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
-        ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
-        dp = ap / (ap-1)
-        am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
-        dm = am / (1-am)
-        dp2 = dp**2
-        dm2 = dm**2
-        f1 = np.sqrt(6.0)/24.0
-        f2 = np.sqrt(2.0/3.0)
-        tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
-        tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
-        d = (dp+dm)/2.0 + tau_dp2 - tau_dm2
-        return nu[idx] - (nu[1]-nu[0])*d, -fft_abs[idx]
+        if Cfg.val['fft_peak_location_estimator'] == 'quadratic':
+          # Quadratic method
+          y1 = -fft_abs[idx-1]
+          y2 = -fft_abs[idx]
+          y3 = -fft_abs[idx+1]
+          de = 2.0 * (2.0*y2 - y1 - y3)
+          if np.abs(de) < 1e-10:
+            return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
+          d = (y3-y1) / de
+        elif Cfg.val['fft_peak_location_estimator'] == 'quinn2':
+          # Quinn's second estimator (least RMS error)
+          de = (fft[idx].real**2 + fft[idx].imag**2)
+          if np.abs(de) < 1e-10:
+            return nu[idx], -fft_abs[idx] # zero denominator, return bucket freq.
+          ap = (fft[idx+1].real*fft[idx].real + fft[idx+1].imag*fft[idx].imag) / de
+          dp = -ap / (1-ap)
+          am = (fft[idx-1].real*fft[idx].real + fft[idx-1].imag*fft[idx].imag) / de
+          dm = am / (1-am)
+          dp2 = dp**2
+          dm2 = dm**2
+          f1 = np.sqrt(6.0)/24.0
+          f2 = np.sqrt(2.0/3.0)
+          tau_dp2 = np.log(3.0*(dp2**2)+6.0*dp2+1)/4.0 - f1*np.log((dp2+1.0-f2)/(dp2+1.0+f2))
+          tau_dm2 = np.log(3.0*(dm2**2)+6.0*dm2+1)/4.0 - f1*np.log((dm2+1.0-f2)/(dm2+1.0+f2))
+          # It seems d has to be negated to move estimator in right direction
+          d = -1.0 * ((dp+dm)/2.0 + tau_dp2 - tau_dm2)
+        elif Cfg.val['fft_peak_location_estimator'] == 'jain':
+          # Jain's method
+          y1 = -fft_abs[idx-1]
+          y2 = -fft_abs[idx]
+          y3 = -fft_abs[idx+1]
+          if y1 > y3:
+            a = y2/y1
+            idx -= 1
+          else:
+            a = y3/y2
+          d = a/(1.0+a)
+        else:
+          raise Exception(f"Unknown fft peak location estimator {Cfg.val['fft_peak_location_estimator']}")
+        return nu[idx] + (nu[1]-nu[0])*d, -fft_abs[idx]
       if fft_abs[idx] > cut_off:
         break
     return None, None
+
+  def _phase_correct_ernst(self):
+    # R Ernst. Numerical Hilbert transform and automatic phase correction in
+    # magnetic resonance spectroscopy. J Magn Res 1(1):7-26, 1969.
+    # https://www.sciencedirect.com/science/article/abs/pii/0022236469900031
+    def err(para):
+      val = para.valuesdict()
+      # Adjust phase
+      shift = val['phi0'] + val['phi1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+      s_fft = self.fft * np.exp(1j*shift)
+      # Target function
+      return np.sum(np.imag(s_fft))
+    import lmfit
+    para = lmfit.Parameters()
+    para.add('phi0', value=0.0, min=-np.pi/4.0, max=np.pi/4.0)
+    para.add('phi1', value=0.0, min=-0.1, max=0.1)
+    res = lmfit.minimize(entropy, para, method='simplex')
+    val = res.params
+    # Adjust phase
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_fft = np.real(self.fft[idx])
+    shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+    self.fft *= np.exp(1j*shift)
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_s_fft = np.real(self.fft[idx])
+    if max_s_fft * max_fft < 0.0: # avoid flipping the phase / turn real positive, if it should be negative
+      self.fft *= np.exp(1j*np.pi)
+
+  def _phase_correct_acme(self):
+    # Automated phase Correction based on Minimization of Entropy
+    # L Chen, Z Weng, LY Goh, M Garland. An efficient algorithm for automatic
+    # phase correction of NMR spectra based on entropy minimization. J Magn
+    # Res 158:164–168, 2002.
+    def entropy(para):
+      val = para.valuesdict()
+      # Adjust phase
+      shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+      s_fft = self.fft * np.exp(1j*shift)
+      # Target function
+      r = np.real(s_fft)
+      r1 = np.abs((r[1:] - r[:-1]))
+      h = r1 / np.sum(r1)
+      h[np.abs(h)<1e-8] = 1.0
+      return -np.sum(h*np.log(h)) + Cfg.val['phase_correct_acme_gamma'] * np.sum(r[r<0]**2)
+    import lmfit
+    para = lmfit.Parameters()
+    para.add('phc0', value=0.0, min=-np.pi, max=np.pi)
+    para.add('phc1', value=0.0, min=-0.1, max=0.1)
+    res = lmfit.minimize(entropy, para, method='simplex')
+    val = res.params
+    # Adjust phase
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_fft = np.real(self.fft[idx])
+    shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+    self.fft *= np.exp(1j*shift)
+    idx = np.argmax(np.abs(np.real(self.fft)))
+    max_s_fft = np.real(self.fft[idx])
+    if max_s_fft * max_fft < 0.0: # avoid flipping the phase / turn real positive, if it should be negative
+      self.fft *= np.exp(1j*np.pi)
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
     # Resample fft to prescribed frequency bins via zero filling
@@ -129,12 +236,12 @@ class Spectrum:
       repeats += 1
       if repeats > Cfg.val['spectrum_rescale_fft_max_repeats']:
         raise Exception(f"Length error: got {len(rnu[index])}, expected {npts}")
-    ifft = np.fft.ifft(np.fft.ifftshift(self.fft))
+    ifft = npfft.ifft(npfft.ifftshift(self.fft))
     if t_samples > len(self.fft):
       ifft = np.append(ifft, np.zeros(t_samples - len(self.fft)))
     else:
       ifft = ifft[0:t_samples]
-    rfft = np.fft.fftshift(np.fft.fft(ifft))
+    rfft = npfft.fftshift(npfft.fft(ifft))
     return rfft[index], rnu[index]
 
   def _fft_remove_water_peak(self):
@@ -143,28 +250,28 @@ class Spectrum:
     if water_peak_loc is not None:
       fft, nu = self.get_f()
       abs_fft = np.abs(fft)
-      mean_abs = np.mean(abs_fft)
+      cut_off = np.median(abs_fft)
       under_mean = 0
       for jj in range(0, len(abs_fft)):
         if nu[jj] >= water_peak_loc and nu[jj] < water_peak_loc + Cfg.val['water_peak_ppm_range']/2.0:
-          if np.abs(self.fft[jj]) > mean_abs:
+          if np.abs(self.fft[jj]) > cut_off:
             under_mean = 0
-            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
+            self.fft[jj] = cut_off * np.exp(1j*np.angle(self.fft[jj]))
           elif nu[jj] > water_peak_loc:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > 5:
+            if under_mean > Cfg.val['water_peak_under_max']:
               break
       under_mean = 0
       for jj in reversed(range(0, len(abs_fft))):
         if nu[jj] <= water_peak_loc and nu[jj] > water_peak_loc - Cfg.val['water_peak_ppm_range']/2.0:
-          if np.abs(self.fft[jj]) > mean_abs:
+          if np.abs(self.fft[jj]) > cut_off:
             under_mean = 0
-            self.fft[jj] = mean_abs * np.exp(1j*np.angle(self.fft[jj]))
+            self.fft[jj] = cut_off * np.exp(1j*np.angle(self.fft[jj]))
           else:
             # trailing edge detection, stop when the water peak is over
             under_mean += 1
-            if under_mean > 5:
+            if under_mean > Cfg.val['water_peak_under_max']:
               break
 
   def add_noise_adc_normal(self, mu=0, sigma=0):
@@ -175,7 +282,7 @@ class Spectrum:
     m = np.max(np.abs(adc))
     noise = (     np.random.normal(mu, sigma, len(adc)) +
              1j * np.random.normal(mu, sigma, len(adc))) * m / self.scale
-    self.fft += np.fft.fftshift(np.fft.fft(noise))
+    self.fft += npfft.fftshift(npfft.fft(noise))
 
   def plot(self, axes, type='fft', mode='magnitude'):
     if type == 'time':
@@ -407,13 +514,7 @@ class Spectrum:
     for a in spectra:
       if spectra[a].pulse_sequence != "megapress":
         raise Exception("Multi-b0-correction only for megapress")
-    b0_shift = None
-    peak_val = 0.0
-    for pair in molecules.B0_CORRECTION:
-      shift, val = spectra['edit_off'].correct_b0()
-      if shift is not None and peak_val < val:
-        b0_shift = shift
-        peak_val = val
+    b0_shift, _ = spectra['edit_off'].correct_b0()
     if b0_shift == None:
       b0_shift = 0.0 # No shift as no peak found
     for a in spectra:
@@ -421,15 +522,19 @@ class Spectrum:
     return b0_shift
 
   @staticmethod
-  def load_fida(fida_file,id):
+  def load_fida(fida_file,id,source):
     fida_data = loadmat(fida_file)
+    if 'linewidth' in fida_data:
+      lw = float(fida_data['linewidth'][0][0])
+    else:
+      lw = None
     s = Spectrum(id=id,
                  pulse_sequence='megapress',
                  acquisition='edit_on' if fida_data['edit'][0][0] != 0 else 'edit_off',
                  omega=float(fida_data['omega'][0][0]),
-                 source='fid-a',
+                 source=source,
                  metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
-                 linewidth=float(fida_data['linewidth'][0][0]))
+                 linewidth=lw)
     # Time signal produced by fid-a seems mirrored, so need to take the complex conjugate
     s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
             1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
@@ -485,7 +590,7 @@ class Spectrum:
       parse = True
       while parse:
         line = file.readline().strip()
-        if len(line) == 0: # Process last block, then quite
+        if len(line) == 0: # Process last block, then quit
           line="$END"
           parse = False
         if line[0] == '$':
@@ -545,8 +650,9 @@ class Spectrum:
                 fft[:ishift] = 0.0
               elif ishift < 0:
                 fft[fft.shape[0]-ishift:] = 0.0
-              fft_scale = metadata["BASIS"]["TRAMP"]/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
-              adc = np.fft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
+              # ON = OFF + 2*diff
+              fft_scale = metadata["BASIS"]["TRAMP"]*100.0/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
+              adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
                 center_ppm = -metadata["NMUSED"]["PPMSEP"]
               else:
@@ -558,7 +664,7 @@ class Spectrum:
                            source='lcmodel',
                            metabolites=[metabolite],
                            linewidth=None)
-              s.set_f(np.fft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
+              s.set_f(npfft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
               specs.append(s)
           elif area != "":
             raise IOError(f"Unknown section in LCModel basis file {area}")
@@ -579,7 +685,7 @@ class Spectrum:
     return specs
 
   @staticmethod
-  def load_dicom(file, concentrations=None, metabolites=[]):
+  def load_dicom(file, concentrations=None, metabolites=[], verbose=0):
     if not os.path.exists(file):
         raise Exception('Dicom file does not exist: ' + file)
     from mrsnet.qdicom.read_dicom_siemens import read_dicom
@@ -655,6 +761,10 @@ class Spectrum:
                     linewidth=None) # Unknown
     if Cfg.val['filter_dicom'] != None:
       # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Dicom Data")
       filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
       filter = np.zeros(len(data))
       if Cfg.val['filter_dicom'] == 'hamming':
@@ -666,5 +776,9 @@ class Spectrum:
       else:
         raise Exception("Unknown dicom filter")
       data = np.multiply(data,filter)
-    spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Filtered Dicom Data")
+    spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True,phase_correct=True)
     return spec, cs

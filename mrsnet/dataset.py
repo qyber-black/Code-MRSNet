@@ -1,7 +1,7 @@
 # mrsnet/dataset.py - MRSNet - spectra dataset
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -28,7 +28,7 @@ class Dataset:
     self.pulse_sequence = None
     self.noise_added = False
 
-  def load_dicoms(self, folder, concentrations=None, metabolites=[]):
+  def load_dicoms(self, folder, concentrations=None, metabolites=[], verbose=0):
     from mrsnet.spectrum import Spectrum
     specs = {}
     concs = {}
@@ -38,7 +38,7 @@ class Dataset:
     for dir, subdirs, files in os.walk(folder):
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
-          s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites)
+          s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites, verbose)
           for m in s.metabolites:
             if m not in self.metabolites:
               self.metabolites.append(m)
@@ -187,13 +187,16 @@ class Dataset:
       self.spectra.append(s)
       self.concentrations.append(c)
 
-  def add_noise(self, noise_p, noise_mu, noise_sigma, verbose):
+  def add_noise(self, noise_p, noise_type, noise_mu, noise_sigma, verbose):
     # Add noise to all spectra
     if self.noise_added:
       raise Exception("Noise added twice to dataset")
-    if noise_p > 0.0:
+    if noise_p > 0.0 and noise_type != "none":
       if verbose > 0:
-        print(f"Adding noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
+        if noise_type == "adc_normal":
+          print(f"Adding ADC noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
+        else:
+          raise Exception("Unknown noise type "+noise_type)
       self.noise_added = True
       num = len(self.spectra)
       n_add = np.random.uniform(0.0,1.0,num)
@@ -206,7 +209,10 @@ class Dataset:
           # Add noise
           for a in self.spectra[idx]:
             if a != 'difference':
-              self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
+              if noise_type == "adc_normal":
+                self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
+              else:
+                raise Exception("Unknonw noise type "+noise_type)
           if 'difference' in self.spectra[idx]:
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
@@ -220,10 +226,22 @@ class Dataset:
       if verbose > 1:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
-  def save(self, path):
+  def save(self, path, folder=None, spectra_only=False):
     from mrsnet.getfolder import get_folder
-    folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
-    joblib.dump(self, os.path.join(folder, "spectra.joblib"))
+    if folder == None:
+      folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
+    if not spectra_only:
+      joblib.dump({
+          'name': self.name,
+          'metabolites': self.metabolites,
+          'concentrations': self.concentrations,
+          'pulse_sequence': self.pulse_sequence
+        }, os.path.join(folder, 'info.joblib'))
+    if self.noise_added:
+      fn = "spectra_noisy.joblib"
+    else:
+      fn = "spectra_clean.joblib"
+    joblib.dump(self.spectra, os.path.join(folder, fn))
     return folder
 
   def save_noise(self, path):
@@ -233,8 +251,24 @@ class Dataset:
     return folder
 
   @staticmethod
-  def load(folder):
-    return joblib.load(os.path.join(folder, "spectra.joblib"))
+  def load(folder, force_clean=False, info_only=False):
+    info = joblib.load(os.path.join(folder, "info.joblib"))
+    spectra = None
+    if not force_clean and os.path.isfile(os.path.join(folder, "spectra_noisy.joblib")):
+      if not info_only:
+        spectra = joblib.load(os.path.join(folder, "spectra_noisy.joblib"))
+      noise = False
+    else:
+      if not info_only:
+        spectra = joblib.load(os.path.join(folder, "spectra_clean.joblib"))
+      noise = True
+    ds = Dataset(info['name'])
+    ds.metabolites = info['metabolites']
+    ds.spectra = spectra
+    ds.concentrations = info['concentrations']
+    ds.pulse_sequence = info['pulse_sequence']
+    ds.noise_added = noise
+    return ds
 
   def plot_concentrations(self, norm='none'):
     if len(self.concentrations) > 0:
@@ -245,7 +279,10 @@ class Dataset:
       while n_row * n_col < n_hst:
         n_row += 1
       fig, axes = plt.subplots(n_row, n_col,  sharex=True, sharey=True)
-      axes = axes.flatten()
+      if isinstance(axes,np.ndarray):
+        axes = axes.flatten()
+      else:
+        axes = np.asarray([axes])
       norm_str = "" if norm == 'none' else f"({norm} normalised) "
       plt.suptitle(f"Concentrations {norm_str}of {self.name}; {len(self.spectra)} spectra")
       cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
@@ -274,6 +311,11 @@ class Dataset:
     if len(self.spectra) > 0:
       if verbose > 0:
         print("Converting spectra to tensor")
+      if Cfg.val['npfft_module'][0] == "pyfftw.interfaces":
+        # pyfftw causes segmentation fault in parallel execution without this
+        import pyfftw
+        pyfftw.interfaces.cache.enable()
+        pyfftw.interfaces.cache.set_keepalive_time(60)
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, high_ppm, low_ppm, n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
@@ -454,36 +496,3 @@ class Dataset:
     elif norm != 'none':
       raise Exception(f"Unknown norm {norm}")
     return out
-
-Collections = {
-  'single_source-sampler-noise': Grid({
-    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
-    'source': ['lcmodel','fid-a','pygamma'],
-    'manufacturer': ['siemens'],
-    'omega': [123.23],
-    'linewidth': [1.0],
-    'pulse_sequence': ['megapress'],
-    'num': [10000],
-    'sample': ['random','sobol','dirichlet'],
-    'noise_p': [1.0],
-    'noise_sigma': [0.05,0.1],
-    'noise_mu': [0.0],
-    'sample_rate': [2000],
-    'samples': [4096]
-  }),
-  'multi_source-linewidths': Grid({
-    'metabolites': [['Cr','GABA','Gln','Glu','NAA']],
-    'source': [['fid-a','lcmodel','pygamma'],['fid-a','pygamma']],
-    'manufacturer': ['siemens'],
-    'omega': [123.23],
-    'linewidth': [1.0,[0.75,1.0,1.25]],
-    'pulse_sequence': ['megapress'],
-    'num': [30000],
-    'sample': ['sobol'],
-    'noise_p': [1.0],
-    'noise_sigma': [0.1],
-    'noise_mu': [0.0],
-    'sample_rate': [2000],
-    'samples': [4096]
-  })
-}

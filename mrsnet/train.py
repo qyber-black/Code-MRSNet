@@ -1,7 +1,7 @@
 # mrsnet/train.py - MRSNet - training
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -59,19 +59,19 @@ class Train:
       plt.show(block=True)
     plt.close()
 
-  def _cross_validate(self, model, epochs, batch_size, d_inp, d_out, folder,
+  def _cross_validate(self, model, epochs, batch_size, data, folder,
                       train_dataset_name, verbose, image_dpi, screen_dpi):
     # Cross valildation
-    train_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
-    val_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
+    train_res = { 'error': [None]*self.k }
+    val_res = { 'error': [None]*self.k }
     for val_fold in range(0,self.k):
       if verbose > 0:
         print(f"# Fold {val_fold} of {self.k}")
       fold_folder = os.path.join(folder,"fold-"+str(val_fold))
       val_sel = (self._bucket_idx == val_fold)
       train_sel = np.logical_not(val_sel)
-      train_score, val_score = model.train(d_inp[train_sel],d_out[train_sel],
-                                           d_inp[val_sel],d_out[val_sel],
+      train_score, val_score = model.train([data[l][train_sel] for l in range(0,len(data))],
+                                           [data[l][val_sel] for l in range(0,len(data))],
                                            epochs,batch_size,
                                            fold_folder,verbose=verbose,
                                            image_dpi=image_dpi,screen_dpi=screen_dpi,
@@ -85,14 +85,11 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
-      _, info, err = analyse_model(model, d_inp[train_sel], d_out[train_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
-
-      train_res['wdq'][val_fold] = info['wasserstein_distance_error']
       train_res['error'][val_fold] = err
-      _, info, err = analyse_model(model, d_inp[val_sel], d_out[val_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      val_res['wdq'][val_fold] = info['wasserstein_distance_error']
       val_res['error'][val_fold] = err
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
@@ -105,7 +102,7 @@ class Train:
 
     # Pairwise Wasserstein distance between validation error distributions
     if verbose > 0:
-      print("# Wasserstein distance")
+      print("# Wasserstein distance between fold error distributions")
     max_wd_err = 0.0
     max_wd_aerr = 0.0
     for k1 in range(1,self.k):
@@ -252,26 +249,22 @@ class NoValidation(Train):
   def __init__(self):
     Train.__init__(self,1)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
-    # No validation
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
     if verbose > 0:
       print("# No Validation")
-    # Plot distribution
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
-    # Train
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "NoValidation-%s")
-    model.train(d_inp,d_out,np.array([]),np.array([]),
-                epochs,batch_size,
+    # Plot output distribution
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
+    # Train
+    model.train(data,None,epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, d_inp, d_out, folder,
+    analyse_model(model, data[0], data[-1], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
 
 class Split(Train):
@@ -279,13 +272,13 @@ class Split(Train):
     Train.__init__(self,2)
     self.p = p
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Split train/validation by percentage
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
-      print(f"# Creating {self.p} split for {out_dim}-dimensional output data for {data_dim} points")
+      print(f"# Creating {self.p} split for {out_dim}-dimensional output data for {data_dim} inputs")
     idx = np.arange(0,data_dim)
     if shuffle:
       if verbose > 0:
@@ -306,31 +299,33 @@ class Split(Train):
                                      train_dataset_name.replace("/","_")),
                         "Split_"+str(self.p)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Train
     val_sel = (self._bucket_idx == 0)
     train_sel = np.logical_not(val_sel)
-    model.train(d_inp[train_sel],d_out[train_sel],d_inp[val_sel],d_out[val_sel],
+    model.train([data[l][train_sel] for l in range(0,len(data))],
+                [data[l][val_sel] for l in range(0,len(data))],
                 epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, d_inp[train_sel], d_out[train_sel], folder,
+    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, d_inp[val_sel], d_out[val_sel], folder,
-                  verbose=verbose, prefix='validation', image_dpi=image_dpi,screen_dpi=screen_dpi)
+    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
+                  verbose=verbose, prefix='validation',
+                  image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class DuplexSplit(Train):
   def __init__(self,p):
     Train.__init__(self,2)
     self.p = p
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Duplex split
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.p} duplex split for {out_dim}-dimensional output data for {data_dim} points")
     # Assign pairs to bucket in order of largest distance
@@ -340,7 +335,7 @@ class DuplexSplit(Train):
     self._bucket_idx = -np.ones((data_dim),dtype=np.int64)
     if verbose > 0:
       print("    Pairwise distances")
-    dm = squareform(pdist(d_out,'mahalanobis'))
+    dm = squareform(pdist(data[-1],'mahalanobis'))
     dm[np.isnan(dm)] = -1.0
     if verbose > 0:
       print("    Init buckets")
@@ -355,15 +350,15 @@ class DuplexSplit(Train):
         self._bucket_idx[row_i] = k_b
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
-        k_b += 1
         if verbose > 3:
-          print("      Pair for",k_b,":", row_i, col_i, ddm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
+          print(f"      Pair for bucket {k_b}: {row_i}-{col_i} dist: {ddm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,row_i] = -1.0
         dm[:,col_i] = -1.0
         ddm[:,row_i] = -1.0
         ddm[:,col_i] = -1.0
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
+        k_b += 1
     del ddm
     if verbose > 0:
       print("    Adding points to buckets")
@@ -384,7 +379,7 @@ class DuplexSplit(Train):
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
         if verbose > 3:
-          print("      Point for", kb,":", row_i, col_i, dm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
+          print(f"      Point for bucket {k_b}: {row_i}->{col_i} dist: {dm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,col_i] = -1.0
         dm[row_i,:] = -1.0
         k_b = (k_b + 1) % 2
@@ -397,30 +392,31 @@ class DuplexSplit(Train):
                                      train_dataset_name.replace("/","_")),
                         "DuplexSplit_"+str(self.p)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Train
     val_sel = (self._bucket_idx == 1)
     train_sel = np.logical_not(val_sel)
-    model.train(d_inp[train_sel],d_out[train_sel],d_inp[val_sel],d_out[val_sel],
+    model.train([data[l][train_sel] for l in range(0,len(data))],
+                [data[l][val_sel] for l in range(0,len(data))],
                 epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, d_inp[train_sel], d_out[train_sel], folder,
+    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, d_inp[val_sel], d_out[val_sel], folder,
+    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
                   verbose=verbose, prefix='validation', image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class KFold(Train):
   def __init__(self,k):
     Train.__init__(self,k)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Stratify data into k folds
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     idx = np.arange(0,data_dim)
@@ -440,20 +436,20 @@ class KFold(Train):
                                      train_dataset_name.replace("/","_")),
                         "KFold_"+str(self.k)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Run cross validation
-    self._cross_validate(model, epochs, batch_size, d_inp, d_out, folder,
+    self._cross_validate(model, epochs, batch_size, data, folder,
                          train_dataset_name, verbose, image_dpi, screen_dpi)
 
 class DuplexKFold(Train):
   def __init__(self,k):
     Train.__init__(self,k)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Stratify data into k folds
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     # Assign pairs to bucket in order of largest distance
@@ -463,7 +459,7 @@ class DuplexKFold(Train):
     self._bucket_idx = -np.ones((data_dim),dtype=np.int64)
     if verbose > 0:
       print("    Pairwise distances")
-    dm = squareform(pdist(d_out,'mahalanobis'))
+    dm = squareform(pdist(data[-1],'mahalanobis'))
     dm[np.isnan(dm)] = -1.0
     if verbose > 0:
       print("    Init buckets")
@@ -480,17 +476,17 @@ class DuplexKFold(Train):
         self._bucket_idx[row_i] = k_b
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
-        k_b += 1
         if verbose > 3:
-          print("      Pair for",k_b,":", row_i, col_i, ddm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
+          print(f"      Pair for bucket {k_b}: {row_i}-{col_i} dist: {ddm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,row_i] = -1.0
         dm[:,col_i] = -1.0
         ddm[:,row_i] = -1.0
         ddm[:,col_i] = -1.0
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
-        if n_selected >= data_dim:
+        if n_selected > data_dim:
           raise Exception("Insufficient data-points for finding buckets")
+        k_b += 1
     del ddm
     if verbose > 2:
       print("      Selected:", n_selected)
@@ -505,10 +501,10 @@ class DuplexKFold(Train):
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
         if verbose > 3:
-          print("      Point for", k_b,":", row_i, col_i, dm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
-        k_b = (k_b + 1) % self.k
+          print(f"      Point for bucket {k_b}: {row_i}->{col_i} dist: {dm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,col_i] = -1.0
         dm[row_i,:] = -1.0
+        k_b = (k_b + 1) % self.k
     del dm
     if verbose > 1:
       for b in range(0,self.k):
@@ -517,7 +513,7 @@ class DuplexKFold(Train):
                                      train_dataset_name.replace("/","_")),
                         "DuplexKFold_"+str(self.k)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Run cross validation
-    self._cross_validate(model, epochs, batch_size, d_inp, d_out, folder,
+    self._cross_validate(model, epochs, batch_size, data, folder,
                          train_dataset_name, verbose, image_dpi, screen_dpi)
