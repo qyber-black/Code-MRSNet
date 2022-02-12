@@ -194,7 +194,7 @@ class Autoencoder:
       raise Exception("Not an auto-encoder")
     if p[1] == "cnn":
       # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
-      #    FITLER: size of initial filter on conv input; other filter sizes computed from it
+      #    FILTER: size of initial filter on conv input; other filter sizes computed from it
       #    LATENT: size of latent representation
       #    pool|stride: use max-pooling/up-sampling or strides for reduction/increase
       #    DO: Dropout if > 0.0; 0.0, BatchNormalisation; negative, no regulariser
