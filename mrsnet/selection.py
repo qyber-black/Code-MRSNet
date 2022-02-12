@@ -79,7 +79,7 @@ class Select:
         na[k] = [str(key_vals[k])]
     # Get model info
     if na['model'][0] == 'cnn':
-      # Model fully parameterised
+      # CNN model fully parameterised
       from mrsnet.cnn import CNN
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = ('cnn_' + na['model_S1'][0] +
@@ -101,8 +101,27 @@ class Select:
       from mrsnet.cnn import CNN
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
+    elif na['model'][0] == 'ae_fc':
+      # AE-FC model fully parameterised
+      from mrsnet.autoencoder import Autoencoder
+      # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
+      model_str = ('ae_fc' + na['model_LIN'][0] +
+                       '_' + na['model_LOUT'][0] +
+                       '_' + na['model_ACT'][0] +
+                       '_' + na['model_DO'][0])
+      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
+                                   na['acquisitions'], na['datatype'], na['norm'][0]))
+    elif na['model'][0] == 'ae_cnn':
+      # AE-CNN model fully parameterised
+      from mrsnet.autoencoder import Autoencoder
+      # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
+      model_str = ('ae_cnn' + na['model_FILTER'][0] +
+                        '_' + na['model_LATENT'][0] +
+                        '_' + na['model_POOLING'][0] +
+                        '_' + na['model_DO'][0])
+      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
+                                   na['acquisitions'], na['datatype'], na['norm'][0]))
     else:
-      # FIXME: add ae_[cnn,fc] models with parameters
       raise Exception(f"Unknown model {na['model']}")
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
     fold=""

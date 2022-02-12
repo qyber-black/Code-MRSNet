@@ -31,7 +31,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   if model.model[0:3] == "ae_":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
-    # FIXME: have to check later if the autoencoder is produced concentrations via the model string and then use the concentration analysis instead (code after this condition)
+    # FIXME: have to check later if the autoencoder produceS concentrations via the model string and then use the concentration analysis instead (code after this condition)
     return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
 
   # Analyse if we have concentrations
