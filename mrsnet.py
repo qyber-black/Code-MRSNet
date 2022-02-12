@@ -524,18 +524,18 @@ def quantify(args):
   import numpy as np
   if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")):
     id = get_std_name(args.dataset)
-    name = os.path.join(*id[-9:-1])
+    ds_name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
     if args.verbose > 0:
-      print(f"# Loading dataset {name} : {ds_rest}")
-    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+      print(f"# Loading dataset {ds_name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],ds_name,ds_rest))
   elif os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
     id = get_std_name(args.dataset)
-    name = os.path.join(*id[-9:-1])
+    ds_name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
     if args.verbose > 0:
-      print(f"# Loading dataset {name} : {ds_rest}")
-    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+      print(f"# Loading dataset {ds_name} : {ds_rest}")
+    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],ds_name,ds_rest))
   else:
     ds = None # Load later, as dicom and we don't know metabolites
   id = get_std_name(args.model)
@@ -553,9 +553,10 @@ def quantify(args):
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
     print(f"# Loading model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
+  folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
+    quantifier = CNN.load(folder)
   else:
     raise Exception("Unknown model "+name)
   if ds is None:
@@ -568,18 +569,23 @@ def quantify(args):
                                                    concentrations=concentrations,
                                                    metabolites=quantifier.metabolites,
                                                    verbose=args.verbose)
+    id = get_std_name(args.dataset)
+    while id[0] == '.' or id[0] == '..':
+      id = id[1:]
+    ds_name = os.path.join(*id[:-2])
+    ds_rest = id[-1]
   # Export for quantification
   d_inp, d_out = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
                            low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm,
                            n_fft_pts=quantifier.fft_samples, verbose=args.verbose)
-  from mrsnet.analyse import analyse_model
   id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
   # Store results in data repository
-  analyse_model(quantifier, d_inp, d_out, args.dataset,
+  from mrsnet.analyse import analyse_model
+  analyse_model(quantifier, d_inp, d_out, folder,
                 id=[s[id_ref].id for s in ds.spectra],
                 show_conc=True, save_conc=True,
-                verbose=args.verbose, prefix=str(quantifier).replace("/","_"),
+                verbose=args.verbose, prefix=os.path.join(ds_name,ds_rest).replace("/","_"),
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'])
 
 def benchmark(args):

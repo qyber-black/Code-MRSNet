@@ -165,7 +165,7 @@ class CNN:
     else:
       validation_data = None
 
-    if verbose > 1:
+    if verbose > 0:
       print("  Input:",d_inp.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Output:",d_out.shape,"[spectrum, metabolite_concentration]")
 
