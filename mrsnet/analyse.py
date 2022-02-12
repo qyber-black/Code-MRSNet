@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import linregress
 
+from mrsnet.cfg import Cfg
+
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False,
                   verbose=0, image_dpi=[300], screen_dpi=96):
   pred_op = getattr(model, "predict", None)
@@ -24,7 +26,14 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   # Analyse data (assumed to be exported from dataset in format as used by model for train call)
   if not os.path.exists(folder):
     os.makedirs(folder)
+
   pre = model.predict(inp,verbose=verbose)
+
+  if model.model[0:3] == "ae_":
+    # Analyse output spectra and errors, if possible, as we have a pure autoencoder
+    # FIXME: have to check later if the autoencoder is produced concentrations via the model string and then use the concentration analysis instead (code after this condition)
+    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
+
   # Analyse if we have concentrations
   if len(out) > 0:
     info, error = _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi)
@@ -76,7 +85,6 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
           print('  %12s  %.8f' % (m, pre[l,k]))
 
   return pre, info, error
-
 
 def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi):
   error = pre - out
@@ -204,3 +212,166 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
   plt.close()
 
   return info, error
+
+def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi):
+  # Analyse spectra output from autoencoder
+  if len(out) > 0:
+    # Difference between predicted and actual spectra
+    # Stats are over all spectra and frequency bins, hence tuple as axis
+    # (first axis is spectrum id and 3rd/last axis is frequency bin; 1,2 is acquisition,datatype)
+    if verbose > 0:
+      print("# Analysing difference between predicted and actual spectra")
+    error = pre - out
+    error_mean = np.mean(error,axis=(0,3))
+    error_std = np.std(error,axis=(0,3))
+    error_min = np.min(error,axis=(0,3))
+    error_max = np.max(error,axis=(0,3))
+    abserror = np.abs(error)
+    abserror_mean = np.mean(abserror,axis=(0,3))
+    abserror_std = np.std(abserror,axis=(0,3))
+    abserror_min = np.min(abserror,axis=(0,3))
+    abserror_max = np.max(abserror,axis=(0,3))
+    info = { 'prefix': prefix }
+    # Per acquisition-datatype signal
+    fig, axes =  plt.subplots(pre.shape[1],pre.shape[2]+1)
+    fig.suptitle(f"Spectra Signal Prediction Error Analysis ({prefix})")
+    for ac in range(0,pre.shape[1]):
+      for dt in range(0,pre.shape[2]):
+        if verbose > 0:
+          print(f"Signals for {model.acquisitions[ac]}-{model.datatype[dt]}")
+        info[f"Signal-{model.acquisitions[ac]}-{model.datatype[dt]}"] = {
+            'error': {
+              'mean': error_mean[ac,dt],
+              'std': error_std[ac,dt],
+              'min': error_min[ac,dt],
+              'max': error_max[ac,dt],
+            },
+            'abserror': {
+              'mean': abserror_mean[ac,dt],
+              'std': abserror_std[ac,dt],
+              'min': abserror_min[ac,dt],
+              'max': abserror_max[ac,dt],
+            }
+          }
+        d = np.copy(error[:,ac,dt,:]).flatten()
+        # Histogram over the full error distribution is expensive; so we sample to estimate, if configured
+        if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+          sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+          d = d[sel]
+        sns.histplot(d.flatten(), ax=axes[ac,dt])
+        axes[ac,dt].set_title(f"Error Dist. Signal {model.acquisitions[ac]}-{model.datatype[dt]}")
+        axes[ac,dt].set_xlabel("Error")
+        if ac == 0:
+          axes[ac,dt].set_ylabel("Count")
+    # Total error
+    error = np.reshape(error,np.prod(error.shape))
+    terror_mean = np.mean(error)
+    terror_std = np.std(error)
+    terror_min = np.min(error)
+    terror_max = np.max(error)
+    abserror = np.reshape(abserror,np.prod(abserror.shape))
+    tabserror_mean = np.mean(abserror)
+    tabserror_std = np.std(abserror)
+    tabserror_min = np.min(abserror)
+    tabserror_max = np.max(abserror)
+    info['total'] = {
+        'error': {
+          'mean': terror_mean,
+          'std': terror_std,
+          'min': terror_min,
+          'max': terror_max,
+        },
+        'abserror': {
+          'mean': tabserror_mean,
+          'std': tabserror_std,
+          'min': tabserror_min,
+          'max': tabserror_max,
+        }
+      }
+    if verbose > 0:
+      print(f"  Total mean absolute error ({prefix}): {info['total']['abserror']['mean']}")
+    d = error.flatten()
+    # Histogram over the full error distribution is expensive; so we sample to estimate, if configured
+    if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+      sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+      d = d[sel]
+    sns.histplot(d, ax=axes[0,pre.shape[2]])
+    axes[0,pre.shape[2]].set_title(f"Total Error Dist.")
+    axes[0,pre.shape[2]].set_xlabel("Error")
+
+    with open(os.path.join(folder, prefix+"_spectra_errors.json"), 'w') as f:
+      print(json.dumps(info, indent=2, sort_keys=True), file=f)
+    for f in glob.glob(os.path.join(folder, prefix + '_spectra_errors@*.png')):
+      os.remove(f)
+    for dpi in image_dpi:
+      plt.savefig(os.path.join(folder, prefix + '_spectra_errors@'+str(dpi)+'.png'), dpi=dpi)
+    if verbose > 1:
+      fig.set_dpi(screen_dpi)
+      plt.show()
+    plt.close()
+  else:
+    info = None
+    error = None
+
+  # FIXME: no analysis/output if there is not ground truth; could still produce generated spectra
+
+  return pre, info, error
+
+
+
+
+# FIXME:
+
+    # FIXME: comparison of input/output
+
+    ## # Noisy spectra dataset to test the performance of the reconstruction, It's An isolated variable to prevent if I mess up with the future d_inp variable, to keep the consistency of the d_inp
+    ## x_test_n = tf.reshape(d_spectra_in, (d_spectra_in.shape[0], 1, 2048))
+    ## # Clean spectra dataset to test the performance of the reconstruction
+    ## x_test = tf.reshape(d_spectra_out, (d_spectra_out.shape[0], 1, 2048))
+
+    ## # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
+    ## if self.datatype[0] == "magnitude":
+    ##   os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
+    ##   save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
+    ## elif self.datatype[0] == "real":
+    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
+    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+    ## elif self.datatype[0] == "imaginary":
+    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
+    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
+
+    # Print out the plots of first 5 noisy spectra that being put into the autoencoder and its comparison:"Clean spectra"
+    ## for i in range(5):
+    ##   encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
+    ##   decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
+
+    ##   plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
+    ##   plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
+
+    ######################
+
+
+# Plot difference
+def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
+  l = []
+  for i in range(0, 2048):
+    l.append(-4.5+i*3/2048)
+
+  plt.figure()
+  plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
+  plt.plot(l, contrast_input, label=data, color='#4169E1')
+
+  plt.xlim(-4.5, -1.5)
+  plt.ylim()
+
+  plt.xlabel('$Frequency$')
+  plt.ylabel(datatype) # Magnitude Phase Imaginary Real
+
+  plt.title(title+'_'+num)
+  plt.legend(loc='best')
+
+  if int(num)<0:
+    print('The plot will not be shown.')
+  else:
+    plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
+  plt.show()

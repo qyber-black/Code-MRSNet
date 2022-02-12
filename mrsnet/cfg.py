@@ -46,7 +46,9 @@ class Cfg:
     'ga_max_init_pop': 10, # SelectGA maximum initial population
     'default_screen_dpi': 96,
     'screen_dpi': None,
-    'image_dpi': [300]
+    'image_dpi': [300],
+    'analysis_spectra_error_dist_sampling': 10 # Percentage of error samples to estimate
+                                               # error distribution for spectra matching (for autoencoders)
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment vairbale MRSNET_DEV (colon separated list),

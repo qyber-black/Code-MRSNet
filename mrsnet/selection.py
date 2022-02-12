@@ -102,6 +102,7 @@ class Select:
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
     else:
+      # FIXME: add ae_[cnn,fc] models with parameters
       raise Exception(f"Unknown model {na['model']}")
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
     fold=""

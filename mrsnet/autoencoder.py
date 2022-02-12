@@ -373,34 +373,6 @@ class Autoencoder:
     le = len(history.history['loss'])
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
-    # FIXME: comparison of input/output
-
-    ## # Noisy spectra dataset to test the performance of the reconstruction, It's An isolated variable to prevent if I mess up with the future d_inp variable, to keep the consistency of the d_inp
-    ## x_test_n = tf.reshape(d_spectra_in, (d_spectra_in.shape[0], 1, 2048))
-    ## # Clean spectra dataset to test the performance of the reconstruction
-    ## x_test = tf.reshape(d_spectra_out, (d_spectra_out.shape[0], 1, 2048))
-
-    ## # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
-    ## if self.datatype[0] == "magnitude":
-    ##   os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
-    ##   save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
-    ## elif self.datatype[0] == "real":
-    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
-    ## elif self.datatype[0] == "imaginary":
-    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
-
-    # Print out the plots of first 5 noisy spectra that being put into the autoencoder and its comparison:"Clean spectra"
-    ## for i in range(5):
-    ##   encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
-    ##   decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
-
-    ##   plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
-    ##   plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
-
-    ######################
-
     if verbose > 0:
       print("# Evaluating Autoencoder")
     d_score = self.ae.evaluate(d_spectra_in, d_spectra_out, verbose=(verbose > 0)*2)
@@ -409,9 +381,9 @@ class Autoencoder:
     else:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
-      print("%s   Train          Validation" % (' '*len(loss)))
-      print("%s:  %.12f %.12f" % (loss.upper(), d_score[0], v_score[0]))
-      print("%s:  %.12f %.12f" % (loss.upper(), d_score[1], v_score[1]))
+      print(f"             Train          Validation")
+      print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
+      print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
     self._save_results(folder, "ae", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
 
     d_res={loss.upper():d_score[0],"MAE":d_score[1]}
@@ -419,17 +391,25 @@ class Autoencoder:
     return d_res, v_res
 
     # FIXME: regression/concentration fitting network after autoencoder is trained
+    # The best way to do this is to add additional parameters to the model string that indicate
+    # we wish to predict the concentrations and then paramters with that to indicate the structure
+    # of the concentration prediction network part. Then we can select between autoencoder only
+    # or autoencoder+concentration. This also needs to then be consider in the predict function.
+    # The analyse function can determine if it is to analyse spectra error or concentration
+    # errors from this as well.
 
-  # FIXME: if this is not defined, analyse_model will not analyse concentration predictions and quantify does not work
-  #        this is OK as long as we only have the autoencoder part.
-  ##def predict(self, d_inp, reshape=True, verbose=0):
-  ##  if reshape:
-  ##    d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
-  ##    d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
-  ##  options = tf.data.Options()
-  ##  options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-  ##  data = tf.data.Dataset.from_tensor_slices((d_inp)).batch(32).with_options(options)
-  ##  return np.array(self.reg.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
+  def predict(self, spec_in, reshape=True, verbose=0):
+    # FIXME: set up to do the autoencoder spectra prediction (which should be ~noise filtering).
+    # Once we have the concentration prediction, we need to switch between two modes here
+    # depending on the model string.
+    out_shape = spec_in.shape # Preserve shape of input spectra to reshape output accordingly
+    if reshape:
+      spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
+      spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    data = tf.data.Dataset.from_tensor_slices((spec_in)).batch(32).with_options(options)
+    return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
 
   def save(self, folder):
     path=os.path.join(folder, "tf_ae_model")
@@ -491,30 +471,3 @@ class Autoencoder:
       fig.set_dpi(screen_dpi)
       plt.show(block=True)
     plt.close()
-
-
-# FIXME:
-# Plot difference
-def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
-  l = []
-  for i in range(0, 2048):
-    l.append(-4.5+i*3/2048)
-
-  plt.figure()
-  plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
-  plt.plot(l, contrast_input, label=data, color='#4169E1')
-
-  plt.xlim(-4.5, -1.5)
-  plt.ylim()
-
-  plt.xlabel('$Frequency$')
-  plt.ylabel(datatype) # Magnitude Phase Imaginary Real
-
-  plt.title(title+'_'+num)
-  plt.legend(loc='best')
-
-  if int(num)<0:
-    print('The plot will not be shown.')
-  else:
-    plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
-  plt.show()
