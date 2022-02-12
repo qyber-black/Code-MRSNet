@@ -313,65 +313,63 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
     info = None
     error = None
 
-  # FIXME: no analysis/output if there is not ground truth; could still produce generated spectra
+  # Plot and compare spectra
+  path = os.path.join(folder, prefix + "_spectra")
+  if not os.path.exists(path):
+    os.makedirs(path)
+  if verbose > 0:
+    print("# Plot predicted spectra: "+path)
+  if len(out) > 0:
+    ss = min(pre.shape[0],Cfg.val['analysis_predicted_spectra_samples']) # Limit spectra if we have ground truth
+  else:
+    ss = pre.shape[0] # All spectra if no ground truth
+  for s in range(0,ss):
+    fig = _plot_predicted_spectra(model, prefix, s, inp[s,:,:,:], pre[s,:,:,:], out[s,:,:,:] if len(out) > 0 else [])
+    for dpi in image_dpi:
+      plt.savefig(os.path.join(path, f'spectrum_{s}@'+str(dpi)+'.png'), dpi=dpi)
+    if verbose > 1:
+      fig.set_dpi(screen_dpi)
+      plt.show()
+    plt.close()
+  plt.show()
 
   return pre, info, error
 
-
-
-
-# FIXME:
-
-    # FIXME: comparison of input/output
-
-    ## # Noisy spectra dataset to test the performance of the reconstruction, It's An isolated variable to prevent if I mess up with the future d_inp variable, to keep the consistency of the d_inp
-    ## x_test_n = tf.reshape(d_spectra_in, (d_spectra_in.shape[0], 1, 2048))
-    ## # Clean spectra dataset to test the performance of the reconstruction
-    ## x_test = tf.reshape(d_spectra_out, (d_spectra_out.shape[0], 1, 2048))
-
-    ## # These are the cheap job I did for see the comparison, I have to manually changed the number on directory address every time
-    ## if self.datatype[0] == "magnitude":
-    ##   os.makedirs(folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/")
-    ##   save_plot = folder + "/Comparison_ta_ta_32_32_5000-1n_dpAll_0.3/"
-    ## elif self.datatype[0] == "real":
-    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
-    ## elif self.datatype[0] == "imaginary":
-    ##   os.makedirs(folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/")
-    ##   save_plot = folder + "/Comparison_ta_ta_64_8_5000-1n_dpAll_0.3/"
-
-    # Print out the plots of first 5 noisy spectra that being put into the autoencoder and its comparison:"Clean spectra"
-    ## for i in range(5):
-    ##   encoder_imgs = self.ae.encoder(x_test_n[i]).numpy()
-    ##   decoder_imgs = self.ae.decoder(encoder_imgs).numpy()
-
-    ##   plot_spectra_(decoder_imgs[0, 0], x_test_n[i, 0], 'Reconstructed spectra vs Noisy spectra', 'Noisy spectra', save_plot,str(i),self.datatype[0])
-    ##   plot_spectra_(decoder_imgs[0, 0], x_test[i, 0], 'Reconstructed spectra vs clean spectra', 'Clean spectra', save_plot,str(i),self.datatype[0])
-
-    ######################
-
-
 # Plot difference
-def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
-  l = []
-  for i in range(0, 2048):
-    l.append(-4.5+i*3/2048)
+def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
+  rs = pre.shape[0]*pre.shape[1]
+  fig, axs = plt.subplots(rs,3)
+  fig.suptitle(f"Spectra Signal Prediction ({prefix})")
 
-  plt.figure()
-  plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
-  plt.plot(l, contrast_input, label=data, color='#4169E1')
+  X = np.arange(model.high_ppm,model.low_ppm,(model.low_ppm-model.high_ppm)/pre.shape[2])
 
-  plt.xlim(-4.5, -1.5)
-  plt.ylim()
+  r = 0
+  for ac in range(0,pre.shape[0]):
+    for dt in range(0,pre.shape[1]):
+      axs[r,0].plot(X,inp[ac,dt,:])
+      axs[r,0].set_title("Input "+model.acquisitions[ac])
+      axs[r,0].set_ylabel(model.datatype[dt])
+      if r == rs:
+        axs[r,0].set_xlabel("Frequency (ppm)")
 
-  plt.xlabel('$Frequency$')
-  plt.ylabel(datatype) # Magnitude Phase Imaginary Real
+      axs[r,1].plot(X,pre[ac,dt,:])
+      axs[r,1].set_title("Pred. "+model.acquisitions[ac])
+      if r == rs:
+        axs[r,1].set_xlabel("Frequency (ppm)")
 
-  plt.title(title+'_'+num)
-  plt.legend(loc='best')
+      if len(out) > 0:
+        axs[r,2].plot(X,out[ac,dt,:],color='#DC143C',label="True")
+        axs[r,2].plot(X,pre[ac,dt,:],color='#4169E1',label="Pred")
+      else:
+        axs[r,2].plot(X,inp[ac,dt,:],color='#DC143C',label="Input")
+        axs[r,2].plot(X,pre[ac,dt,:],color='#4169E1',label="Pred")
+      axs[r,2].set_title("Diff. "+model.acquisitions[ac])
+      if r == rs:
+        axs[r,2].set_xlabel("Frequency (ppm)")
+      axs[r,2].legend(loc='best')
 
-  if int(num)<0:
-    print('The plot will not be shown.')
-  else:
-    plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
-  plt.show()
+      r += 1
+
+  # plt.legend()
+
+  return fig
