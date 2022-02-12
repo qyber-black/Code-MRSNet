@@ -200,8 +200,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_[cnn,fc] for autoencoder (see mrsnet/autoencoder.py)')
-                 #FIXME: expand ae_ string with architecture options
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder (see mrsnet/autoencoder.py)')
   p.add_argument('-b', '--batchsize', type=int, default=16,
                  help='Batch size (per GPU if multi-GPU).')
 

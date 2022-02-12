@@ -23,229 +23,138 @@ from .cnn import TimeHistory
 
 # Helper to construct convolutional encoder layer
 def _enc_conv_layer(m, filter, c, s, pooling, dropout):
+  # Conv1D layer over last index (freq. bins) with convolution kernel size c and relu activation
+  # if pooling == True:  use s max pooling;
+  #            == False: use s strides
+  # if dropout > 0: dropout rate after activation;
+  #            ==0: batch normalisation before activation;
+  #            < 0: nothing
   if pooling:
-    m.add(Conv2D(filter, c, padding="same"))
+    m.add(Conv1D(filter, c, strides=1, padding="same", data_format="channels_first"))
   else:
-    m.add(Conv2D(filter, c, padding="same", strides=s))
+    m.add(Conv1D(filter, c, strides=s, padding="same", data_format="channels_first"))
   if dropout == 0.0:
     m.add(BatchNormalization())
   m.add(Activation('relu'))
   if dropout > 0.0:
     m.add(Dropout(dropout))
   if pooling:
-    m.add(MaxPool2D(s))
+    m.add(MaxPool1D(s))
 
 # Helper to construct convolutional decoder layer
-def _dec_conv_layer(m, filter, c, s, pooling, dropout):
+def _dec_convt_layer(m, filter, c, s, pooling, dropout):
+  # Conv1DT layer over last index (freq. filter bins) with convolution kernel size c and relu activation
+  # if pooling == True:  use s max pooling;
+  #            == False: use s strides
+  # if dropout > 0: dropout rate after activation;
+  #            ==0: batch normalisation before activation;
+  #            < 0: nothing
   if pooling:
-    m.add(Conv2DTranspose(filter, c, padding="same"))
+    m.add(Conv1DTranspose(filter, c, strides=1, padding="same", data_format="channels_first"))
   else:
-    m.add(Conv2DTranspose(filter, c, padding="same", strides=s))
+    m.add(Conv1DTranspose(filter, c, strides=s, padding="same", data_format="channels_first"))
   if dropout == 0.0:
     m.add(BatchNormalization())
   m.add(Activation('relu'))
   if dropout > 0.0:
     m.add(Dropout(dropout))
   if pooling:
-    m.add(UpSampling2D(s))
-
-# Helper to construct dense encoder layer
-def _enc_dense_layer(m, dim, activation,):
-  if activation == 're':
-    m.add(Dense(dim,activation='relu'))
-  elif activation == 'sig':
-    m.add(Dense(dim,activation='sigmoid'))
-  elif activation == 'ta':
-    m.add(Dense(dim, activation='tanh'))
-
-# Helper to construct dense decoder layer
-def _dec_dense_layer(m,dim,activation,):
-  if activation == 're':
-    m.add(Dense(dim,activation='relu'))
-  elif activation == 'sig':
-    m.add(Dense(dim,activation='sigmoid'))
-  elif activation == 'ta':
-    m.add(Dense(dim, activation='tanh'))
-
-# Dropout layer
-def _drop_out_layer(m,r):
-  m.add(Dropout(r))
-
-# Plot difference
-def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
-  l = []
-  for i in range(0, 2048):
-    l.append(-4.5+i*3/2048)
-
-  plt.figure()
-  plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
-  plt.plot(l, contrast_input, label=data, color='#4169E1')
-
-  plt.xlim(-4.5, -1.5)
-  plt.ylim()
-
-  plt.xlabel('$Frequency$')
-  plt.ylabel(datatype) # Magnitude Phase Imaginary Real
-
-  plt.title(title+'_'+num)
-  plt.legend(loc='best')
-
-  if int(num)<0:
-    print('The plot will not be shown.')
-  else:
-    plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
-  plt.show()
+    m.add(UpSampling1D(s))
 
 # Convolutional autoencoder via Model interface (using Sequential interface internally)
 class ConvAutoEnc(Model):
 
-  def __init__(self, ae_shape, name='ConvAutoEnc'):
+  def __init__(self, n_specs, n_freqs, filter, latent, pooling, dropout, name='ConvAutoEnc'):
+    # n_specs: number of spectra (acquisisions x datatype)
+    # n_freqs: number of frequency bins in spectra
+    # filter: numbner of filters on input conv layer (others computed from this)
+    # latent: size of latent representation
+    # pooling: Pooling or strides for up/downsampling?
+    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
+    # FIXME: could parameterise kernel size(s) and strides and also depth of network
     super(ConvAutoEnc, self).__init__(name=name)
 
     # Encoder
     self.encoder = tf.keras.Sequential(name='Encoder')
-    re_r = ae_shape[0]//2             # reshape for decoder (divide by row strides in encoder)
-    re_c = ae_shape[1]//(4*4*2*4*4)   # reshape for decoder (divide by column strides in encoder)
-    re_f = 512                        # last filter size, reshape in decoder
     # Encoder Layers: filter, convolution_kernel, strides, pooling, dropout
-    # pooling: Pooling or strides for up/downsampling?
-    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, no regulariser
-    _enc_conv_layer(self.encoder, 256, (1,7), (1,4), False, 0.0)
-    _enc_conv_layer(self.encoder, 256, (1,5), (1,4), False, -1.0)
-    #
-    _enc_conv_layer(self.encoder, 256, (2,3), (1,1), False, -1.0)
-    _enc_conv_layer(self.encoder, 256, (2,3), (2,2), False, -1.0)
-    _enc_conv_layer(self.encoder, 512, (2,3), (1,1), False, -1.0)
-    _enc_conv_layer(self.encoder, 512, (2,3), (1,1), False, -1.0)
-    #
-    _enc_conv_layer(self.encoder, 512, (1,5), (1,4), False, -1.0)
-    _enc_conv_layer(self.encoder, re_f, (1,5), (1,4), False, -1.0)
+    _enc_conv_layer(self.encoder, filter,   7, 2, pooling, dropout)
+    _enc_conv_layer(self.encoder, filter,   7, 2, pooling, dropout)
+    _enc_conv_layer(self.encoder, 2*filter, 5, 2, pooling, dropout)
+    _enc_conv_layer(self.encoder, 2*filter, 5, 2, pooling, dropout)
+    _enc_conv_layer(self.encoder, 2*filter, 3, 1, pooling, dropout)
+    _enc_conv_layer(self.encoder, 2*filter, 3, 1, pooling, dropout)
     self.encoder.add(Flatten())
-    self.encoder.add(Dense(2048)) # Latent representation size
+    self.encoder.add(Dense(latent)) # Latent representation size
+
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
-    self.decoder.add(Dense(re_r * re_c * re_f))
-    self.decoder.add(Reshape(target_shape=(re_r,re_c,re_f)))
+    n_channels = 2*filter
+    n_signal = n_freqs//(2*2*2*2) # Divide by strides in encoder
+    self.decoder.add(Dense(n_channels * n_signal))
+    self.decoder.add(Reshape(target_shape=(n_channels, n_signal)))
     # Decoder Layers: filter, convolution_kernel, strides, pooling, dropout
-    _dec_convt_layer(self.decoder, re_f, (1,5), (1,4), False, -1.0)
-    _dec_convt_layer(self.decoder, 512, (1,5), (1,4), False, -1.0)
-    #
-    _dec_convt_layer(self.decoder, 512, (2,3), (1,1), False, -1.0)
-    _dec_convt_layer(self.decoder, 512, (2,3), (1,1), False, -1.0)
-    _dec_convt_layer(self.decoder, 256, (2,3), (2,2), False, -1.0)
-    _dec_convt_layer(self.decoder, 256, (2,3), (1,1), False, -1.0)
-    #
-    _dec_convt_layer(self.decoder, 256, (1,5), (1,4), False, -1.0)
-    _dec_convt_layer(self.decoder, 256, (1,7), (1,4), False, -1.0)
+    _dec_convt_layer(self.decoder, 2*filter, 3, 1, pooling, dropout)
+    _dec_convt_layer(self.decoder, 2*filter, 3, 1, pooling, dropout)
+    _dec_convt_layer(self.decoder, 2*filter, 5, 2, pooling, dropout)
+    _dec_convt_layer(self.decoder, 2*filter, 5, 2, pooling, dropout)
+    _dec_convt_layer(self.decoder, filter,   7, 2, pooling, dropout)
+    _dec_convt_layer(self.decoder, filter,   7, 2, pooling, dropout)
     # Final, no activation
-    self.decoder.add(Conv2D(1, kernel_size=(1, 7), activation=None, padding='same'))
+    self.decoder.add(Conv1D(n_specs, 7, activation=None, padding='same', data_format="channels_first"))
 
-    self.build((None,*ae_shape))
+    self.build((None,n_specs,n_freqs))
 
   def call(self,x):
     x = self.encoder(x)
     x = self.decoder(x)
     return x
 
-#  Fully connected autoencoder via Model interface (using Sequential interface internally) For magnitude
-class DenseAutoEnc_mag(Model):
+# Helper to construct dense layer
+def _dense_layer(m, units, activation, dropout):
+  # Dense layer over last index (freq. bins) using given activation
+  # if dropout > 0: dropout rate after activation;
+  #            ==0: batch normalisation before activation;
+  #            < 0: nothing
+  m.add(Dense(units))
+  if dropout == 0.0:
+    m.add(BatchNormalization())
+  m.add(Activation(activation))
+  if dropout > 0.0:
+    m.add(Dropout(dropout))
 
-  def __init__(self, ae_shape, name='DenseAutoEnc_mag'):
-    super(DenseAutoEnc_mag, self).__init__(name=name)
+#  Fully connected autoencoder via Model interface (using Sequential interface internally)
+class FCAutoEnc(Model):
+
+  def __init__(self, n_specs, n_freqs, layers_enc, layers_dec, activation, dropout, name='FCAutoEnc'):
+    # n_specs: number of spectra (acquisisions x datatype)
+    # n_freqs: number of frequency bins in spectra
+    # layers_enc: number of layers in encoder
+    # layers_dec: number of layers in encoder
+    # activation: activation function (relu, sigmoid, tanh)
+    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
+    super(FCAutoEnc, self).__init__(name=name)
+
     # Encoder
     self.encoder = tf.keras.Sequential(name='Encoder')
-    self.encoder.add(Flatten())
-    _enc_dense_layer(self.encoder, 2048, "ta")
-    _drop_out_layer(self.encoder,0.3)
-    _enc_dense_layer(self.encoder, 1024, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 512, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 256, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 128, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 64, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 32, "ta")
-    #_enc_dense_layer(self.encoder, 32, "sig")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 16, "ta")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 8, "ta")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 8, "sig")
+    units = n_freqs
+    for l in range(0,layers_enc-1):
+      _dense_layer(self.encoder, units, activation, dropout)
+      units //= 2
+    _dense_layer(self.encoder, units, activation, -1) # no regulariser at latent representation
 
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
-    #_dec_dense_layer(self.decoder, 8, "ta")
-    #_dec_dense_layer(self.decoder, 16, "ta")
-    _dec_dense_layer(self.decoder, 32, "ta")
-    _dec_dense_layer(self.decoder, 64, "ta")
-    _dec_dense_layer(self.decoder, 128, "ta")
-    _dec_dense_layer(self.decoder, 256, "ta")
-    _dec_dense_layer(self.decoder, 512, "ta")
-    _dec_dense_layer(self.decoder, 1024, "ta")
-    _dec_dense_layer(self.decoder, 2048, "ta")
-    self.decoder.add(Reshape((1, 2048)))
+    units = n_freqs//(2**(layers_dec-1))
+    for l in range(0,layers_dec):
+      _dense_layer(self.decoder, units, activation, -1) # no regularisers in decoder
+      units *= 2
 
-    self.build((None,*ae_shape))
+    self.build((None,n_specs,n_freqs))
 
   def call(self, x):
     x = self.encoder(x)
     x = self.decoder(x)
     return x
-
-# Fully connected autoencoder via Model interface (using Sequential interface internally)
-# For Real:r and Imaginary:i
-class DenseAutoEnc_r_i(Model):
-
-  def __init__(self, ae_shape, name='DenseAutoEnc_r_i'):
-    super(DenseAutoEnc_r_i, self).__init__(name=name)
-    # Encoder
-    self.encoder = tf.keras.Sequential(name='Encoder')
-    self.encoder.add(Flatten())
-    _enc_dense_layer(self.encoder, 2048, "ta")
-    _drop_out_layer(self.encoder,0.3)
-    _enc_dense_layer(self.encoder, 1024, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 512, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 256, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 128, "ta")
-    _drop_out_layer(self.encoder, 0.3)
-    _enc_dense_layer(self.encoder, 64, "ta")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 32, "ta")
-    #_enc_dense_layer(self.encoder, 32, "sig")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 16, "ta")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 8, "ta")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 8, "sig")
-
-    # Decoder
-    self.decoder = tf.keras.Sequential(name='Decoder')
-    _dec_dense_layer(self.decoder, 8, "ta")
-    _dec_dense_layer(self.decoder, 16, "ta")
-    _dec_dense_layer(self.decoder, 32, "ta")
-    _dec_dense_layer(self.decoder, 64, "ta")
-    _dec_dense_layer(self.decoder, 128, "ta")
-    _dec_dense_layer(self.decoder, 256, "ta")
-    _dec_dense_layer(self.decoder, 512, "ta")
-    _dec_dense_layer(self.decoder, 1024, "ta")
-    _dec_dense_layer(self.decoder, 2048, "ta")
-    self.decoder.add(Reshape((1, 2048)))
-
-    self.build((None,*ae_shape))
-
-  def call(self, x):
-    x = self.encoder(x)
-    x = self.decoder(x)
-    return x
-
 
 # Autoencoder model
 class Autoencoder:
@@ -278,16 +187,40 @@ class Autoencoder:
     self.train_dataset_name = None
 
   def _construct(self, ae_shape):
-    if self.model != "ae_cnn": # FIXME: eventually we'll have more models, parameterised/selected via self.model
-      raise Exception("Unknown autoencoder model")
-    # Define the autoencoder via the functional interface
-    #self.ae = ConvAutoEnc(ae_shape=ae_shape)
-    if self.datatype[0] == "magnitude":
-      self.ae = DenseAutoEnc_mag(ae_shape=ae_shape)
-    elif self.datatype[0] == "real":
-      self.ae = DenseAutoEnc_r_i(ae_shape=ae_shape)
-    elif self.datatype[0]== "imaginary":
-      self.ae = DenseAutoEnc_r_i(ae_shape=ae_shape)
+    n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
+    n_freqs = ae_shape[1] # number of frequency bins in spectras
+    p = self.model.split("_")
+    if p[0] != "ae":
+      raise Exception("Not an auto-encoder")
+    if p[1] == "cnn":
+      # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
+      #    FITLER: size of initial filter on conv input; other filter sizes computed from it
+      #    LATENT: size of latent representation
+      #    pool|stride: use max-pooling/up-sampling or strides for reduction/increase
+      #    DO: Dropout if > 0.0; 0.0, BatchNormalisation; negative, no regulariser
+      filter = int(p[2])
+      latent = int(p[3])
+      if p[4] == "pool":
+        pooling = True
+      elif p[4] == "stride":
+        pooling = False
+      else:
+        raise Exception("2nd arg must be pool|stride")
+      dropout = float(p[5])
+      self.ae = ConvAutoEnc(n_specs,n_freqs,filter,latent,pooling,dropout)
+    elif p[1] == "fc":
+      # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
+      #    LIN: dense layers in encoder
+      #    LOUT: dense layers in decoder
+      #    ACT: activation function (relu, sigmoid, tanh, ...)
+      #    DO: Dropout if > 0.0; 0.0, BatchNormalisation; negative, no regulariser
+      lin = int(p[2])
+      lout = int(p[3])
+      act = p[4]
+      dropout = float(p[5])
+      self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,dropout)
+    else:
+      raise Exception("Unknown autoencoder variant")
 
   def train(self, d_data, v_data, epochs, batch_size,
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -310,9 +243,23 @@ class Autoencoder:
     if not os.path.isdir(folder):
       os.makedirs(folder)
 
-    # Setup training data - FIXME: maybe 3D OK here, no flattening?
+    # Setup training data
     if verbose > 0:
       print("# Prepare data")
+
+    # We reshape the (batch, acquisition, datatype, frequency) spectra tensor to
+    # the channel (so channel is not last, as often assumed). That means we treat
+    # (batch, acquisition x datatype, frequency) where the 2nd index is effectively
+    # echo acquisition-dataypte signal as separate with a separate 1D network
+    # (for now we do not have any operations crossing the channels, I think).
+    #
+    # FIXME: Something to consider:
+    # Instead, we could also reshape it to (batch x acquisition x datatype, frequency)
+    # meaning each signal, idependent of acquistion and datatype, is handled
+    # the same with the same network. We only have a collection of 1D signals for
+    # the autoencoder - for quantification then this would need some more complex
+    # reshaping as there we will have to consider the signals across acquisitons and
+    # datatypes.
 
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
     d_spectra_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
@@ -342,7 +289,7 @@ class Autoencoder:
       ae_val_data = None
       conc_val_data = None
 
-    if verbose > 1:
+    if verbose > 0:
       print("  Spectra In:    ",d_spectra_in.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Spectra Out:   ",d_spectra_out.shape,"[spectrum, acquisition x datatype, frequency]")
       print("  Concentrations:",d_conc.shape,"[spectrum, metabolite_concentration]")
@@ -365,8 +312,8 @@ class Autoencoder:
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
         self.ae.compile(loss=loss,
-                         optimizer=optimiser,
-                         metrics=['mae'])
+                        optimizer=optimiser,
+                        metrics=['mae'])
     else:
       # Single GPU / CPU training
       dev_multiplier = 1
@@ -544,3 +491,30 @@ class Autoencoder:
       fig.set_dpi(screen_dpi)
       plt.show(block=True)
     plt.close()
+
+
+# FIXME:
+# Plot difference
+def plot_spectra_(input, contrast_input, title, data, location, num,datatype):
+  l = []
+  for i in range(0, 2048):
+    l.append(-4.5+i*3/2048)
+
+  plt.figure()
+  plt.plot(l, input, label='Reconstructed Spectra', color='#DC143C')
+  plt.plot(l, contrast_input, label=data, color='#4169E1')
+
+  plt.xlim(-4.5, -1.5)
+  plt.ylim()
+
+  plt.xlabel('$Frequency$')
+  plt.ylabel(datatype) # Magnitude Phase Imaginary Real
+
+  plt.title(title+'_'+num)
+  plt.legend(loc='best')
+
+  if int(num)<0:
+    print('The plot will not be shown.')
+  else:
+    plt.savefig(os.path.join(location,num+'_'+title+  '.png'))
+  plt.show()
