@@ -219,8 +219,8 @@ class DenseAutoEnc_r_i(Model):
     _drop_out_layer(self.encoder, 0.3)
     _enc_dense_layer(self.encoder, 32, "ta")
     #_enc_dense_layer(self.encoder, 32, "sig")
-    #_drop_out_layer(self.encoder, 0.3)
-    #_enc_dense_layer(self.encoder, 16, "ta")
+    _drop_out_layer(self.encoder, 0.3)
+    _enc_dense_layer(self.encoder, 16, "ta")
     #_drop_out_layer(self.encoder, 0.3)
     #_enc_dense_layer(self.encoder, 8, "ta")
     #_drop_out_layer(self.encoder, 0.3)
@@ -228,7 +228,7 @@ class DenseAutoEnc_r_i(Model):
 
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
-    _dec_dense_layer(self.decoder, 8, "ta")
+    #_dec_dense_layer(self.decoder, 8, "ta")
     _dec_dense_layer(self.decoder, 16, "ta")
     _dec_dense_layer(self.decoder, 32, "ta")
     _dec_dense_layer(self.decoder, 64, "ta")
@@ -390,8 +390,8 @@ class Autoencoder:
         os.makedirs(folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/")
         save_plot = folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/"
     elif self.datatype[0] == "real":
-        os.makedirs(folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/")
-        save_plot = folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/"
+        os.makedirs(folder + "/Comparison_ta_ta_16_8_5000-1n_dpAll_0.3/")
+        save_plot = folder + "/Comparison_ta_ta_16_8_5000-1n_dpAll_0.3/"
     elif self.datatype[0] == "imaginary":
         os.makedirs(folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/")
         save_plot = folder + "/Comparison_ta_ta_32_8_5000-1n_dpAll_0.3/"
