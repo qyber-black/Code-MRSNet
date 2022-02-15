@@ -41,13 +41,13 @@ class Spectrum:
 
     self.noise = None
 
-  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
-            phase_correct=False):
+  def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
+            remove_water_peak=False, phase_correct=False):
     self.fft = np.asarray(fft)
     self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 
-  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0, remove_water_peak=False,
-            phase_correct=False):
+  def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
+            remove_water_peak=False, phase_correct=False):
     self.fft = npfft.fftshift(npfft.fft(adc))
     self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
 

@@ -378,7 +378,8 @@ def generate_datasets(args):
               (isinstance(v[ki],list) and 'su-3tskyra' in v[ki]) or
               (not isinstance(v[ki],list) and v[ki] == 'su-3tskyra')):
             skip_lw = True
-        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel/su-3tskyra interpreated a None linewidth
+        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
+          # 1.0 for lcmodel/su-3tskyra interpreated a None linewidth
           linewidth1 = True
         cmd.append("--"+k[ki])
         if isinstance(v[ki],list):
@@ -386,7 +387,7 @@ def generate_datasets(args):
             cmd.append(str(val))
         else:
           cmd.append(str(v[ki]))
-      if not skip_lw or linewidth1: # Skip unsupported linwidths for lcmodel
+      if not skip_lw or linewidth1: # Skip unsupported linwidths for lcmodel/su-3tskyra
         if args.verbose > 0:
           print('# Run '+' '.join(cmd[3:]))
         try:
@@ -522,14 +523,8 @@ def quantify(args):
   # Quantify sub-command
   import mrsnet.dataset as dataset
   import numpy as np
-  if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")):
-    id = get_std_name(args.dataset)
-    ds_name = os.path.join(*id[-9:-1])
-    ds_rest = id[-1]
-    if args.verbose > 0:
-      print(f"# Loading dataset {ds_name} : {ds_rest}")
-    ds = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],ds_name,ds_rest))
-  elif os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
+  if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")) or \
+     os.path.isfile(os.path.join(args.dataset,"spectra_clean.joblib")):
     id = get_std_name(args.dataset)
     ds_name = os.path.join(*id[-9:-1])
     ds_rest = id[-1]
@@ -635,7 +630,8 @@ def benchmark(args):
                                 verbose=args.verbose)
       from mrsnet.analyse import analyse_model
       id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
-      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batchsize, epochs,
+      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name,
+                                                           batchsize, epochs,
                                                            train_model, trainer, rest),
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
