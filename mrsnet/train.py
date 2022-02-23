@@ -65,12 +65,6 @@ class Train:
     train_res = { 'error': [None]*self.k }
     val_res = { 'error': [None]*self.k }
     has_error = True # analyse_model produces error distribtuions if this is true
-    # Determine index of data to compare prediction to - this is the last index for concentrations by default
-    out_idx = -1
-    if model.model[0:3] == 'ae_':
-      # If we have an autoencoder, the prediction can also be the spectrum, which is idx 1
-      # FIXME: check if autoencoder produces spectra or concentrations and adjust suitably (-1 if concentrations)
-      out_idx = 1
     for val_fold in range(0,self.k):
       if verbose > 0:
         print(f"# Fold {val_fold+1} of {self.k}")
@@ -92,13 +86,13 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
-      _, info, err = analyse_model(model, data[0][train_sel], data[out_idx][train_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
       if err is not None:
         train_res['error'][val_fold] = err
       else:
         has_error = False # Should be the same across all calls, but set it each time anyway
-      _, info, err = analyse_model(model, data[0][val_sel], data[out_idx][val_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
       if err is not None:
         val_res['error'][val_fold] = err

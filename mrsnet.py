@@ -464,7 +464,7 @@ def train(args):
                              acquisitions=args.acquisitions, datatype=args.datatype,
                              high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                              verbose=args.verbose)
-    data = [d_inp, d_out]
+    data = [d_inp, d_out] # output last
     data_name = ds.name+"_"+ds_rest
   elif args.model[0:3] == 'ae_':
     from mrsnet.autoencoder import Autoencoder
@@ -490,13 +490,13 @@ def train(args):
                                       high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                                       verbose=args.verbose)
     if ds_noisy.noise_added:
-      d_clean, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+      d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
                                    acquisitions=args.acquisitions, datatype=args.datatype,
                                    high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                                    export_concentrations=False, verbose=args.verbose)
     else:
       d_clean = d_noise
-    data = [d_noise, d_clean, d_conc]
+    data = [d_noise, d_conc, d_clean] # output last
     data_name = ds_noisy.name+"_"+ds_rest
   else:
     raise Exception(f"Unknown model {args.model}")

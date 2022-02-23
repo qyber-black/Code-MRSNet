@@ -166,6 +166,8 @@ class Autoencoder:
     self.acquisitions = acquisitions
     self.datatype = datatype
     self.norm = norm
+    self.output = "spectra" # FIXME: Set this to concentrations if the model produces concentrations
+                            # Used by analyse to determine analysis type!
 
     # Input spectra data (constant!)
     self.low_ppm = -1.0
@@ -262,8 +264,8 @@ class Autoencoder:
     # datatypes.
 
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
-    d_spectra_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
-    d_conc = tf.convert_to_tensor(d_data[2], dtype=tf.float32)
+    d_spectra_out = tf.convert_to_tensor(d_data[2], dtype=tf.float32)
+    d_conc = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
     d_spectra_in = tf.reshape(d_spectra_in,
                               (d_spectra_in.shape[0],
                                d_spectra_in.shape[1]*d_spectra_in.shape[2],d_spectra_in.shape[3]))
@@ -275,8 +277,8 @@ class Autoencoder:
 
     if v_data != None:
       v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
-      v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
-      v_conc = tf.convert_to_tensor(v_data[2], dtype=tf.float32)
+      v_spectra_out = tf.convert_to_tensor(v_data[2], dtype=tf.float32)
+      v_conc = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
       v_spectra_in = tf.reshape(v_spectra_in,
                                 (v_spectra_in.shape[0],
                                  v_spectra_in.shape[1]*v_spectra_in.shape[2],v_spectra_in.shape[3]))
@@ -392,11 +394,14 @@ class Autoencoder:
 
     # FIXME: regression/concentration fitting network after autoencoder is trained
     # The best way to do this is to add additional parameters to the model string that indicate
-    # we wish to predict the concentrations and then paramters with that to indicate the structure
+    # we wish to predict the concentrations and then parameters with that to indicate the structure
     # of the concentration prediction network part. Then we can select between autoencoder only
     # or autoencoder+concentration. This also needs to then be consider in the predict function.
     # The analyse function can determine if it is to analyse spectra error or concentration
     # errors from this as well.
+    # This also means we need to adjust the self.output depending on what the final model outputs.
+    # The output is always the last element of the data list and the trainer calling the above train
+    # function will use this to analyse the model.
 
   def predict(self, spec_in, reshape=True, verbose=0):
     # FIXME: set up to do the autoencoder spectra prediction (which should be ~noise filtering).

@@ -29,10 +29,12 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   pre = model.predict(inp,verbose=verbose)
 
-  if model.model[0:3] == "ae_":
+  if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
-    # FIXME: have to check later if the autoencoder produceS concentrations via the model string and then use the concentration analysis instead (code after this condition)
     return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
+
+  if model.output != "concentrations":
+    raise Exception(f"Unknown output from model: {model.output} - cannot analyse")
 
   # Analyse if we have concentrations
   if len(out) > 0:
@@ -234,6 +236,8 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
     info = { 'prefix': prefix }
     # Per acquisition-datatype signal
     fig, axes =  plt.subplots(pre.shape[1],pre.shape[2]+1)
+    if pre.shape[1] == 1:
+      axes = axes.reshape((1,axes.shape[0])) # Subplot can change the indices; undo this
     fig.suptitle(f"Spectra Signal Prediction Error Analysis ({prefix})")
     for ac in range(0,pre.shape[1]):
       for dt in range(0,pre.shape[2]):
@@ -327,11 +331,10 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
     fig = _plot_predicted_spectra(model, prefix, s, inp[s,:,:,:], pre[s,:,:,:], out[s,:,:,:] if len(out) > 0 else [])
     for dpi in image_dpi:
       plt.savefig(os.path.join(path, f'spectrum_{s}@'+str(dpi)+'.png'), dpi=dpi)
-    if verbose > 1:
+    if verbose > 3:
       fig.set_dpi(screen_dpi)
       plt.show()
     plt.close()
-  plt.show()
 
   return pre, info, error
 
@@ -339,6 +342,8 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
 def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
   rs = pre.shape[0]*pre.shape[1]
   fig, axs = plt.subplots(rs,3)
+  if rs == 1:
+    axs = axs.reshape(1,3) # Undo subplot change of indices
   fig.suptitle(f"Spectra Signal Prediction ({prefix})")
 
   X = np.arange(model.high_ppm,model.low_ppm,(model.low_ppm-model.high_ppm)/pre.shape[2])
@@ -369,7 +374,5 @@ def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
       axs[r,2].legend(loc='best')
 
       r += 1
-
-  # plt.legend()
 
   return fig
