@@ -18,5 +18,3 @@
 [submodule "data/model-dist"]
 	path = data/model-dist
 	url = git@qyber.black:mrs/data-mrsnet-model-dist.git
-[submodule "./mrsnet/simulators/fida/FID-A"]
-	url = https://github.com/CIC-methods/FID-A.git

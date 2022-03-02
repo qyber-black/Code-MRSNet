@@ -1,6 +1,6 @@
 # mrsnet/comapre.py - MRSNet - compare and analyse spectra
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -18,7 +18,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     print("# Preparing reference spectra from basis")
   ref_spectra = Dataset("Basis Spectra")
   diff = 0.0
-  if verbose > 1:
+  if verbose > 3:
     basis.plot('magnitude','fft')
     plt.show(block=True)
     plt.close()
@@ -90,7 +90,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
   print(f"             Phase: {dd[2,1]:12f} {m[2,1]:12f} {s[2,1]:12f}")
   print(f"              Real: {dd[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f}")
   print(f"         Imaginary: {dd[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f}")
-  if verbose > 0:
+  if verbose > 3:
     fig, axs = plt.subplots(4,3,sharey=True)
     fig.suptitle("Differences over all Spectra")
     for l in range(3):

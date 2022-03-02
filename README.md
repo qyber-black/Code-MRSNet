@@ -1,7 +1,8 @@
 # MRSNet
 
 > SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University  
-> SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University  
+> SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University  
+> SPDX-FileCopyrightText: Copyright (C) 2021-2022 S Shermer <lw1660@gmail.com>, Swansea University
 > SPDX-License-Identifier: AGPL-3.0-or-later  
 
 MRSNet is aimed at MR spectral quantification using convolutional neural
@@ -27,6 +28,7 @@ https://langbein.org/mrsnet-paper/
 * [FID-A](https://github.com/CIC-methods/FID-A) - MRS simulation toolbox.
 * [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS
   simulation toolbox.
+* For all packages used, see `requirements.txt`.
 
 ### Data Sources
 
@@ -50,19 +52,42 @@ https://langbein.org/mrsnet-paper/
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
     `sudo apt update && sudo apt install git git-lfs python3.9 pip`.
+  * For scipy/numpy you may need to install lapack and blas libraries for your
+    system. We use fftw3 for the Fourier transform functions via pyfftw by
+    default (see the `npfft_module` config variable and configuration files
+    below), so you may also have to install `libfftw3`. Any such missing
+    packages may cause the pip3 install command below to fail.
 * MATLAB - Only required if you plan to simulate new FID-A spectra (the basis
   sets we used in the paper are in the git data/basis submodule).
 
 ### Install Instructions (Linux)
 
-1. Clone the repository: `git clone git@qyber.black:mrs/code-mrsnet.git mrsnet`
-   (check the clone url, as this  may be different if you use a different
-   repository, e.g. from a mirror or alternative versions for development, etc).
-2. Navigate to the directory: `cd mrsnet`
-   (make sure to select a branch or tag with `git checkout BRANCH_OR_TAG` for a
-   specific version instead of the master branch).
-3. Update submodules: `git submodule update --init --recursive`.
-4. Install the requirements: `pip3 install -r requirements.txt`.
+1. Clone the repository:
+   ```
+   git clone git@qyber.black:mrs/code-mrsnet.git mrsnet
+   ```
+   Check the clone url, as it may be different if you use a different
+   repository, e.g. from a mirror or alternative versions for development, etc.
+2. Navigate to the directory:
+   ```
+   cd mrsnet
+   ```
+   Make sure to select a branch or tag with `git checkout BRANCH_OR_TAG` for a
+   specific version instead of the main branch.
+3. Update submodules:
+   ```
+   git submodule update --init --recursive
+   ```
+4. Install the requirements:
+   ```
+   pip3 install -r requirements.txt
+   ```
+   Note that the requirements may need additional libraries, etc. to be
+   installed on you system that pip does not add (see note above).
+
+To update to the latest version (of your selected branch), run `git pull` and
+step 3 and 4 above in the project folder. To switch to another version or branch
+run `git checkout BRANCH_OR_TAG` first.
 
 Call `mrsnet.py --help` to get further information about all its sub-commands
 and `mrsnet.py COMMAND --help` for details for each sub-command. The
@@ -70,12 +95,22 @@ sub-commands available are:
 
 * basis:              Generate basis, if it does not exist.
 * simulate:           Generate simulated spectra dataset.
-* generate_datasets:  Generate standard datasets.
-* compare:            Compare spectra.
+* generate_datasets:  Generate standard simulated spectra datasets.
+* compare:            Compare spectra with basis.
 * train:              Train model on dataset.
 * select:             Model selection on dataset.
 * quantify:           Quantify spectra in dicoms.
 * benchmark:          Run benchmark on model.
+
+Generally it is best to run `mrsnet.py` from the base-folder of the git
+repository. The folder locations in data are determined by the real location of
+the `mrsnet.py` file (not symbolic links). These and other configuration values
+can be overwritten by providing a `~/.config/mrsnet.json` file (see `Cfg` class
+in `mrsnet/cfg.py` for details). If you change the location of the folders in
+data, you do have to make sure the submodule data is available in the new
+location. MRSNet does not search multiple paths. MRSNet also stores configuration
+values in `cfg.json` in the project folder. This overwrites the defaults from
+`cfg.py` (`mrsnet.json` overwrites `cfg.json`).
 
 #### Folders and Git Submodules
 
@@ -95,19 +130,6 @@ etc.:
 
 These can be cloned into those folders, if you wish to explore this data and use
 it for your own analysis.
-
-Generally it is best to run `mrsnet.py` from the base-folder of the git
-repository. The folder locations in data are determined by the real location of
-the `mrsnet.py` file (not symbolic links). These and other configuration values
-can be overwritten by providing a `~/.config/mrsnet.json` file (see `Cfg` class
-in `mrsnet/cfg.py` for details; generally this is not needed). If you change the
-location of the folders in data, you do have to make sure the submodule data
-is available in the new location. MRSNet does not search multiple paths.
-
-MRSNet uses a MRSNET_DEV environment variable for activating test and development
-code. It's values are explained in `mrsnet/cfg.py`, but this is only relevant
-for development and not the general operation. Note, operation of this may change
-at any time.
 
 ## Simulating Spectra
 

@@ -1,6 +1,6 @@
 # mrsnet/selection.py - MRSNet - model selection
 #
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -20,17 +20,24 @@ from mrsnet.cfg import Cfg
 class Select:
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
     from mrsnet.dataset import Dataset
-    if os.path.isfile(os.path.join(dataset,"spectra.joblib")):
+    if os.path.isfile(os.path.join(dataset,"spectra_noisy.joblib")):
       id = _get_std_name(dataset)
       name = os.path.join(*id[-9:-1])
       self.ds_rest = id[-1]
       if verbose > 0:
         print(f"# Loading dataset {name} : {self.ds_rest}")
-      ds = Dataset.load(dataset)
+      ds = Dataset.load(dataset, info_only=True)
+      self.pulse_sequence = ds.pulse_sequence
+    elif os.path.isfile(os.path.join(dataset,"spectra_clean.joblib")):
+      id = _get_std_name(dataset)
+      name = os.path.join(*id[-9:-1])
+      self.ds_rest = id[-1]
+      if verbose > 0:
+        print(f"# Loading dataset {name} : {self.ds_rest}")
+      ds = Dataset.load(dataset, info_only=True)
       self.pulse_sequence = ds.pulse_sequence
     else:
       raise Exception("Cannot find dataset")
-      ds = None # Load later, as dicom and we don't know metabolites
     self.metabolites = metabolites
     self.dataset = dataset
     self.epochs = epochs
@@ -72,7 +79,7 @@ class Select:
         na[k] = [str(key_vals[k])]
     # Get model info
     if na['model'][0] == 'cnn':
-      # Model fully parameterised
+      # CNN model fully parameterised
       from mrsnet.cnn import CNN
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = ('cnn_' + na['model_S1'][0] +
@@ -94,6 +101,26 @@ class Select:
       from mrsnet.cnn import CNN
       model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
                            na['acquisitions'], na['datatype'], na['norm'][0]))
+    elif na['model'][0] == 'ae_fc':
+      # AE-FC model fully parameterised
+      from mrsnet.autoencoder import Autoencoder
+      # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
+      model_str = ('ae_fc' + na['model_LIN'][0] +
+                       '_' + na['model_LOUT'][0] +
+                       '_' + na['model_ACT'][0] +
+                       '_' + na['model_DO'][0])
+      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
+                                   na['acquisitions'], na['datatype'], na['norm'][0]))
+    elif na['model'][0] == 'ae_cnn':
+      # AE-CNN model fully parameterised
+      from mrsnet.autoencoder import Autoencoder
+      # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
+      model_str = ('ae_cnn' + na['model_FILTER'][0] +
+                        '_' + na['model_LATENT'][0] +
+                        '_' + na['model_POOLING'][0] +
+                        '_' + na['model_DO'][0])
+      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
+                                   na['acquisitions'], na['datatype'], na['norm'][0]))
     else:
       raise Exception(f"Unknown model {na['model']}")
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
@@ -303,10 +330,10 @@ class Select:
       if len(fold) == 0:
         with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        train_p = [data['wasserstein_distance_error']]
+        train_p = [data['total']['abserror']['mean']] # total MAE
         with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
           data = json.load(f)
-        val_p = [data['wasserstein_distance_error']]
+        val_p = [data['total']['abserror']['mean']] # total MAE
       else:
         train_p = []
         val_p = []
@@ -314,10 +341,10 @@ class Select:
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
           with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
             data = json.load(f)
-          train_p.append(data['wasserstein_distance_error'])
+          train_p.append(data['total']['abserror']['mean']) # total MAE
           with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
             data = json.load(f)
-          val_p.append(data['wasserstein_distance_error'])
+          val_p.append(data['total']['abserror']['mean']) # total MAE
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
@@ -330,7 +357,9 @@ class Select:
     var_keys.sort()
     fix_keys.sort()
     # Results folder
-    folder = os.path.join(self.dataset,collection_name+"-"+str(self.epochs))
+    basename = os.path.basename(collection_name).replace(".json","")
+    from mrsnet.getfolder import get_folder
+    folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-%s")
     if not os.path.exists(folder):
       os.makedirs(folder)
     # Store performance data
@@ -388,7 +417,7 @@ class Select:
     ax.legend(loc="upper right", frameon=True)
     ax.set(xlim=(0,np.max([np.max([self.val_performance[idx[p]] for p in range(0,top_n)]),
                            np.max([self.train_performance[idx[p]] for p in range(0,top_n)])])),
-           ylabel="", xlabel="Wasserstein Distance Error")
+           ylabel="", xlabel="Mean Absolute Concentration Error")
     fig.tight_layout()
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"errors@"+str(dpi)+".png"), dpi=dpi)
@@ -570,7 +599,7 @@ class SelectGPO(Select):
     XDiff = [0]
     XLast = Xdata[-1,:]
     if self.verbose > 0:
-      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n)} samples")
+      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
 
     # Optimisation iterations
     current_iter = len(self.key_vals)
@@ -652,13 +681,123 @@ class SelectGPO(Select):
       plt.show(block=True)
     plt.close()
 
-class SelectEvo(Select):
+class SelectGA(Select):
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
-    super(SelectEvo, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super(SelectGA, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
+    self.last_fitness = 0
 
   def optimise(self, collection_name, models, path_model):
-    raise Exception("Not implemented")
+    import pygad
+    if self.verbose > 0:
+      print("# GA Model Selection")
+    keys = [k for k in models.values.keys()]
+    var_keys = [k for k in keys if len(models.values[k]) > 1]
+    fix_keys = [k for k in keys if len(models.values[k]) == 1]
+    total = np.prod([len(models.values[k]) for k in keys])
+    global ga_aux
+    ga_aux = {
+      'select': self,
+      'keys': keys,
+      'var_keys': var_keys,
+      'fix_keys': fix_keys,
+      'models': models,
+      'path_model': path_model,
+      'last_fitness': 0
+    }
+    # GA Setup
+    pop = int(min(0.01*total,Cfg.val["ga_max_init_pop"]))
+    num_parents_mating = Cfg.val["ga_num_parents_mating"]
+    gene_space = []
+    gene_len = []
+    for k in range(0,len(var_keys)):
+      gene_space.append(np.arange(0,len(models.values[var_keys[k]])))
+      gene_len.append(len(gene_space[-1]))
+    dim = len(var_keys)
+    import math
+    skip = math.floor(math.log(pop*dim,2))
+    initial_population = np.ndarray((pop,dim))
+    select = sobol_seq.i4_sobol_generate(dim, pop+skip)[skip:,:]
+    for l in range(0,select.shape[0]):
+      initial_population[l,:] = np.floor(select[l] * gene_len)
+    ga_instance = pygad.GA(num_generations=self.repeats,
+                           num_parents_mating=num_parents_mating,
+                           initial_population=initial_population,
+                           gene_type=int,
+                           gene_space=gene_space,
+                           parent_selection_type="sus",
+                           crossover_type="single_point",
+                           crossover_probability=0.25,
+                           mutation_type="adaptive",
+                           mutation_probability=(0.25,0.1),
+                           mutation_percent_genes=(25,10),
+                           fitness_func=_ga_fitness_func,
+                           on_generation=_ga_on_generation,
+                           suppress_warnings=(self.verbose<5),
+                           allow_duplicate_genes=False)
+    # Running GA
+    ga_instance.run()
+    # Best solution.
+    solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
+    if self.verbose > 0:
+      print(f"Best solution: {solution} - fitness {solution_fitness} @ gen {ga_instance.best_solution_generation}")
+      l = 0
+      for k in keys:
+        if k in ga_aux['fix_keys']:
+          print(f"   {k} = {ga_aux['models'].values[k][0]}")
+        else:
+          print(f"  *{k} = {ga_aux['models'].values[k][solution[l]]}")
+          l += 1
+    # Store performance info
+    self._save_performance(collection_name+"-ga", var_keys, fix_keys)
+
+def _ga_fitness_func(solution, solution_idx):
+  global ga_aux
+  # Setup arguments
+  key_vals = {}
+  l = 0
+  for k in ga_aux['keys']:
+    if k in ga_aux['fix_keys']:
+      key_vals[k] = ga_aux['models'].values[k][0]
+    else:
+      key_vals[k] = ga_aux['models'].values[k][solution[l]]
+      l += 1
+  ga_aux['select']._add_task(key_vals, ga_aux['path_model'])
+  if ga_aux['select'].verbose > 0:
+    print(f"Evaluating {solution}")
+    print(f"  {[key_vals[k] for k in ga_aux['keys']]}")
+  # Run
+  if ga_aux['select'].verbose < 5:
+    v = ga_aux['select'].verbose
+    ga_aux['select'].verbose = 0
+  ga_aux['select']._run_tasks()
+  if ga_aux['select'].verbose < 5:
+    ga_aux['select'].verbose = v
+  # Gather result
+  val = None
+  for k in range(0,len(ga_aux['select'].key_vals)):
+    match = True
+    kv = ga_aux['select'].key_vals[k]
+    for l in range(0,len(ga_aux['var_keys'])):
+      lv = ga_aux['var_keys'][l]
+      if kv[lv] != ga_aux['models'].values[lv][solution[l]]:
+        match = False
+        break
+    if match:
+      val = ga_aux['select'].val_performance[k][0]
+      break
+  if val == None:
+    raise Exception("Could not find result")
+  if ga_aux['select'].verbose > 0:
+    print(f" = {val}")
+  return 1/(val+1e-8)
+
+def _ga_on_generation(ga_instance):
+  global ga_aux
+  if ga_aux['select'].verbose > 0:
+    print(f"# Generation: {ga_instance.generations_completed}")
+    print(f"  Fitness: {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]} - Delta:  {ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1] - ga_aux['last_fitness']}")
+  ga_aux['last_fitness'] = ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]
 
 def _get_std_name(name):
   _, path = os.path.splitdrive(name)
@@ -671,36 +810,3 @@ def _get_std_name(name):
       break
   id.reverse()
   return id
-
-Collections = {
-  # Parameter lists (i.e. lists for single arguments); must be sorted (same as mrsnet.py sort)!
-  'cnn-simple-all': Grid({
-    'norm':         ['sum','max'],
-    'acquisitions': [['difference','edit_off'],['difference','edit_on'],
-                     ['edit_off','edit_on'],['difference','edit_off','edit_on']],
-    'datatype':     [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
-    'model':        ['cnn_small_softmax','cnn_medium_softmax','cnn_large_softmax',
-                     'cnn_small_sigmoid_pool','cnn_medium_sigmoid_pool','cnn_large_sigmoid_pool'],
-    'batch_size':   [16,32,64]
-  }),
-  'cnn-para-all': Grid({
-    'norm':             ['sum', 'max'],
-    'acquisitions':     [['difference','edit_off','edit_on'],['difference','edit_on'],
-                         ['difference','edit_off'],['edit_off','edit_on']],
-    'datatype':         [['magnitude'],['magnitude','phase'],['imaginary','real'],['real']],
-    'model':            ['cnn'],
-    'model_S1':         [-2,2],
-    'model_S2':         [-3,-2,2,3],
-    'model_C1':         [3,5,7,9,11],
-    'model_C2':         [3,5,7,9],
-    'model_C3':         [3,5,7],
-    'model_C4':         [3,5],
-    'model_O1':         [0.0,0.3],
-    'model_O2':         [0.0,0.3],
-    'model_F1':         [256],
-    'model_F2':         [512],
-    'model_D':          [1024],
-    'model_ACTIVATION': ['softmax','sigmoid'],
-    'batch_size':       [16,32,64]
-  })
-}

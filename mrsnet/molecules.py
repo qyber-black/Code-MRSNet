@@ -1,32 +1,32 @@
 # mrsnet/metabolites.py - MRSNet - metabolites
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Molecule names understood by MRNet; mapping long-name to range of short-names.
 # Preferred short name is the first in the array, e.g. for myo-inositol 'MyI' will be chosen over 'mi'
 NAMES = {
-  'N-Acetylaspartate': ['NAA'],
+  'Alanine': ['ala'],
+  'Aspartate': ['asp'],
   'Creatine': ['Cr', 'cre'],
-  'GABA': ['GABA'],
   'Choline-truncated': ['Cho'],
+  'DSS': ['DSS'],
+  'GABA': ['GABA'],
   'Glutamate': ['Glu'],
   'Glutamine': ['Gln'],
   'GlutaX': ['GlX'],
   'Glutathione': ['gsh'],
   'Glycine': ['Gly'],
+  'Water': ['H2O'],
   'Lactate': ['Lac'],
   'Myo-Inositol': ['MyI', 'mi', 'ins'],
+  'N-Acetylaspartate': ['NAA'],
   'N-Acetylaspartylglutamic': ['NAAG'],
   'NAAG-truncated-siemens': ['NAAG-SIE'],
   'Phosphocreatine': ['PCr', 'pch'],
-  'Taurine': ['Tau'],
-  'Water': ['H2O'],
-  'DSS': ['DSS'],
-  'Alanine': ['ala'],
-  'Aspartate': ['asp'],
-  'Scyllo-Inositol': ['scyllo']
+  'Scyllo-Inositol': ['scyllo'],
+  'Taurine': ['Tau']
 }
 
 # B0 correction metabolites with reference peak location

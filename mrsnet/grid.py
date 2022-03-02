@@ -1,9 +1,10 @@
 # mrsnet/grid.py - MRSNet - key-value grid
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import numpy as np
+import json
 
 class Grid:
   def __init__(self, values):
@@ -14,6 +15,16 @@ class Grid:
 
   def __str__(self):
     return "Grid:\n" + "\n".join(["  "+k+": "+str(self.values[k]) for k in self.values])
+
+  @staticmethod
+  def load (filename):
+    with open(filename, 'rb') as load_file:
+      values = json.load(load_file)
+      for k in values:
+        for l in range(0,len(values[k])):
+          if isinstance(values[k][l],list):
+            values[k][l].sort()
+      return Grid(values)
 
   @staticmethod
   def all_combinations_sort(lst):

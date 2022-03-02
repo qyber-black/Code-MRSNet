@@ -1,7 +1,7 @@
 # mrsnet/train.py - MRSNet - training
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -15,6 +15,7 @@ from scipy.stats import wasserstein_distance
 
 from mrsnet.analyse import analyse_model
 from mrsnet.getfolder import get_folder
+from mrsnet.cfg import Cfg
 
 class Train:
 
@@ -26,7 +27,6 @@ class Train:
     # Plot distributions
     if len(d_out.shape) != 2:
       return # Nothing to plot, d_out is not a concentration tensor
-             # FIXME: has to be adapted for autoencoders to process concentrations, once used for quantification
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if self.k > 1:
@@ -59,19 +59,20 @@ class Train:
       plt.show(block=True)
     plt.close()
 
-  def _cross_validate(self, model, epochs, batch_size, d_inp, d_out, folder,
+  def _cross_validate(self, model, epochs, batch_size, data, folder,
                       train_dataset_name, verbose, image_dpi, screen_dpi):
     # Cross valildation
-    train_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
-    val_res = { 'error': [None]*self.k, 'wdq': [None]*self.k }
+    train_res = { 'error': [None]*self.k }
+    val_res = { 'error': [None]*self.k }
+    has_error = True # analyse_model produces error distribtuions if this is true
     for val_fold in range(0,self.k):
       if verbose > 0:
-        print(f"# Fold {val_fold} of {self.k}")
+        print(f"# Fold {val_fold+1} of {self.k}")
       fold_folder = os.path.join(folder,"fold-"+str(val_fold))
       val_sel = (self._bucket_idx == val_fold)
       train_sel = np.logical_not(val_sel)
-      train_score, val_score = model.train(d_inp[train_sel],d_out[train_sel],
-                                           d_inp[val_sel],d_out[val_sel],
+      train_score, val_score = model.train([data[l][train_sel] for l in range(0,len(data))],
+                                           [data[l][val_sel] for l in range(0,len(data))],
                                            epochs,batch_size,
                                            fold_folder,verbose=verbose,
                                            image_dpi=image_dpi,screen_dpi=screen_dpi,
@@ -85,15 +86,18 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
-      _, info, err = analyse_model(model, d_inp[train_sel], d_out[train_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
-
-      train_res['wdq'][val_fold] = info['wasserstein_distance_error']
-      train_res['error'][val_fold] = err
-      _, info, err = analyse_model(model, d_inp[val_sel], d_out[val_sel], fold_folder,
+      if err is not None:
+        train_res['error'][val_fold] = err
+      else:
+        has_error = False # Should be the same across all calls, but set it each time anyway
+      _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      val_res['wdq'][val_fold] = info['wasserstein_distance_error']
-      val_res['error'][val_fold] = err
+      if err is not None:
+        val_res['error'][val_fold] = err
+      else:
+        has_error = False # Should be the same across all calls, but set it each time anyway
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
           if val_fold == 0:
@@ -104,37 +108,45 @@ class Train:
       model.reset()
 
     # Pairwise Wasserstein distance between validation error distributions
-    if verbose > 0:
-      print("# Wasserstein distance")
-    max_wd_err = 0.0
-    max_wd_aerr = 0.0
-    for k1 in range(1,self.k):
-      # Compare distributions
-      for k2 in range(0,k1):
-        wd = wasserstein_distance(val_res['error'][k1],val_res['error'][k2],
-                                  np.ones(len(val_res['error'][k1])) / len(val_res['error'][k1]),
-                                  np.ones(len(val_res['error'][k2])) / len(val_res['error'][k2]))
-        if verbose > 1:
-          print(f"    {k1} - {k2} = {wd}")
-        if wd > max_wd_err:
-          max_wd_err = wd
-        wd = wasserstein_distance(np.abs(val_res['error'][k1]), np.abs(val_res['error'][k2]),
-                                  np.ones(len(val_res['error'][k1])) / len(val_res['error'][k1]),
-                                  np.ones(len(val_res['error'][k2])) / len(val_res['error'][k2]))
-        if verbose > 1:
-          print(f"    |{k1}| - |{k2}| = {wd}")
-        if wd > max_wd_aerr:
-          max_wd_aerr = wd
-    if verbose > 0:
-      print(f"  Max 1st order Wasserstein distance between error: {max_wd_err}")
-      print(f"  Max 1st order Wasserstein distance between absolute error: {max_wd_aerr}")
+    if has_error:
+      if verbose > 0:
+        print("# Wasserstein distance between fold error distributions")
+      max_wd_err = 0.0
+      max_wd_aerr = 0.0
+      for k1 in range(1,self.k):
+        # Compare distributions
+        for k2 in range(0,k1):
+          if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+            # Sample distributions for large number of values, depending on cfg.
+            l = len(val_res['error'][k1])
+            sel1 = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+            sel2 = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+            wd = wasserstein_distance(val_res['error'][k1][sel1],val_res['error'][k2][sel2])
+            wda = wasserstein_distance(np.abs(val_res['error'][k1][sel1]), np.abs(val_res['error'][k2][sel2]))
+          else:
+            wd = wasserstein_distance(val_res['error'][k1],val_res['error'][k2])
+            wda = wasserstein_distance(np.abs(val_res['error'][k1]), np.abs(val_res['error'][k2]))
+          if verbose > 1:
+            print(f"    {k1} - {k2} = {wd}")
+            print(f"    |{k1}| - |{k2}| = {wda}")
+          if wd > max_wd_err:
+            max_wd_err = wd
+          if wda > max_wd_aerr:
+            max_wd_aerr = wda
+      if verbose > 0:
+        print(f"  Max 1st order Wasserstein distance between validation error: {max_wd_err}")
+        print(f"  Max 1st order Wasserstein distance between absolute validation error: {max_wd_aerr}")
+    else:
+      max_wd_err = None
+      max_wd_aerr = None
 
     # Plot corss-validation results
-    self._plot_cross_validate(train_res, val_res, folder, verbose, image_dpi, screen_dpi)
+    self._plot_cross_validate(model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi)
 
     # Save cross-validation result
-    del train_res['error']
-    del val_res['error']
+    if has_error:
+      del train_res['error']
+      del val_res['error']
     with open(os.path.join(folder, "cv_result.json"), 'w') as f:
       print(json.dumps({
           'folds': self.k,
@@ -144,58 +156,95 @@ class Train:
           'max_wasserstein_distance_absolute_error': max_wd_aerr,
         }, indent=2, sort_keys=True), file=f)
 
-  def _plot_cross_validate(self, train_res, val_res, folder, verbose, image_dpi, screen_dpi):
+  def _plot_cross_validate(self, model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi):
     # Plot cross validation results
-    err_min = np.min([np.min([np.min(train_res['error'][l]),np.min(val_res['error'][l])])
-                      for l in range(0,self.k)])
-    err_max = np.max([np.max([np.max(train_res['error'][l]),np.max(val_res['error'][l])])
-                      for l in range(0,self.k)])
-    aerr_min = np.min([np.min([np.min(np.abs(train_res['error'][l])),np.min(np.abs(val_res['error'][l]))])
-                       for l in range(0,self.k)])
-    aerr_max = np.max([np.max([np.max(np.abs(train_res['error'][l])),np.max(np.abs(val_res['error'][l]))])
-                       for l in range(0,self.k)])
-    err_d = (err_max-err_min)*0.025
-    err_min -= err_d
-    err_max += err_d
-    err_d = (aerr_max-aerr_min)*0.025
-    aerr_min -= err_d
-    aerr_max += err_d
+
+    # Error distributions
+    if has_error:
+      err_min = np.min([np.min([np.min(train_res['error'][l]),np.min(val_res['error'][l])])
+                        for l in range(0,self.k)])
+      err_max = np.max([np.max([np.max(train_res['error'][l]),np.max(val_res['error'][l])])
+                        for l in range(0,self.k)])
+      aerr_min = np.min([np.min([np.min(np.abs(train_res['error'][l])),np.min(np.abs(val_res['error'][l]))])
+                         for l in range(0,self.k)])
+      aerr_max = np.max([np.max([np.max(np.abs(train_res['error'][l])),np.max(np.abs(val_res['error'][l]))])
+                         for l in range(0,self.k)])
+      err_d = (err_max-err_min)*0.025
+      err_min -= err_d
+      err_max += err_d
+      err_d = (aerr_max-aerr_min)*0.025
+      aerr_min -= err_d
+      aerr_max += err_d
 
     import matplotlib.gridspec as gridspec
     fig = plt.figure()
-    gs = gridspec.GridSpec(ncols=4,nrows=3,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
-    ax00 = fig.add_subplot(gs[0,0:2])
-    ax01 = fig.add_subplot(gs[0,2:])
-    ax10 = fig.add_subplot(gs[1,0:2])
-    ax11 = fig.add_subplot(gs[1,2:])
-    ax20 = fig.add_subplot(gs[2,0:1])
-    ax21 = fig.add_subplot(gs[2,2:3])
+    if has_error:
+      gs = gridspec.GridSpec(ncols=4,nrows=3,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
+      ax00 = fig.add_subplot(gs[0,0:2])
+      ax01 = fig.add_subplot(gs[0,2:])
+      ax10 = fig.add_subplot(gs[1,0:2])
+      ax11 = fig.add_subplot(gs[1,2:])
+      ax20 = fig.add_subplot(gs[2,0:1])
+      ax21 = fig.add_subplot(gs[2,2:3])
+    else:
+      gs = gridspec.GridSpec(ncols=4,nrows=1,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
+      ax20 = fig.add_subplot(gs[0,0:1])
+      ax21 = fig.add_subplot(gs[0,2:3])
 
-    ax00.set_title("Train Error Distributions")
-    sns.boxplot(data=train_res['error'], ax=ax00)
-    ax00.set_ylim([err_min,err_max])
-    ax00.set_xlabel("Fold")
-    ax00.set_ylabel("Error")
+    if has_error:
+      ax00.set_title(f"Train Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[train_res['error'][k][np.random.randint(0,len(train_res['error'][k]),
+                                                                  size=len(train_res['error'][k])
+                                                                       *Cfg.val['analysis_spectra_error_dist_sampling']//100)]
+                          for k in range(0,self.k)], ax=ax00)
+      else:
+        sns.boxplot(data=train_res['error'], ax=ax00)
+      ax00.set_ylim([err_min,err_max])
+      ax00.set_xlabel("Fold")
+      ax00.set_ylabel("Error")
 
-    ax01.set_title("Validation Error Distributions")
-    sns.boxplot(data=val_res['error'], ax=ax01)
-    ax01.set_ylim([err_min,err_max])
-    ax01.set_xlabel("Fold")
-    ax01.set_ylabel("Error")
+      ax01.set_title(f"Validation Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[val_res['error'][k][np.random.randint(0,len(val_res['error'][k]),
+                                                                size=len(val_res['error'][k])
+                                                                     *Cfg.val['analysis_spectra_error_dist_sampling']//100)]
+                          for k in range(0,self.k)], ax=ax01)
+      else:
+        sns.boxplot(data=val_res['error'], ax=ax01)
+      ax01.set_ylim([err_min,err_max])
+      ax01.set_xlabel("Fold")
+      ax01.set_ylabel("Error")
 
-    ax10.set_title("Train Absolute Error Distributions")
-    sns.boxplot(data=[np.abs(train_res['error'][k]) for k in range(0,self.k)],
-                ax=ax10)
-    ax10.set_ylim([aerr_min,aerr_max])
-    ax10.set_xlabel("Fold")
-    ax10.set_ylabel("Abs. Error")
+      ax10.set_title("Train Absolute Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[np.abs(train_res['error'][k][np.random.randint(0,len(train_res['error'][k]),
+                                                                         size=len(train_res['error'][k])
+                                                                              *Cfg.val['analysis_spectra_error_dist_sampling']//100)])
+                          for k in range(0,self.k)], ax=ax10)
+      else:
+        sns.boxplot(data=[np.abs(train_res['error'][k]) for k in range(0,self.k)],
+                    ax=ax10)
+      ax10.set_ylim([aerr_min,aerr_max])
+      ax10.set_xlabel("Fold")
+      ax10.set_ylabel("Abs. Error")
 
-    ax11.set_title("Validation Absolute Error Distributions")
-    sns.boxplot(data=[np.abs(np.array(val_res['error'][k])).tolist() for k in range(0,self.k)],
-                ax=ax11)
-    ax11.set_ylim([aerr_min,aerr_max])
-    ax11.set_ylabel("Abs. Error")
-    ax11.set_xlabel("Fold")
+      ax11.set_title("Validation Absolute Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[np.abs(np.array(val_res['error'][k][np.random.randint(0,len(val_res['error'][k]),
+                                                                                size=len(val_res['error'][k])
+                                                                                     *Cfg.val['analysis_spectra_error_dist_sampling']//100)]))
+                          for k in range(0,self.k)], ax=ax11)
+      else:
+        sns.boxplot(data=[np.abs(np.array(val_res['error'][k])) for k in range(0,self.k)],
+                    ax=ax11)
+      ax11.set_ylim([aerr_min,aerr_max])
+      ax11.set_ylabel("Abs. Error")
+      ax11.set_xlabel("Fold")
 
     ax20.set_title("Train Metrics")
     keys = [k for k in sorted(train_res.keys())]
@@ -252,26 +301,22 @@ class NoValidation(Train):
   def __init__(self):
     Train.__init__(self,1)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
-    # No validation
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
     if verbose > 0:
       print("# No Validation")
-    # Plot distribution
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
-    # Train
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
                                      train_dataset_name.replace("/","_")),
                         "NoValidation-%s")
-    model.train(d_inp,d_out,np.array([]),np.array([]),
-                epochs,batch_size,
+    # Plot output distribution
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
+    # Train
+    model.train(data,None,epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, d_inp, d_out, folder,
+    analyse_model(model, data[0], data[-1], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
 
 class Split(Train):
@@ -279,13 +324,13 @@ class Split(Train):
     Train.__init__(self,2)
     self.p = p
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Split train/validation by percentage
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
-      print(f"# Creating {self.p} split for {out_dim}-dimensional output data for {data_dim} points")
+      print(f"# Creating {self.p} split for {out_dim}-dimensional output data for {data_dim} inputs")
     idx = np.arange(0,data_dim)
     if shuffle:
       if verbose > 0:
@@ -306,31 +351,33 @@ class Split(Train):
                                      train_dataset_name.replace("/","_")),
                         "Split_"+str(self.p)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Train
     val_sel = (self._bucket_idx == 0)
     train_sel = np.logical_not(val_sel)
-    model.train(d_inp[train_sel],d_out[train_sel],d_inp[val_sel],d_out[val_sel],
+    model.train([data[l][train_sel] for l in range(0,len(data))],
+                [data[l][val_sel] for l in range(0,len(data))],
                 epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, d_inp[train_sel], d_out[train_sel], folder,
+    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, d_inp[val_sel], d_out[val_sel], folder,
-                  verbose=verbose, prefix='validation', image_dpi=image_dpi,screen_dpi=screen_dpi)
+    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
+                  verbose=verbose, prefix='validation',
+                  image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class DuplexSplit(Train):
   def __init__(self,p):
     Train.__init__(self,2)
     self.p = p
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Duplex split
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.p} duplex split for {out_dim}-dimensional output data for {data_dim} points")
     # Assign pairs to bucket in order of largest distance
@@ -340,7 +387,7 @@ class DuplexSplit(Train):
     self._bucket_idx = -np.ones((data_dim),dtype=np.int64)
     if verbose > 0:
       print("    Pairwise distances")
-    dm = squareform(pdist(d_out,'mahalanobis'))
+    dm = squareform(pdist(data[-1],'mahalanobis'))
     dm[np.isnan(dm)] = -1.0
     if verbose > 0:
       print("    Init buckets")
@@ -355,15 +402,15 @@ class DuplexSplit(Train):
         self._bucket_idx[row_i] = k_b
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
-        k_b += 1
         if verbose > 3:
-          print("      Pair for",k_b,":", row_i, col_i, ddm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
+          print(f"      Pair for bucket {k_b}: {row_i}-{col_i} dist: {ddm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,row_i] = -1.0
         dm[:,col_i] = -1.0
         ddm[:,row_i] = -1.0
         ddm[:,col_i] = -1.0
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
+        k_b += 1
     del ddm
     if verbose > 0:
       print("    Adding points to buckets")
@@ -384,7 +431,7 @@ class DuplexSplit(Train):
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
         if verbose > 3:
-          print("      Point for", kb,":", row_i, col_i, dm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
+          print(f"      Point for bucket {k_b}: {row_i}->{col_i} dist: {dm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,col_i] = -1.0
         dm[row_i,:] = -1.0
         k_b = (k_b + 1) % 2
@@ -397,30 +444,31 @@ class DuplexSplit(Train):
                                      train_dataset_name.replace("/","_")),
                         "DuplexSplit_"+str(self.p)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Train
     val_sel = (self._bucket_idx == 1)
     train_sel = np.logical_not(val_sel)
-    model.train(d_inp[train_sel],d_out[train_sel],d_inp[val_sel],d_out[val_sel],
+    model.train([data[l][train_sel] for l in range(0,len(data))],
+                [data[l][val_sel] for l in range(0,len(data))],
                 epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, d_inp[train_sel], d_out[train_sel], folder,
+    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, d_inp[val_sel], d_out[val_sel], folder,
+    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
                   verbose=verbose, prefix='validation', image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class KFold(Train):
   def __init__(self,k):
     Train.__init__(self,k)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Stratify data into k folds
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     idx = np.arange(0,data_dim)
@@ -440,20 +488,20 @@ class KFold(Train):
                                      train_dataset_name.replace("/","_")),
                         "KFold_"+str(self.k)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Run cross validation
-    self._cross_validate(model, epochs, batch_size, d_inp, d_out, folder,
+    self._cross_validate(model, epochs, batch_size, data, folder,
                          train_dataset_name, verbose, image_dpi, screen_dpi)
 
 class DuplexKFold(Train):
   def __init__(self,k):
     Train.__init__(self,k)
 
-  def train(self, model, d_inp, d_out, epochs, batch_size, path_model, train_dataset_name="",
+  def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     # Stratify data into k folds
-    data_dim = d_out.shape[0]
-    out_dim = d_out.shape[-1]
+    data_dim = data[0].shape[0]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     # Assign pairs to bucket in order of largest distance
@@ -463,7 +511,7 @@ class DuplexKFold(Train):
     self._bucket_idx = -np.ones((data_dim),dtype=np.int64)
     if verbose > 0:
       print("    Pairwise distances")
-    dm = squareform(pdist(d_out,'mahalanobis'))
+    dm = squareform(pdist(data[-1],'mahalanobis'))
     dm[np.isnan(dm)] = -1.0
     if verbose > 0:
       print("    Init buckets")
@@ -480,17 +528,17 @@ class DuplexKFold(Train):
         self._bucket_idx[row_i] = k_b
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
-        k_b += 1
         if verbose > 3:
-          print("      Pair for",k_b,":", row_i, col_i, ddm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
+          print(f"      Pair for bucket {k_b}: {row_i}-{col_i} dist: {ddm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,row_i] = -1.0
         dm[:,col_i] = -1.0
         ddm[:,row_i] = -1.0
         ddm[:,col_i] = -1.0
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
-        if n_selected >= data_dim:
+        if n_selected > data_dim:
           raise Exception("Insufficient data-points for finding buckets")
+        k_b += 1
     del ddm
     if verbose > 2:
       print("      Selected:", n_selected)
@@ -505,10 +553,10 @@ class DuplexKFold(Train):
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
         if verbose > 3:
-          print("      Point for", k_b,":", row_i, col_i, dm[row_i,col_i], len(np.where(self._bucket_idx == -1)[0]))
-        k_b = (k_b + 1) % self.k
+          print(f"      Point for bucket {k_b}: {row_i}->{col_i} dist: {dm[row_i,col_i]}; points left: {len(np.where(self._bucket_idx == -1)[0])}")
         dm[:,col_i] = -1.0
         dm[row_i,:] = -1.0
+        k_b = (k_b + 1) % self.k
     del dm
     if verbose > 1:
       for b in range(0,self.k):
@@ -517,7 +565,7 @@ class DuplexKFold(Train):
                                      train_dataset_name.replace("/","_")),
                         "DuplexKFold_"+str(self.k)+"-%s")
     # Plot distributions
-    self._plot_distributions(d_out, folder, image_dpi, screen_dpi, verbose)
+    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
     # Run cross validation
-    self._cross_validate(model, epochs, batch_size, d_inp, d_out, folder,
+    self._cross_validate(model, epochs, batch_size, data, folder,
                          train_dataset_name, verbose, image_dpi, screen_dpi)
