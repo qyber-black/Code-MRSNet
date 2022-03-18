@@ -79,6 +79,10 @@ class Train:
                                            train_dataset_name=train_dataset_name)
       model.save(fold_folder)
       # Analyse result of fold
+      if model.output == "spectra":
+        i = -1
+      elif model.output == "concentrations":
+        i = -2
       for k in train_score.keys():
         if k not in train_res:
           train_res[k] = []
@@ -86,13 +90,13 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
-      _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][train_sel], data[i][train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
       if err is not None:
         train_res['error'][val_fold] = err
       else:
         has_error = False # Should be the same across all calls, but set it each time anyway
-      _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
+      _, info, err = analyse_model(model, data[0][val_sel], data[i][val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
       if err is not None:
         val_res['error'][val_fold] = err
@@ -362,9 +366,14 @@ class Split(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
+    # data = [d_noise, d_conc, d_clean]
+    if model.output == "spectra":
+      i = -1
+    elif model.output == "concentrations":
+      i = -2
+    analyse_model(model, data[0][train_sel], data[i][train_sel], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
+    analyse_model(model, data[0][val_sel], data[i][val_sel], folder,
                   verbose=verbose, prefix='validation',
                   image_dpi=image_dpi,screen_dpi=screen_dpi)
 
