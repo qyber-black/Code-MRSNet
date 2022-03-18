@@ -464,7 +464,7 @@ class Autoencoder:
       with mirrored_strategy.scope():
         self.ae.set_quantifier("quantifier")
         print("Set the self.output to concentrations")
-        self.output == "concentrations"
+        self.output = "concentrations"
         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
@@ -477,7 +477,8 @@ class Autoencoder:
       dev_multiplier = 1
       self.ae.set_quantifier("quantifier")
       print("Set the self.output to concentrations")
-      self.output == "concentrations"
+      self.output = "concentrations"
+      print("The self.output is concentrations",self.output)
       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
@@ -571,7 +572,10 @@ class Autoencoder:
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     data = tf.data.Dataset.from_tensor_slices((spec_in)).batch(32).with_options(options)
-    return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
+    if self.output == "spectra":
+          return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
+    elif self.output == "concentrations":
+          return np.array(self.ae.predict(data,verbose=(verbose>0)*2), dtype=np.float64)
 
   def save(self, folder):
     path=os.path.join(folder, "tf_ae_model")
