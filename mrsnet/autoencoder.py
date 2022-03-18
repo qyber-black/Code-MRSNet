@@ -155,25 +155,8 @@ class FCAutoEnc(Model):
       _dense_layer(self.decoder, units, activation, -1) # no regularisers in decoder
       units *= 2
 
+    self.build((None, n_specs, n_freqs)) # Build encoder and decoder
     # Quantifier
-    '''self.quantifier = tf.keras.Sequential(name='Quantifier')
-    self.quantifier.add(Flatten())
-    _dense_layer(self.quantifier, 192, "tanh", 0.3)
-    _dense_layer(self.quantifier, 96, "tanh", 0.3)
-    _dense_layer(self.quantifier, 48, "tanh", 0.3)
-    _dense_layer(self.quantifier, 24, "tanh", 0.3)
-    _dense_layer(self.quantifier, 12, "tanh", 0.3)
-    _dense_layer(self.quantifier, 6, "tanh", 0.3)
-    self.quantifier.add(Dense(5, activation=None))'''
-
-    '''if self.switch == "Autoencoder":
-        self.quantifier = None
-        self.build((None, n_specs, n_freqs))
-    if self.switch == "quantifier":
-        self.decoder = None
-        self.build((None, n_specs, n_freqs))'''
-    self.build((None, n_specs, n_freqs))
-
   def set_quantifier(self,q):
       switch = q
       if switch == "quantifier":
