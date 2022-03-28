@@ -130,14 +130,14 @@ def _flatten_layer(m):
 #  Fully connected autoencoder via Model interface (using Sequential interface internally)
 class FCAutoEnc(Model):
 
-  def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, dropout, switch ,name='FCAutoEnc'):
+  def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, dropout, name='FCAutoEnc'):
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
     # layers_enc: number of layers in encoder
     # layers_dec: number of layers in encoder
     # activation: activation function (relu, sigmoid, tanh)
     # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
-    self.switch = switch
+    self.n_specs = n_specs
     super(FCAutoEnc, self).__init__(name=name)
 
     # Encoder
@@ -146,6 +146,7 @@ class FCAutoEnc(Model):
     for l in range(0,layers_enc-1):
       _dense_layer(self.encoder, units, activation, dropout)
       units //= 2
+    self.units = units
     _dense_layer(self.encoder, units, activation, -1) # no regulariser at latent representation
 
     # Decoder
@@ -157,7 +158,7 @@ class FCAutoEnc(Model):
 
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
     # Quantifier
-  def set_quantifier(self,q):
+  def set_quantifier(self,q,unit,activation,dp):
       switch = q
       if switch == "quantifier":
           self.encoder.trainable = False
@@ -167,18 +168,18 @@ class FCAutoEnc(Model):
           print("Building the quantifier...")
           self.quantifier = tf.keras.Sequential(name='Quantifier')
           self.quantifier.add(Flatten())
-          _dense_layer(self.quantifier, 192, "tanh", 0.3)
-          _dense_layer(self.quantifier, 96, "tanh", 0.3)
-          _dense_layer(self.quantifier, 48, "tanh", 0.3)
-          _dense_layer(self.quantifier, 24, "tanh", 0.3)
-          _dense_layer(self.quantifier, 12, "tanh", 0.3)
-          _dense_layer(self.quantifier, 6, "tanh", 0.3)
+          _dense_layer(self.quantifier, unit, activation, dp)
+          #_dense_layer(self.quantifier, unit/2, activation, dp)
+          _dense_layer(self.quantifier, unit/4, activation, dp)
+          _dense_layer(self.quantifier, unit/8, activation, dp)
+          _dense_layer(self.quantifier, unit/16, activation, dp)
           self.quantifier.add(Dense(5, activation=None))
-          self.quantifier.build((None, 3, 64)) # have to set this manually because it is according to the number of acqusitions and the neurons of the last layer of encoder
+          self.quantifier.build((None, self.n_specs, self.units))
       else:
           self.encoder.trainable=True
 
   def call(self,x):
+    print("Going into call()")
     x = self.encoder(x)
 
     if self.decoder is None: # Using the existence of the self.decoder to decide the mode of the FCAutoEnc
@@ -192,7 +193,7 @@ class FCAutoEnc(Model):
 # Autoencoder model
 class Autoencoder:
 
-  def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
+  def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm, quantifier, load_folder):
     self.model = model
     self.metabolites = metabolites
     self.pulse_sequence = pulse_sequence
@@ -210,6 +211,8 @@ class Autoencoder:
 
     self.train_dataset_name = None
     self.ae = None
+    self.quantifier = quantifier
+    self.load_folder = load_folder
 
   def __str__(self):
     n = os.path.join(self.model, "-".join(self.metabolites),
@@ -222,12 +225,7 @@ class Autoencoder:
     self.ae = None
     self.train_dataset_name = None
 
-  def _construct(self, ae_shape,switch):
-    switcher = switch
-    if switch == "Autoencoder":
-        self.output = "spectra"
-        print("Set the self.output to spectra")
-
+  def _construct(self, ae_shape):
     n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
     n_freqs = ae_shape[1] # number of frequency bins in spectras
     p = self.model.split("_")
@@ -259,10 +257,32 @@ class Autoencoder:
       lout = int(p[3])
       act = p[4]
       dropout = float(p[5])
-      self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,dropout,switcher)
+      self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,dropout)
+      self.ae.summary()
+      self.ae.encoder.summary()
       print("The denoise autoencoder is constructed")
     else:
       raise Exception("Unknown autoencoder variant")
+
+  def build_quantifier(self):
+      p = self.quantifier.split("_")
+      if p[0] != "ae":
+          raise Exception("Not an auto-encoder")
+      if p[1] == "Qfc":
+          unit = int(p[2])
+          act = p[3]
+          dropout = float(p[4])
+          print('1st:',p[1],p[2],p[3],p[4])
+          # ae_Qfc_[UNITS]_[ACT]_[DO]
+          self.ae.encoder = self.load(self.load_folder).ae.encoder
+          self.ae.encoder.summary()
+          self.ae.set_quantifier("quantifier",unit,act,dropout)
+
+
+      else:
+          raise Exception("Unknown autoencoder variant")
+
+
 
   def train(self, d_data, v_data, epochs, batch_size,
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -337,39 +357,44 @@ class Autoencoder:
       print("  Concentrations:",d_conc.shape,"[spectrum, metabolite_concentration]")
 
     # Autoencoder training
-    if verbose > 0:
-      print("# Train Autoencoder %s" % str(self))
+    if self.quantifier == None:
+     if verbose > 0:
+       print("# Train Autoencoder %s" % str(self))
 
-    learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-    loss = "huber_loss"
+     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
+     loss = "huber_loss"
 
-    if len(devices) > 1:
+     if len(devices) > 1:
       # Multi-GPU training
-      dev_multiplier = len(devices)
-      mirrored_strategy = tf.distribute.MirroredStrategy(devices=devices)
-      with mirrored_strategy.scope():
-        self._construct(d_spectra_in.shape[1:],"Autoencoder")
-        optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
+       dev_multiplier = len(devices)
+       mirrored_strategy = tf.distribute.MirroredStrategy(devices=devices)
+       with mirrored_strategy.scope():
+         self._construct(d_spectra_in.shape[1:])
+         self.output = "spectra"
+         print("Set the self.output to spectra")
+         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
-        self.ae.compile(loss=loss,
+         self.ae.compile(loss=loss,
                         optimizer=optimiser,
                         metrics=['mae'])
-    else:
+     else:
       # Single GPU / CPU training
-      dev_multiplier = 1
-      self._construct(d_spectra_in.shape[1:],"Autoencoder")
-      optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
+       dev_multiplier = 1
+       self._construct(d_spectra_in.shape[1:])
+       self.output = "spectra"
+       print("Set the self.output to spectra")
+       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
                                         epsilon=Cfg.val['epsilon'])
-      self.ae.compile(loss=loss,
+       self.ae.compile(loss=loss,
                       optimizer=optimiser,
                       metrics=['mae'])
 
-    for dpi in image_dpi:
-      plot_model(self.ae.encoder,
+     for dpi in image_dpi:
+       plot_model(self.ae.encoder,
                  to_file=os.path.join(folder,'architecture-encoder@'+str(dpi)+'.png'),
                  show_shapes=True,
                  show_dtype=True,
@@ -377,7 +402,7 @@ class Autoencoder:
                  rankdir='TB',
                  expand_nested=True,
                  dpi=dpi)
-      plot_model(self.ae.decoder,
+       plot_model(self.ae.decoder,
                  to_file=os.path.join(folder,'architecture-decoder@'+str(dpi)+'.png'),
                  show_shapes=True,
                  show_dtype=True,
@@ -385,13 +410,13 @@ class Autoencoder:
                  rankdir='TB',
                  expand_nested=True,
                  dpi=dpi)
-    if verbose > 0:
+     if verbose > 0:
       self.ae.summary()
       self.ae.encoder.summary()
       self.ae.decoder.summary()
 
-    timer = TimeHistory(epochs)
-    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
+     timer = TimeHistory(epochs)
+     callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
                                                min_delta=1e-8,
                                                patience=25,
                                                mode='min',
@@ -400,78 +425,82 @@ class Autoencoder:
                  timer]
 
     # Dataset options
-    options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    ae_train_data = ae_train_data.batch(batch_size * dev_multiplier).with_options(options)
-    ae_val_data = ae_val_data.batch(batch_size * dev_multiplier).with_options(options)
+     options = tf.data.Options()
+     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+     ae_train_data = ae_train_data.batch(batch_size * dev_multiplier).with_options(options)
+     ae_val_data = ae_val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
-    history = self.ae.fit(ae_train_data,
+     history = self.ae.fit(ae_train_data,
                           validation_data=ae_val_data,
                           epochs=epochs,
                           verbose=(verbose > 0)*2,
                           shuffle=True,
                           callbacks=callbacks)
-    le = len(history.history['loss'])
-    history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
+     le = len(history.history['loss'])
+     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
-    if verbose > 0:
+     if verbose > 0:
       print("# Evaluating Autoencoder")
-    d_score = self.ae.evaluate(d_spectra_in, d_spectra_out, verbose=(verbose > 0)*2)
-    if v_data != None:
-      v_score = self.ae.evaluate(v_spectra_in, v_spectra_out, verbose=(verbose > 0)*2)
+     d_score = self.ae.evaluate(d_spectra_in, d_spectra_out, verbose=(verbose > 0)*2)
+     if v_data != None:
+       v_score = self.ae.evaluate(v_spectra_in, v_spectra_out, verbose=(verbose > 0)*2)
+     else:
+       v_score = np.array([np.nan,np.nan])
+     if verbose > 0:
+       print(f"             Train          Validation")
+       print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
+       print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
+     self._save_results(folder, "ae", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
+
+     if self.quantifier == None:
+       d_res={loss.upper():d_score[0],"MAE":d_score[1]}
+       v_res={loss.upper():v_score[0],"MAE":v_score[1]}
+       return d_res, v_res
+
+
     else:
-      v_score = np.array([np.nan,np.nan])
-    if verbose > 0:
-      print(f"             Train          Validation")
-      print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
-      print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
-    self._save_results(folder, "ae", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
-
-    #d_res={loss.upper():d_score[0],"MAE":d_score[1]}
-    #v_res={loss.upper():v_score[0],"MAE":v_score[1]}
-    #return d_res, v_res          FIXME: That's where I'm a little bit lost, it seems from line 446 to line 448 it could somehow make the analysis function running (fully functional)
-                                  # But the training process it only train the  autoencoder and stop
-
     # Quantifier training
-    if verbose > 0:
-        print("# Train Quantifier %s" % str(self))
+     if verbose > 0:
+         print("# Train Quantifier %s" % str(self.quantifier))
 
-    learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-    loss = "huber_loss"
+     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
+     loss = "huber_loss"
 
-    if len(devices) > 1:
+     if len(devices) > 1:
       # Multi-GPU training
-      dev_multiplier = len(devices)
-      mirrored_strategy = tf.distribute.MirroredStrategy(devices=devices)
-      with mirrored_strategy.scope():
-        self.ae.set_quantifier("quantifier")
-        print("Set the self.output to concentrations")
-        self.output = "concentrations"
-        optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
+       dev_multiplier = len(devices)
+       mirrored_strategy = tf.distribute.MirroredStrategy(devices=devices)
+       with mirrored_strategy.scope():
+         self._construct(d_spectra_in.shape[1:])
+         self.build_quantifier()
+         print("Set the self.output to concentrations")
+         self.output = "concentrations"
+         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
-        self.ae.compile(loss=loss,
+         self.ae.compile(loss=loss,
                         optimizer=optimiser,
                         metrics=['mae'])
-    else:
+     else:
       # Single GPU / CPU training
-      dev_multiplier = 1
-      self.ae.set_quantifier("quantifier")
-      print("Set the self.output to concentrations")
-      self.output = "concentrations"
-      print("The self.output is concentrations",self.output)
-      optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
+       dev_multiplier = 1
+       self._construct(d_spectra_in.shape[1:])
+       self.build_quantifier()
+       print("Set the self.output to concentrations")
+       self.output = "concentrations"
+       print("The self.output is:",self.output)
+       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
                                         epsilon=Cfg.val['epsilon'])
-      self.ae.compile(loss=loss,
+       self.ae.compile(loss=loss,
                       optimizer=optimiser,
                       metrics=['mae'])
 
-    for dpi in image_dpi:
-      plot_model(self.ae.encoder,
+     for dpi in image_dpi:
+       plot_model(self.ae.encoder,
                  to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
                  show_shapes=True,
                  show_dtype=True,
@@ -479,7 +508,7 @@ class Autoencoder:
                  rankdir='TB',
                  expand_nested=True,
                  dpi=dpi)
-      plot_model(self.ae.quantifier,
+       plot_model(self.ae.quantifier,
                  to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
                  show_shapes=True,
                  show_dtype=True,
@@ -487,13 +516,13 @@ class Autoencoder:
                  rankdir='TB',
                  expand_nested=True,
                  dpi=dpi)
-    if verbose > 0:
-      self.ae.summary()
-      self.ae.encoder.summary()
-      self.ae.quantifier.summary()
+     if verbose > 0:
+       self.ae.summary()
+       self.ae.encoder.summary()
+       self.ae.quantifier.summary()
 
-    timer = TimeHistory(epochs)
-    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
+     timer = TimeHistory(epochs)
+     callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
                                                min_delta=1e-8,
                                                patience=25,
                                                mode='min',
@@ -502,37 +531,37 @@ class Autoencoder:
                  timer]
 
     # Dataset options
-    options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    conc_train_data = conc_train_data.batch(batch_size * dev_multiplier).with_options(options)
-    conc_val_data = conc_val_data.batch(batch_size * dev_multiplier).with_options(options)
+     options = tf.data.Options()
+     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+     conc_train_data = conc_train_data.batch(batch_size * dev_multiplier).with_options(options)
+     conc_val_data = conc_val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
-    history = self.ae.fit(conc_train_data,
+     history = self.ae.fit(conc_train_data,
                           validation_data=conc_val_data,
                           epochs=epochs,
                           verbose=(verbose > 0)*2,
                           shuffle=True,
                           callbacks=callbacks)
-    le = len(history.history['loss'])
-    history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
+     le = len(history.history['loss'])
+     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
-    if verbose > 0:
-      print("# Evaluating Quantifier")
-    d_score = self.ae.evaluate(d_spectra_in, d_conc, verbose=(verbose > 0)*2)
-    if v_data != None:
-      v_score = self.ae.evaluate(v_spectra_in, v_conc, verbose=(verbose > 0)*2)
-    else:
-      v_score = np.array([np.nan,np.nan])
-    if verbose > 0:
-      print(f"             Train          Validation")
-      print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
-      print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
-    self._save_results(folder, "ae_quantifier", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
+     if verbose > 0:
+       print("# Evaluating Quantifier")
+     d_score = self.ae.evaluate(d_spectra_in, d_conc, verbose=(verbose > 0)*2)
+     if v_data != None:
+       v_score = self.ae.evaluate(v_spectra_in, v_conc, verbose=(verbose > 0)*2)
+     else:
+       v_score = np.array([np.nan,np.nan])
+     if verbose > 0:
+       print(f"             Train          Validation")
+       print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
+       print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
+     self._save_results(folder, "ae_quantifier", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
 
-    d_res={loss.upper():d_score[0],"MAE":d_score[1]}
-    v_res={loss.upper():v_score[0],"MAE":v_score[1]}
-    return d_res, v_res
+     d_res={loss.upper():d_score[0],"MAE":d_score[1]}
+     v_res={loss.upper():v_score[0],"MAE":v_score[1]}
+     return d_res, v_res
     # FIXME: regression/concentration fitting network after autoencoder is trained
     # The best way to do this is to add additional parameters to the model string that indicate
     # we wish to predict the concentrations and then parameters with that to indicate the structure
@@ -571,7 +600,9 @@ class Autoencoder:
           'acquisitions': self.acquisitions,
           'datatype': self.datatype,
           'norm': self.norm,
-          'train_dataset_name': self.train_dataset_name
+          'train_dataset_name': self.train_dataset_name,
+          'quantifier': self.quantifier,
+          'load_folder': self.load_folder
         }, indent=2, sort_keys=True), file=f)
 
   @staticmethod
@@ -579,7 +610,7 @@ class Autoencoder:
     with open(os.path.join(path, "tf_ae_model", "mrsnet.json"), 'r') as f:
       data = json.load(f)
     model = Autoencoder(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
-                        data['datatype'], data['norm'])
+                        data['datatype'], data['norm'], data['quantifier'], data['load_folder'])
     model.train_dataset_name = data['train_dataset_name']
     model.ae = load_model(os.path.join(path,"tf_ae_model"))
     return model
