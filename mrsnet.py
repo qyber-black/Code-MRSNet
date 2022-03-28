@@ -203,6 +203,12 @@ def add_arguments_train(p):
                  help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder (see mrsnet/autoencoder.py)')
   p.add_argument('-b', '--batchsize', type=int, default=16,
                  help='Batch size (per GPU if multi-GPU).')
+  p.add_argument('-q', '--quantifier', type=str,
+                 default=None,
+                 help='Quantifier architecture: ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder , ae_Qfc_[UNIT]_[ACT]_[DO](see mrsnet/autoencoder.py).')
+  p.add_argument('-l', '--load',
+                 default=None,
+                 help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def add_arguments_quantify(p):
   # Add quantification arguments
@@ -483,8 +489,13 @@ def train(args):
     else:
       if args.verbose > 0:
         print("Training on clean dataset")
+    # If the model is on the quantifier mode, the loading folder will be...
+    if args.load == None:
+     load_folder = None
+    else:
+     load_folder = os.path.join(Cfg.val['path_model'], args.load)
     model = Autoencoder(args.model, args.metabolites, ds_noisy.pulse_sequence,
-                        args.acquisitions, args.datatype, args.norm)
+                        args.acquisitions, args.datatype, args.norm, args.quantifier, load_folder)
     d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                       acquisitions=args.acquisitions, datatype=args.datatype,
                                       high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
@@ -520,10 +531,19 @@ def train(args):
     trainer = NoValidation()
   else:
     raise Exception(f"Unknown validation {args.validate}")
-  trainer.train(model, data, args.epochs, args.batchsize,
+
+  if args.quantifier == None:
+   trainer.train(model, data, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=data_name,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
+
+  else:
+    model.quantifier=args.quantifier
+    trainer.train(model, data, args.epochs, args.batchsize,
+                  Cfg.val['path_model'], train_dataset_name=data_name,
+                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
+                  verbose=args.verbose)
 
 def model_selection(args):
   # Select sub-command
