@@ -168,7 +168,7 @@ class FCAutoEnc(Model):
           for l in range(0, layer_num - 1):
               _dense_layer(self.quantifier, unit, activation, dp)
               unit //= 2
-                                                                 # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
+                                                                  # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
           if activation_end =='None':
               self.quantifier.add(Dense(5, activation=None))
           else:
