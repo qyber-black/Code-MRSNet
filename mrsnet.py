@@ -205,7 +205,7 @@ def add_arguments_train(p):
                  help='Batch size (per GPU if multi-GPU).')
   p.add_argument('-q', '--quantifier', type=str,
                  default=None,
-                 help='Quantifier architecture: ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder , ae_Qfc_[UNIT]_[ACT]_[DO](see mrsnet/autoencoder.py).')
+                 help='Quantifier architecture: ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder , ae_Qfc_[UNIT]_[L]_[ACT]_[ACT_lastlayer]_[DO](see mrsnet/autoencoder.py).')
   p.add_argument('-l', '--load',
                  default=None,
                  help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
