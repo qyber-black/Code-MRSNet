@@ -155,7 +155,7 @@ class FCAutoEnc(Model):
 
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
     # Quantifier
-  def set_quantifier(self,q,unit,activation,activation_end,dp):
+  def set_quantifier(self,q,unit,layer_num,activation,activation_end,dp):
       switch = q
       if switch == "quantifier":
           self.encoder.trainable = False
@@ -165,15 +165,14 @@ class FCAutoEnc(Model):
           print("Building the quantifier...")
           self.quantifier = tf.keras.Sequential(name='Quantifier')
           self.quantifier.add(Flatten())
-          _dense_layer(self.quantifier, unit, activation, dp)     #FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-          #_dense_layer(self.quantifier, unit/2, activation, dp)
-          #_dense_layer(self.quantifier, unit/4, activation, dp)
-          #_dense_layer(self.quantifier, unit/8, activation, dp)
-          #_dense_layer(self.quantifier, unit/16, activation, dp)
+          for l in range(0, layer_num - 1):
+              _dense_layer(self.quantifier, unit, activation, dp)
+              unit //= 2
+                                                                 # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
           if activation_end =='None':
               self.quantifier.add(Dense(5, activation=None))
           else:
-              self.quantifier.add(Dense(5, activation=activation_end))
+              _dense_layer(self.quantifier, 5 , activation_end, -1)
           self.quantifier.build((None, self.n_specs, self.units))
       else:
           self.encoder.trainable=True
@@ -274,14 +273,15 @@ class Autoencoder:
           raise Exception("Not an auto-encoder")
       if p[1] == "Qfc":
           unit = int(p[2])
-          act = p[3]
-          act_end = p[4]
-          dropout = float(p[5])
+          layer_num = int(p[3])
+          act = p[4]
+          act_end = p[5]
+          dropout = float(p[6])
           # ae_Qfc_[UNITS]_[ACT]_[DO]
           self.ae.encoder = self.load(self.load_folder).ae.encoder
           print('The denoise autoencoder is loaded')
           self.ae.encoder.summary()
-          self.ae.set_quantifier("quantifier",unit,act,act_end,dropout)
+          self.ae.set_quantifier("quantifier",unit,layer_num,act,act_end,dropout)
 
       else:
           raise Exception("Unknown autoencoder variant")
