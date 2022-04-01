@@ -124,9 +124,6 @@ def _dense_layer(m, units, activation, dropout):
   if dropout > 0.0:
     m.add(Dropout(dropout))
 
-def _flatten_layer(m):
-    m.tf.add(Flatten())
-
 #  Fully connected autoencoder via Model interface (using Sequential interface internally)
 class FCAutoEnc(Model):
 
@@ -158,22 +155,25 @@ class FCAutoEnc(Model):
 
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
     # Quantifier
-  def set_quantifier(self,q,unit,activation,dp):
+  def set_quantifier(self,q,unit,activation,activation_end,dp):
       switch = q
       if switch == "quantifier":
           self.encoder.trainable = False
           print("self.encoder is frozen")
-          self.decoder =None
+          self.decoder = None
           print("self.decoder is set to None")
           print("Building the quantifier...")
           self.quantifier = tf.keras.Sequential(name='Quantifier')
           self.quantifier.add(Flatten())
-          _dense_layer(self.quantifier, unit, activation, dp)
+          _dense_layer(self.quantifier, unit, activation, dp)     #FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
           #_dense_layer(self.quantifier, unit/2, activation, dp)
-          _dense_layer(self.quantifier, unit/4, activation, dp)
-          _dense_layer(self.quantifier, unit/8, activation, dp)
-          _dense_layer(self.quantifier, unit/16, activation, dp)
-          self.quantifier.add(Dense(5, activation=None))
+          #_dense_layer(self.quantifier, unit/4, activation, dp)
+          #_dense_layer(self.quantifier, unit/8, activation, dp)
+          #_dense_layer(self.quantifier, unit/16, activation, dp)
+          if activation_end =='None':
+              self.quantifier.add(Dense(5, activation=None))
+          else:
+              self.quantifier.add(Dense(5, activation=activation_end))
           self.quantifier.build((None, self.n_specs, self.units))
       else:
           self.encoder.trainable=True
@@ -215,10 +215,16 @@ class Autoencoder:
     self.load_folder = load_folder
 
   def __str__(self):
-    n = os.path.join(self.model, "-".join(self.metabolites),
+    if self.load_folder==None:
+      n = os.path.join(self.model, "-".join(self.metabolites),
                      self.pulse_sequence, "-".join(self.acquisitions),
                      "-".join(self.datatype), self.norm)
-    return n
+      return n
+    else:
+        n = os.path.join(self.quantifier, "-".join(self.metabolites),
+                         self.pulse_sequence, "-".join(self.acquisitions),
+                         "-".join(self.datatype), self.norm)
+        return n
 
   def reset(self):
     del self.ae
@@ -258,8 +264,6 @@ class Autoencoder:
       act = p[4]
       dropout = float(p[5])
       self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,dropout)
-      self.ae.summary()
-      self.ae.encoder.summary()
       print("The denoise autoencoder is constructed")
     else:
       raise Exception("Unknown autoencoder variant")
@@ -271,13 +275,13 @@ class Autoencoder:
       if p[1] == "Qfc":
           unit = int(p[2])
           act = p[3]
-          dropout = float(p[4])
-          print('1st:',p[1],p[2],p[3],p[4])
+          act_end = p[4]
+          dropout = float(p[5])
           # ae_Qfc_[UNITS]_[ACT]_[DO]
           self.ae.encoder = self.load(self.load_folder).ae.encoder
+          print('The denoise autoencoder is loaded')
           self.ae.encoder.summary()
-          self.ae.set_quantifier("quantifier",unit,act,dropout)
-
+          self.ae.set_quantifier("quantifier",unit,act,act_end,dropout)
 
       else:
           raise Exception("Unknown autoencoder variant")
@@ -462,7 +466,7 @@ class Autoencoder:
     else:
     # Quantifier training
      if verbose > 0:
-         print("# Train Quantifier %s" % str(self.quantifier))
+         print("# Train Quantifier %s" % str(self))
 
      learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
      loss = "huber_loss"
@@ -487,6 +491,9 @@ class Autoencoder:
       # Single GPU / CPU training
        dev_multiplier = 1
        self._construct(d_spectra_in.shape[1:])
+       if verbose >1:
+           self.ae.summary()
+           self.ae.encoder.summary()
        self.build_quantifier()
        print("Set the self.output to concentrations")
        self.output = "concentrations"
