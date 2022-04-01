@@ -355,7 +355,8 @@ class Split(Train):
                                      train_dataset_name.replace("/","_")),
                         "Split_"+str(self.p)+"-%s")
     # Plot distributions
-    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
+    if str(model)[0:6]=='ae_Qfc':
+       self._plot_distributions(data[-2], folder, image_dpi, screen_dpi, verbose)
     # Train
     val_sel = (self._bucket_idx == 0)
     train_sel = np.logical_not(val_sel)
@@ -497,7 +498,8 @@ class KFold(Train):
                                      train_dataset_name.replace("/","_")),
                         "KFold_"+str(self.k)+"-%s")
     # Plot distributions
-    self._plot_distributions(data[-1], folder, image_dpi, screen_dpi, verbose)
+    if str(model)[0:6]=='ae_Qfc':
+       self._plot_distributions(data[-2], folder, image_dpi, screen_dpi, verbose)
     # Run cross validation
     self._cross_validate(model, epochs, batch_size, data, folder,
                          train_dataset_name, verbose, image_dpi, screen_dpi)
