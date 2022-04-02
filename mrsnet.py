@@ -493,7 +493,7 @@ def train(args):
       d_noise, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                    acquisitions=args.acquisitions, datatype=args.datatype,
                                    high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                   verbose=args.verbose)
+                                   export_concentrations=False, verbose=args.verbose)
       if ds_noisy.noise_added:
         d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
                                      acquisitions=args.acquisitions, datatype=args.datatype,
