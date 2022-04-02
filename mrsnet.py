@@ -200,15 +200,11 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder (see mrsnet/autoencoder.py)')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_S1_S2_C1_C2_C3_C4_O1_O2_F1_F2_D_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_FILTER_LATENT_[pool|stride]_DO, ae_fc_LIN_LOUT_ACT_DO, ae_fc_UNITS_LAYERS_ACT[_ACT-LAST] for autoencoder (see mrsnet/autoencoder.py)')
+  p.add_argument('-a', '--autoencoder', type=str,
+                 help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
                  help='Batch size (per GPU if multi-GPU).')
-  p.add_argument('-q', '--quantifier', type=str,
-                 default=None,
-                 help='Quantifier architecture: ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[DO] for autoencoder , ae_Qfc_[UNIT]_[L]_[ACT]_[ACT_lastlayer]_[DO](see mrsnet/autoencoder.py).')
-  p.add_argument('-l', '--load',
-                 default=None,
-                 help='Model to quantifiy spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def add_arguments_quantify(p):
   # Add quantification arguments
@@ -472,43 +468,77 @@ def train(args):
                              verbose=args.verbose)
     data = [d_inp, d_out] # output last
     data_name = ds.name+"_"+ds_rest
-  elif args.model[0:3] == 'ae_':
+  elif args.model[0:3] == 'ae_' or args.model[0:4] == 'aeq_':
     from mrsnet.autoencoder import Autoencoder
     if args.verbose > 0:
       print(f"# Loading dataset {name} : {ds_rest}")
     # Load noisy dataset first
     ds_noisy = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
-    # Load clean dataset, if dataset loaded was actualy noisy;
-    # otherwise we loaded clean dataset and use it as input and output for the autoencoder
-    if ds_noisy.noise_added:
-      if args.verbose > 2:
-        print("Noisy dataset loaded")
-      ds_clean = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest), force_clean=True)
-      if args.verbose > 2:
-        print("Clean dataset loaded")
-    else:
-      if args.verbose > 0:
-        print("Training on clean dataset")
-    # If the model is on the quantifier mode, the loading folder will be...
-    if args.load == None:
-     load_folder = None
-    else:
-     load_folder = os.path.join(Cfg.val['path_model'], args.load)
-    model = Autoencoder(args.model, args.metabolites, ds_noisy.pulse_sequence,
-                        args.acquisitions, args.datatype, args.norm, args.quantifier, load_folder)
-    d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
-                                      acquisitions=args.acquisitions, datatype=args.datatype,
-                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                      verbose=args.verbose)
-    if ds_noisy.noise_added:
-      d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
+    if args.model[0:3] == 'ae_':
+      # If we train the autoencoder, not the quantifier, load clean dataset, if
+      # dataset loaded was actualy noisy; otherwise we loaded clean dataset and
+      # use it as input and output for the autoencoder
+      if ds_noisy.noise_added:
+        if args.verbose > 2:
+          print("Noisy dataset loaded")
+        ds_clean = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],
+                                                     name,ds_rest), force_clean=True)
+        if args.verbose > 2:
+          print("Clean dataset loaded")
+      else:
+        if args.verbose > 0:
+          print("Training on clean dataset")
+      model = Autoencoder(args.model, args.metabolites, ds_noisy.pulse_sequence,
+                          args.acquisitions, args.datatype, args.norm)
+      d_noise, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                    acquisitions=args.acquisitions, datatype=args.datatype,
                                    high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                   export_concentrations=False, verbose=args.verbose)
+                                   verbose=args.verbose)
+      if ds_noisy.noise_added:
+        d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
+                                     acquisitions=args.acquisitions, datatype=args.datatype,
+                                     high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                     export_concentrations=False, verbose=args.verbose)
+      else:
+        d_clean = d_noise
+      data = [d_noise, d_clean] # output last
+      data_name = ds_noisy.name+"_"+ds_rest
     else:
-      d_clean = d_noise
-    data = [d_noise, d_conc, d_clean] # output last
-    data_name = ds_noisy.name+"_"+ds_rest
+      # Or we train the autoencoder as quantifier, meaning the autoencoder model
+      # needs to exist already and we just load it.
+      #
+      # Load the autoencoder model
+      id = get_std_name(args.autoencoder)
+      name = []
+      for k in range(0,len(id)):
+        if id[k][0:3] == 'ae_' or id[k][0:4] == 'aeq_':
+          name = os.path.join(*id[k:k+6])
+          batchsize = id[k+6]
+          epochs = id[k+7]
+          train_model = id[k+8]
+          trainer = id[k+9]
+          rest = id[k+10] if len(id) > k+10 else '' # Folds
+          break
+      if len(name) == 0:
+        raise Exception("Cannot get model name from model argument")
+      if args.verbose > 0:
+        print(f"# Loading autoencoder model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
+      folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+      ae_model = Autoencoder.load(folder)
+      encoder = ae_model.ae.encoder
+      # Prepare quantifier conversion - need to reconstruct and only set encoder
+      # and make sure other parameters ar ethe same than in the autoencoder model
+      model = Autoencoder(args.model, ae_model.metabolites, ae_model.pulse_sequence,
+                          ae_model.acquisitions, ae_model.datatype, ae_model.norm,
+                          encoder=encoder, encoder_model=ae_model.model,
+                          encoder_train_dataset_name=ae_model.train_dataset_name)
+      # Get data
+      d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+                                        acquisitions=args.acquisitions, datatype=args.datatype,
+                                        high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                        verbose=args.verbose)
+      data = [d_noise, d_conc] # output last
+      data_name = ds_noisy.name+"_"+ds_rest
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
@@ -532,21 +562,14 @@ def train(args):
   else:
     raise Exception(f"Unknown validation {args.validate}")
 
-  if args.quantifier == None:
-   trainer.train(model, data, args.epochs, args.batchsize,
+  trainer.train(model, data, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=data_name,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
                 verbose=args.verbose)
 
-  else:
-    model.quantifier=args.quantifier
-    trainer.train(model, data, args.epochs, args.batchsize,
-                  Cfg.val['path_model'], train_dataset_name=data_name,
-                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
-                  verbose=args.verbose)
-
 def model_selection(args):
   # Select sub-command
+  # FIXME: not tested with ae and aeq models; may not work / need expansion
   import subprocess
   import mrsnet.grid as grid
   args.metabolites.sort()
@@ -597,7 +620,7 @@ def quantify(args):
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
-    if id[k][0:4] == 'cnn_' or id[k][0:3] == 'ae_':
+    if id[k][0:4] == 'cnn_' or id[k][0:3] == 'ae_' or id[k][0:4] == 'aeq_':
       name = os.path.join(*id[k:k+6])
       batchsize = id[k+6]
       epochs = id[k+7]
@@ -613,7 +636,7 @@ def quantify(args):
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
     quantifier = CNN.load(folder)
-  elif name[0:3] == "ae_":
+  elif name[0:3] == "ae_" or name[0:4] == "aeq_":
     from mrsnet.autoencoder import Autoencoder
     quantifier = Autoencoder.load(folder)
   else:
@@ -639,8 +662,7 @@ def quantify(args):
                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
                            low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm,
                            n_fft_pts=quantifier.fft_samples, verbose=args.verbose)
-  if name[0:3] == "ae_":
-    # FIXME: check if autoencoder is for spectra prediction or concentrations, once available
+  if name[0:3] == "ae_": # Only for autoencoder, not quantifiers
     if ds_type == "joblib_clean":
       d_out = d_inp
     elif ds_type == "joblib_noisy":
@@ -668,7 +690,8 @@ def benchmark(args):
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
-    if id[k][0:4] == 'cnn_':
+    if id[k][0:4] == 'cnn_' or id[k][0:4] == 'aeq_':
+      print(id)
       name = os.path.join(*id[k:k+6])
       batchsize = id[k+6]
       epochs = id[k+7]
@@ -683,8 +706,10 @@ def benchmark(args):
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
     quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
+  elif name[0:4] == "aeq_":
+    from mrsnet.autoencoder import Autoencoder
+    quantifier = Autoencoder.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
   elif name[0:3] == "ae_":
-    # FIXME: if autoencoder for concentration prediction, use it in benchmark; not for spectra prediction, though
     raise Exception("No concentration prediction implemented")
   else:
     raise Exception("Unknown model "+name)
@@ -705,10 +730,10 @@ def benchmark(args):
             plt.show(block=True)
             plt.close()
       d_inp, d_out = bm.export(metabolites=quantifier.metabolites, n_fft_pts=quantifier.fft_samples,
-                                high_ppm=quantifier.high_ppm, low_ppm=quantifier.low_ppm,
-                                norm=quantifier.norm, acquisitions=quantifier.acquisitions,
-                                datatype=quantifier.datatype,
-                                verbose=args.verbose)
+                               high_ppm=quantifier.high_ppm, low_ppm=quantifier.low_ppm,
+                               norm=quantifier.norm, acquisitions=quantifier.acquisitions,
+                               datatype=quantifier.datatype,
+                               verbose=args.verbose)
       from mrsnet.analyse import analyse_model
       id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
       analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batchsize, epochs,

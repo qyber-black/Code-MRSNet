@@ -108,7 +108,15 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
     with warnings.catch_warnings():
       warnings.filterwarnings('ignore')
       # ignores division by zero warnings, which will happen in the analysis
-      slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
+      try:
+        slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
+      except:
+        # Regression can fail, in particular if all actual concentrations are 0; so just set to nan
+        slope = np.nan
+        intercept = np.nan
+        r_value = np.nan
+        p_value = np.nan
+        std_err = np.nan
     info[m] = {
         'error': {
           'mean': error_mean[l],
@@ -242,7 +250,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
     for ac in range(0,pre.shape[1]):
       for dt in range(0,pre.shape[2]):
         if verbose > 0:
-          print(f"Signals for {model.acquisitions[ac]}-{model.datatype[dt]}")
+          print(f"  Signals for {model.acquisitions[ac]}-{model.datatype[dt]}")
         info[f"Signal-{model.acquisitions[ac]}-{model.datatype[dt]}"] = {
             'error': {
               'mean': error_mean[ac,dt],
