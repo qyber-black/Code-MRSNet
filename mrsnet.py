@@ -737,7 +737,7 @@ def benchmark(args):
       from mrsnet.analyse import analyse_model
       id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
       analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batchsize, epochs,
-                                                           train_model, trainer, rest, "Benchmark"),
+                                                           train_model, trainer, rest),
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
                     verbose=args.verbose, prefix=id+":"+variant, image_dpi=Cfg.val['image_dpi'],
