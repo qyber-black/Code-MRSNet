@@ -105,10 +105,10 @@ elif [ "$cmd" == run ]; then
 #SBATCH --error=${folder}/err
 #SBATCH -p gpu_v100,gpu
 #SBARCH --nodes=1
-#SBATCH --ntasks-per-node=1
 #SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=32768
+#SBATCH --mem=32G
 #SBATCH --gres=gpu:2
 #SBATCH --time=1-00:00:00
 
