@@ -163,7 +163,7 @@ class FCAutoEnc(Model):
 #  Encoder-quantifier where the encoder comes from an autoencoder
 class EncQuant(Model):
 
-  def __init__(self, encoder, n_specs, n_freqs, output_conc, units, layers, act, act_last, name='EncQuant'):
+  def __init__(self, encoder, n_specs, n_freqs, output_conc, units, layers, act, act_last, dp, name='EncQuant'):
     # encoder: pre-trained encoder model
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
@@ -182,11 +182,14 @@ class EncQuant(Model):
     # Quantifier
     self.quantifier = tf.keras.Sequential(name='Quantifier')
     self.quantifier.add(Flatten())
-    for l in range(0, layers):
-      _dense_layer(self.quantifier, units, act, -1)
+    for l in range(0, layers-1):
+      _dense_layer(self.quantifier, units, act, dp)
       units //= 2
       # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    _dense_layer(self.quantifier, output_conc, act_last, -1)
+    if act_last == "None":
+      self.quantifier.add(Dense(output_conc, activation=None)) # The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
+    else:
+      _dense_layer(self.quantifier, output_conc, act_last, -1)
 
     self.build((None, n_specs, n_freqs)) # Build encoder - quantifier
 
@@ -248,8 +251,9 @@ class Autoencoder:
         units = int(p[2])
         layers = int(p[3])
         act = p[4]
-        act_last = p[5] if len(p) > 5 else None
-        self.ae = EncQuant(self.encoder,n_specs,n_freqs,output_conc,units,layers,act,act_last)
+        act_last = p[5]
+        dropout = float(p[6])
+        self.ae = EncQuant(self.encoder,n_specs,n_freqs,output_conc,units,layers,act,act_last,dropout)
       else:
         raise Exception(f"Unknown encoder-quantifier architecture {self.model}")
     elif p[0] == "ae":
