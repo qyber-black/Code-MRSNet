@@ -266,7 +266,7 @@ def simulate(args):
   if "lcmodel" in args.source or "su-3tskyra" in args.source:
     lw = [None]
     if len(args.source) > 1:
-      for l in args.linewidths:
+      for l in args.linewidth:
         lw.append(l)
   name=os.path.join("-".join(args.source)+"_"+str(args.sample_rate)+"_"+str(args.samples),
                     "-".join(args.manufacturer),
@@ -345,17 +345,23 @@ def generate_datasets(args):
         na[k[ki]] = [str(val) for val in v[ki]]
       else:
         na[k[ki]] = [str(v[ki])]
+    lw = na['linewidth']
+    if "lcmodel" in na['source'] or "su-3tskyra" in na['source']:
+      lw = [None]
+      if len(na['source']) > 1:
+        for l in na['linewidth']:
+          lw.append(l)
     name=os.path.join("-".join(na['source'])+"_"+str(na['sample_rate'][0])+"_"+str(na['samples'][0]),
                       "-".join(na['manufacturer']),
-                      "-".join(na['omega']),
-                      "-".join(na['linewidth']),
+                      "-".join([str(k) for k in na['omega']]),
+                      "-".join([str(k) for k in lw]),
                       "-".join(na['metabolites']),
                       "-".join(na['pulse_sequence']),
                       "-".join(na['sample']),
                       na['noise_p'][0]+"-"+na['noise_type'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
     if (os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")) or
         os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib"))):
-      if na['noise_p'][0] > 0.0:
+      if float(na['noise_p'][0]) > 0.0:
         if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib")):
           raise Exception("No noisy dataset, even if requested: "+Cfg.val['path_simulation'],name,na['num'][0]+"-1")
       if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")):
@@ -379,7 +385,7 @@ def generate_datasets(args):
               (not isinstance(v[ki],list) and v[ki] == 'su-3tskyra')):
             skip_lw = True
         if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
-          # 1.0 for lcmodel/su-3tskyra interpreated a None linewidth
+          # 1.0 for lcmodel/su-3tskyra interpreted as None linewidth
           linewidth1 = True
         cmd.append("--"+k[ki])
         if isinstance(v[ki],list):
