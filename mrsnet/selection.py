@@ -46,6 +46,7 @@ class Select:
     self.image_dpi = image_dpi
     self.verbose = verbose
     self.dataset_name = ds.name
+    self.model_str = None
 
     if len(remote) > 0:
       remote = remote.split(":")
@@ -105,10 +106,22 @@ class Select:
       # AE-FC model fully parameterised
       from mrsnet.autoencoder import Autoencoder
       # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
-      model_str = ('ae_fc' + na['model_LIN'][0] +
+      model_str = ('ae_fc_' + na['model_LIN'][0] +
                        '_' + na['model_LOUT'][0] +
                        '_' + na['model_ACT'][0] +
                        '_' + na['model_DO'][0])
+      self.model_str = na['model'][0]
+      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
+                                   na['acquisitions'], na['datatype'], na['norm'][0]))
+    elif na['model'][0] == 'aeq_fc':
+      # AEQ-FC model fully parameterised
+      from mrsnet.autoencoder import Autoencoder
+      # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
+      model_str = ('aeq_fc_' + na['model_UNITS'][0] +
+                   '_' + na['model_LAYERS'][0] +
+                   '_' + na['model_ACT'][0] +
+                   '_' + na['model_ACT-LAST'][0] +
+                   '_' + na['model_DO'][0])
       model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
                                    na['acquisitions'], na['datatype'], na['norm'][0]))
     elif na['model'][0] == 'ae_cnn':
@@ -138,7 +151,7 @@ class Select:
     elif self.validate == 0.0:
       trainer = "NoValidation"
     else:
-      raise Exception(f"Unknown validation {args.validate}")
+      raise Exception(f"Unknown validation {args.validate}") # FIXME: I think here should be self.validate
     # Check if sane, delete otherwise
     base_path = os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
                              train_model)
@@ -216,6 +229,17 @@ class Select:
                           '_' + t['args']['model_ACTIVATION'])
         elif t['args']['model'][0:4] == 'cnn_':
           model_str = t['args']['model']
+        elif t['args']['model'][0:5] == 'ae_fc':
+          model_str = ('ae_fc_' +str(t['args']['model_LIN'])+
+                       '_' + str(t['args']['model_LOUT']) +
+                       '_' + str(t['args']['model_ACT']) +
+                       '_' + str(t['args']['model_DO']))
+        elif t['args']['model'][0:6] == 'aeq_fc':                     # FIXME Need to load the fixed autoencoder in _run()
+          model_str = ('aeq_fc_' + str(t['args']['model_UNITS']) +
+                       '_' + str(t['args']['model_LAYERS']) +
+                       '_' + str(t['args']['model_ACT']) +
+                       '_' + str(t['args']['model_ACT-LAST']) +
+                       '_' + str(t['args']['model_DO']))
         else:
           raise Exception(f"Unknown model string {t['args']['model']}")
         if self.remote == 'local':
@@ -257,7 +281,7 @@ class Select:
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
-                raise Exception("Job failed: "+str(remote[k]))
+                raise Exception("Job failed: "+str(remote[k]))  # FIXME: Should be self.remote?
               remote_run[k][0] = 'complete'
             else:
               all_done = False
@@ -280,7 +304,8 @@ class Select:
            '--acquisitions', *[a for a in acquisitions],
            '--datatype', *[d for d in datatype],
            '--model', model,
-           '--batchsize', str(batch_size)]
+           '--batchsize', str(batch_size),
+           '--autoencoder', self.load_ae]            # FIXME When load_ae is not needed, the arguments in command line should be :"-l None"
     if self.verbose > 0:
       cmd += ['-v']*self.verbose
       print('# Run '+' '.join(cmd[3:]))
@@ -328,12 +353,20 @@ class Select:
   def _load_performance(self, model_path, fold):
     try:
       if len(fold) == 0:
-        with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
-          data = json.load(f)
-        train_p = [data['total']['abserror']['mean']] # total MAE
-        with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
-          data = json.load(f)
-        val_p = [data['total']['abserror']['mean']] # total MAE
+        if self.model_str == "ae_fc":                       # FIXME: I insert a self.model_str in __init__() to make here recognize the mddel string, training autoencoder produces the spectra_errors
+          with open(os.path.join(model_path, "train_spectra_errors.json"), 'r') as f:
+            data = json.load(f)
+          train_p = [data['total']['abserror']['mean']]  # total MAE
+          with open(os.path.join(model_path, "validation_spectra_errors.json"), 'r') as f:
+            data = json.load(f)
+          val_p = [data['total']['abserror']['mean']]  # total MAE
+        else:
+          with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
+            data = json.load(f)
+          train_p = [data['total']['abserror']['mean']] # total MAE
+          with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
+            data = json.load(f)
+          val_p = [data['total']['abserror']['mean']] # total MAE
       else:
         train_p = []
         val_p = []
@@ -425,7 +458,7 @@ class Select:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
-    # Plot distributions across single-parameter groups
+    # Plot distributions across single-parameter groups      # FIXME: NOT WORKING, but selection works fine without it
     x_max=1
     for group_id in var_keys:
       m = np.max(len(set([str(self.key_vals[p][group_id]) for p in range(0,len(self.val_performance))])))
@@ -465,8 +498,9 @@ class Select:
     plt.close()
 
 class SelectGrid(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
+  def __init__(self,metabolites,dataset,epochs,validate,remote,load_ae,screen_dpi,image_dpi,verbose):
     super(SelectGrid, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    self.load_ae = load_ae
 
   def optimise(self, collection_name, models, path_model):
     if self.verbose > 0:
