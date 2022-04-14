@@ -11,3 +11,5 @@ venv
 cfg.json
 data/model
 data/sim-spectra
+ae_fc_parameters.json
+aeq_fc_parameters.json
