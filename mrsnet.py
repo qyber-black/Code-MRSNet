@@ -189,6 +189,8 @@ def add_arguments_train_select(p):
                  help='Number of training epochs.')
   p.add_argument('-k', '--validate', type=float, default=0.7,
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
+  p.add_argument('-l', '--load_ae', type=str,
+                 help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def add_arguments_train(p):
   # Add training arguments
@@ -200,7 +202,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_S1_S2_C1_C2_C3_C4_O1_O2_F1_F2_D_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_FILTER_LATENT_[pool|stride]_DO, ae_fc_LIN_LOUT_ACT_DO, ae_fc_UNITS_LAYERS_ACT[_ACT-LAST] for autoencoder (see mrsnet/autoencoder.py)')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_S1_S2_C1_C2_C3_C4_O1_O2_F1_F2_D_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_FILTER_LATENT_[pool|stride]_DO, ae_fc_LIN_LOUT_ACT_DO, aeq_fc_UNITS_LAYERS_ACT_ACT-LAST_DO for autoencoder (see mrsnet/autoencoder.py)')
   p.add_argument('-a', '--autoencoder', type=str,
                  help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
@@ -569,14 +571,14 @@ def train(args):
 
 def model_selection(args):
   # Select sub-command
-  # FIXME: not tested with ae and aeq models; may not work / need expansion
+  # FIXME: not tested with ae and aeq models; may not work / need expansion, load_ae need to be stay "None" when using selection for other model(cnn_, ae_fc, ae_cnn)
   import subprocess
   import mrsnet.grid as grid
   args.metabolites.sort()
   models = grid.Grid.load(args.collection)
   if args.method == "grid":
     from mrsnet.selection import SelectGrid
-    selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,
+    selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,args.load_ae,
                           Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   elif args.method == "qmc":
     from mrsnet.selection import SelectQMC
