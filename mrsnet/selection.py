@@ -105,10 +105,11 @@ class Select:
     elif na['model'][0] == 'ae_fc':
       # AE-FC model fully parameterised
       from mrsnet.autoencoder import Autoencoder
-      # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
+      # ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]
       model_str = ('ae_fc_' + na['model_LIN'][0] +
                        '_' + na['model_LOUT'][0] +
                        '_' + na['model_ACT'][0] +
+                       '_' + na['model_ACT-LAST'][0] +
                        '_' + na['model_DO'][0])
       self.model_str = na['model'][0]
       model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
@@ -233,6 +234,7 @@ class Select:
           model_str = ('ae_fc_' +str(t['args']['model_LIN'])+
                        '_' + str(t['args']['model_LOUT']) +
                        '_' + str(t['args']['model_ACT']) +
+                       '_' + str(t['args']['model_ACT-LAST']) +
                        '_' + str(t['args']['model_DO']))
         elif t['args']['model'][0:6] == 'aeq_fc':                     # FIXME Need to load the fixed autoencoder in _run()
           model_str = ('aeq_fc_' + str(t['args']['model_UNITS']) +
