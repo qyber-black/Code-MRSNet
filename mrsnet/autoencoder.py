@@ -127,7 +127,7 @@ def _dense_layer(m, units, activation, dropout):
 #  Fully connected autoencoder via Model interface (using Sequential interface internally)
 class FCAutoEnc(Model):
 
-  def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, dropout, name='FCAutoEnc'):
+  def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last ,dropout, name='FCAutoEnc'):
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
     # layers_enc: number of layers in encoder
@@ -149,10 +149,10 @@ class FCAutoEnc(Model):
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
     units = n_freqs//(2**(layers_dec-1))
-    for l in range(0,layers_dec):
+    for l in range(0,layers_dec-1):
       _dense_layer(self.decoder, units, activation, -1) # no regularisers in decoder
       units *= 2
-
+    _dense_layer(self.decoder, units, activation_last, -1)
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
 
   def call(self,x):
@@ -282,8 +282,9 @@ class Autoencoder:
         lin = int(p[2])
         lout = int(p[3])
         act = p[4]
-        dropout = float(p[5])
-        self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,dropout)
+        act_last = p[5]
+        dropout = float(p[6])
+        self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,act_last,dropout)
       else:
         raise Exception(f"Unknown autoencoder variant: {p[1]}")
     else:
