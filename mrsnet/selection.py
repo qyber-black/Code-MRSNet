@@ -208,7 +208,7 @@ class Select:
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
-                raise Exception("Job failed: "+str(remote_run[k]))
+                print("Error: Job failed: "+str(remote_run[k]))
               remote_run[k][0] = 'complete'
             else:
               all_done = False
