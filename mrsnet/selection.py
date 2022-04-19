@@ -18,6 +18,7 @@ from mrsnet.dataset import Dataset
 from mrsnet.cfg import Cfg
 
 class Select:
+
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
     from mrsnet.dataset import Dataset
     if os.path.isfile(os.path.join(dataset,"spectra_noisy.joblib")):
@@ -47,18 +48,18 @@ class Select:
     self.verbose = verbose
     self.dataset_name = ds.name
     self.model_str = None
-
     if len(remote) > 0:
       remote = remote.split(":")
       self.remote = remote[0]
       self.remote_user = remote[1]
       self.remote_tasks = int(remote[2]) if len(remote) > 2 else 10
       self.remote_wait = int(remote[3]) if len(remote) > 3 else 15
-      cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "sync"]
+      if self.verbose > 0:
+        print("# Remote Sync")
+      cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "sync", self.dataset]
       p = subprocess.run(cmd, capture_output=True)
       output = p.stdout.decode("utf-8").split("\n")
       if self.verbose > 0:
-        print("# Remote Sync")
         for l in output:
           print(l)
     else:
@@ -71,72 +72,51 @@ class Select:
     self.val_performance = []
     self.train_performance = []
 
-  def _model_path(self,key_vals,path_model):
-    na = {}
-    for k in key_vals:
-      if isinstance(key_vals[k],list):
-        na[k] = [str(val) for val in key_vals[k]]
-      else:
-        na[k] = [str(key_vals[k])]
-    # Get model info
-    if na['model'][0] == 'cnn':
-      # CNN model fully parameterised
-      from mrsnet.cnn import CNN
+  def _add_task(self,key_vals,path_model):
+    # Add new task given by key_vals arguments and model storage path base path_model
+
+    # Convert arguments, interpret model string
+    args = key_vals.copy()
+    if args['model'] == 'cnn':
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
-      model_str = ('cnn_' + na['model_S1'][0] +
-                      '_' + na['model_S2'][0] +
-                      '_' + na['model_C1'][0] +
-                      '_' + na['model_C2'][0] +
-                      '_' + na['model_C3'][0] +
-                      '_' + na['model_C4'][0] +
-                      '_' + na['model_O1'][0] +
-                      '_' + na['model_O2'][0] +
-                      '_' + na['model_F1'][0] +
-                      '_' + na['model_F2'][0] +
-                      '_' + na['model_D'][0] +
-                      '_' + na['model_ACTIVATION'][0])
-      model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
-                           na['acquisitions'], na['datatype'], na['norm'][0]))
-    elif na['model'][0][0:4] == 'cnn_':
-      # CNN standard models
+      model_str = 'cnn'
+      for marg in ["S1", "S2", "C1", "C2", "C3", "C4", "O1", "O2", "F1", "F2", "D", "ACTIVATION"]:
+        model_str += str(args['model_'+marg])
+        del args['model_'+marg]
+      args['model'] = model_str
       from mrsnet.cnn import CNN
-      model_name = str(CNN(na['model'][0], self.metabolites, self.pulse_sequence,
-                           na['acquisitions'], na['datatype'], na['norm'][0]))
-    elif na['model'][0] == 'ae_fc':
+      model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:4] == 'cnn_':
+      model_str = args['model']
+      from mrsnet.cnn import CNN
+      model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:5] == 'ae_fc':
       # AE-FC model fully parameterised
       from mrsnet.autoencoder import Autoencoder
       # ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]
-      model_str = ('ae_fc_' + na['model_LIN'][0] +
-                       '_' + na['model_LOUT'][0] +
-                       '_' + na['model_ACT'][0] +
-                       '_' + na['model_ACT-LAST'][0] +
-                       '_' + na['model_DO'][0])
-      self.model_str = na['model'][0]
-      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
-                                   na['acquisitions'], na['datatype'], na['norm'][0]))
-    elif na['model'][0] == 'aeq_fc':
+      model_str = args['model']
+      self.model_str = model_str[0:5]
+      model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:6] == 'aeq_fc':
       # AEQ-FC model fully parameterised
       from mrsnet.autoencoder import Autoencoder
       # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
-      model_str = ('aeq_fc_' + na['model_UNITS'][0] +
-                   '_' + na['model_LAYERS'][0] +
-                   '_' + na['model_ACT'][0] +
-                   '_' + na['model_ACT-LAST'][0] +
-                   '_' + na['model_DO'][0])
-      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
-                                   na['acquisitions'], na['datatype'], na['norm'][0]))
-    elif na['model'][0] == 'ae_cnn':
-      # AE-CNN model fully parameterised
-      from mrsnet.autoencoder import Autoencoder
-      # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
-      model_str = ('ae_cnn' + na['model_FILTER'][0] +
-                        '_' + na['model_LATENT'][0] +
-                        '_' + na['model_POOLING'][0] +
-                        '_' + na['model_DO'][0])
-      model_name = str(Autoencoder(model_str, self.metabolites, self.pulse_sequence,
-                                   na['acquisitions'], na['datatype'], na['norm'][0]))
+      model_str = args['model']
+      model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
     else:
-      raise Exception(f"Unknown model {na['model']}")
+      raise Exception(f"Unknown model string {args['model']}")
+    # Make all arguments strings
+    for a in args:
+      if isinstance(args[a],list):
+        args[a] = [str(v) for v in args[a]]
+      else:
+        args[a] = str(args[a])
+
+    # Find model_path and fold for model
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
     fold=""
     if self.validate > 1.0:
@@ -152,13 +132,12 @@ class Select:
     elif self.validate == 0.0:
       trainer = "NoValidation"
     else:
-      raise Exception(f"Unknown validation {args.validate}") # FIXME: I think here should be self.validate
+      raise Exception(f"Unknown validation {args.validate}")
     # Check if sane, delete otherwise
-    base_path = os.path.join(path_model, model_name, na['batch_size'][0], str(self.epochs),
+    base_path = os.path.join(path_model, model_name, args['batchsize'], str(self.epochs),
                              train_model)
     # Find model folder, assuming there may be multiple repeats.
     # We assume the last valid repeat is the best option/latest result.
-    # iterate over files in
     selected_id = -1
     if os.path.isdir(base_path):
       for fn in os.listdir(base_path):
@@ -187,14 +166,14 @@ class Select:
             print(f"# WARNING: {ffn} - this file should not be there")
     if selected_id < 0:
       selected_id = 1
-    return os.path.join(base_path,trainer+"-"+str(selected_id)), fold
+    model_path = os.path.join(base_path,trainer+"-"+str(selected_id))
 
-  def _add_task(self,key_vals,path_model):
-    model_path, fold = self._model_path(key_vals,path_model)
+    # Create task
     self.tasks.append({
         'model_path': model_path,
         'fold': fold,
-        'args': key_vals.copy()
+        'args': args,
+        'key_vals': key_vals.copy()
       })
 
   def _run_tasks(self, load_only=False):
@@ -214,56 +193,17 @@ class Select:
           self.train_performance.append(train_p)
       if val_p is None and not load_only:
         # Train
-        if t['args']['model'] == 'cnn':
-          # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
-          model_str = ('cnn_' + str(t['args']['model_S1']) +
-                          '_' + str(t['args']['model_S2']) +
-                          '_' + str(t['args']['model_C1']) +
-                          '_' + str(t['args']['model_C2']) +
-                          '_' + str(t['args']['model_C3']) +
-                          '_' + str(t['args']['model_C4']) +
-                          '_' + str(t['args']['model_O1']) +
-                          '_' + str(t['args']['model_O2']) +
-                          '_' + str(t['args']['model_F1']) +
-                          '_' + str(t['args']['model_F2']) +
-                          '_' + str(t['args']['model_D']) +
-                          '_' + t['args']['model_ACTIVATION'])
-        elif t['args']['model'][0:4] == 'cnn_':
-          model_str = t['args']['model']
-        elif t['args']['model'][0:5] == 'ae_fc':
-          model_str = ('ae_fc_' +str(t['args']['model_LIN'])+
-                       '_' + str(t['args']['model_LOUT']) +
-                       '_' + str(t['args']['model_ACT']) +
-                       '_' + str(t['args']['model_ACT-LAST']) +
-                       '_' + str(t['args']['model_DO']))
-        elif t['args']['model'][0:6] == 'aeq_fc':                     # FIXME Need to load the fixed autoencoder in _run()
-          model_str = ('aeq_fc_' + str(t['args']['model_UNITS']) +
-                       '_' + str(t['args']['model_LAYERS']) +
-                       '_' + str(t['args']['model_ACT']) +
-                       '_' + str(t['args']['model_ACT-LAST']) +
-                       '_' + str(t['args']['model_DO']))
-        else:
-          raise Exception(f"Unknown model string {t['args']['model']}")
         if self.remote == 'local':
-          self._run(t['args']['norm'],t['args']['acquisitions'],t['args']['datatype'],
-                    model_str,t['args']['batch_size'])
+          self._run(t['args'])
           val_p, train_p = self._load_performance(t['model_path'], t['fold'])
           if val_p is not None:
-            self.key_vals.append(t['args'])
+            self.key_vals.append(t['key_vals'])
             self.val_performance.append(val_p)
             self.train_performance.append(train_p)
           else:
             raise Exception("Local job failed: "+str(t)+" : "+model_str)
         else:
-          remote_run.append(['wait',
-                             [t['args']['norm'],
-                              t['args']['acquisitions'],
-                              t['args']['datatype'],
-                              model_str,
-                              t['args']['batch_size']],
-                             t['model_path'],
-                             t['fold'],
-                             t['args']])
+          remote_run.append(['wait', t['args'], t['model_path'], t['fold'], t['key_vals']])
       counter += 1
     if len(remote_run) > 0:
       if self.verbose > 0:
@@ -283,7 +223,7 @@ class Select:
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
-                raise Exception("Job failed: "+str(remote[k]))  # FIXME: Should be self.remote?
+                print("Error: Job failed: "+str(remote_run[k]))
               remote_run[k][0] = 'complete'
             else:
               all_done = False
@@ -296,18 +236,24 @@ class Select:
 
     self.tasks = []
 
-  def _run(self,norm,acquisitions,datatype,model,batch_size):
+  def _run(self,args):
     cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'train',
            '--metabolites', *[m for m in self.metabolites],
            '--dataset', self.dataset,
            '--epochs', str(self.epochs),
-           '--validate', str(self.validate),
-           '--norm', norm,
-           '--acquisitions', *[a for a in acquisitions],
-           '--datatype', *[d for d in datatype],
-           '--model', model,
-           '--batchsize', str(batch_size),
-           '--autoencoder', self.load_ae]            # FIXME When load_ae is not needed, the arguments in command line should be :"-l None"
+           '--validate', str(self.validate)]
+    for a in args:
+      cmd.append("--"+a)
+      if isinstance(args[a], list):
+        for l in range(0,len(args[a])):
+          if isinstance(args[a][l],str):
+            cmd.append(args[a][l])
+          else:
+            cmd.append(str(args[a][l]))
+      elif isinstance(args[a], str):
+        cmd.append(args[a])
+      else:
+        cmd.append(str(args[a]))
     if self.verbose > 0:
       cmd += ['-v']*self.verbose
       print('# Run '+' '.join(cmd[3:]))
@@ -318,17 +264,8 @@ class Select:
     p.wait()
 
   def _run_remote(self,id,all):
-    cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "X",
-           self.dataset,
-           "-".join([m for m in self.metabolites]),
-           self.pulse_sequence,
-           str(self.epochs),
-           str(self.validate),
-           all[id][1][0],
-           "-".join([a for a in all[id][1][1]]),
-           "-".join([d for d in all[id][1][2]]),
-           all[id][1][3],
-           str(all[id][1][4])]
+    cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "X", all[id][2]]
+
     if all[id][0] == 'run':
       cmd[4] = "check"
       p = subprocess.run(cmd, capture_output=True)
@@ -344,6 +281,22 @@ class Select:
     elif all[id][0] == 'wait':
       if len([l for l in all if l[0] == 'run']) < self.remote_tasks:
         cmd[4] = "run"
+        cmd += ['--metabolites', *[m for m in self.metabolites],
+                '--dataset', self.dataset,
+                '--epochs', str(self.epochs),
+                '--validate', str(self.validate)]
+        for a in all[id][1]:
+          cmd.append("--"+a)
+          if isinstance(all[id][1][a], list):
+            for l in range(0,len(all[id][1][a])):
+              if isinstance(all[id][1][a][l],str):
+                cmd.append(all[id][1][a][l])
+              else:
+                cmd.append(str(all[id][1][a][l]))
+          elif isinstance(all[id][1][a], str):
+            cmd.append(all[id][1][a])
+          else:
+            cmd.append(str(all[id][1][a]))
         p = subprocess.run(cmd, capture_output=True)
         output = p.stdout.decode("utf-8").split("\n")
         if self.verbose > 0:
@@ -394,7 +347,7 @@ class Select:
     # Results folder
     basename = os.path.basename(collection_name).replace(".json","")
     from mrsnet.getfolder import get_folder
-    folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-%s")
+    folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-"+str(self.validate)+"-%s")
     if not os.path.exists(folder):
       os.makedirs(folder)
     # Store performance data
@@ -460,7 +413,7 @@ class Select:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
-    # Plot distributions across single-parameter groups      # FIXME: NOT WORKING, but selection works fine without it
+    # Plot distributions across single-parameter groups
     x_max=1
     for group_id in var_keys:
       m = np.max(len(set([str(self.key_vals[p][group_id]) for p in range(0,len(self.val_performance))])))
@@ -468,10 +421,11 @@ class Select:
         x_max = m
     X = np.arange(1,x_max+1)
     fig, ax = plt.subplots(len(var_keys),1)
+    if len(var_keys) == 1:
+      ax = [ax]
     for k in range(0,len(var_keys)):
       group_id = var_keys[k]
-      key_vals = sorted(list(set([self.key_vals[p][group_id]
-                                  for p in range(0,len(self.val_performance))])))
+      key_vals = sorted(list(set([str(self.key_vals[p][group_id]) for p in range(0,len(self.val_performance))])))
       key_vals = [str(v) for v in key_vals]
       for ki in range(0,len(key_vals)):
         val_per = [val_error[p]
@@ -500,9 +454,8 @@ class Select:
     plt.close()
 
 class SelectGrid(Select):
-  def __init__(self,metabolites,dataset,epochs,validate,remote,load_ae,screen_dpi,image_dpi,verbose):
+  def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
     super(SelectGrid, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
-    self.load_ae = load_ae
 
   def optimise(self, collection_name, models, path_model):
     if self.verbose > 0:
