@@ -189,8 +189,6 @@ def add_arguments_train_select(p):
                  help='Number of training epochs.')
   p.add_argument('-k', '--validate', type=float, default=0.7,
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
-  p.add_argument('-l', '--load_ae', type=str,
-                 help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
 
 def add_arguments_train(p):
   # Add training arguments
@@ -578,7 +576,7 @@ def model_selection(args):
   models = grid.Grid.load(args.collection)
   if args.method == "grid":
     from mrsnet.selection import SelectGrid
-    selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,args.load_ae,
+    selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,
                           Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
   elif args.method == "qmc":
     from mrsnet.selection import SelectQMC
