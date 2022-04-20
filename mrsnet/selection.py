@@ -94,17 +94,27 @@ class Select:
                            args['acquisitions'], args['datatype'], args['norm']))
     elif args['model'][0:5] == 'ae_fc':
       # AE-FC model fully parameterised
-      from mrsnet.autoencoder import Autoencoder
       # ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]
-      model_str = args['model']
+      model_str = 'ae_fc'
+      for marg in ["LIN", "LOUT", "ACT", "ACT-LAST", "DO"]:
+        model_str += "_"
+        model_str += str(args['model_' + marg])
+        del args['model_' + marg]
+      args['model'] = model_str
+      from mrsnet.autoencoder import Autoencoder
       self.model_str = model_str[0:5]
       model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
     elif args['model'][0:6] == 'aeq_fc':
       # AEQ-FC model fully parameterised
-      from mrsnet.autoencoder import Autoencoder
       # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
-      model_str = args['model']
+      model_str = 'aeq_fc'
+      for marg in ["UNITS", "LAYERS", "ACT", "ACT-LAST", "DO"]:
+        model_str += "_"
+        model_str += str(args['model_' + marg])
+        del args['model_' + marg]
+      args['model'] = model_str
+      from mrsnet.autoencoder import Autoencoder
       model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
     else:
