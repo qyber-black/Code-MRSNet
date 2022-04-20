@@ -81,7 +81,7 @@ class Select:
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = 'cnn'
       for marg in ["S1", "S2", "C1", "C2", "C3", "C4", "O1", "O2", "F1", "F2", "D", "ACTIVATION"]:
-        model_str += str(args['model_'+marg])
+        model_str += "_"+str(args['model_'+marg])
         del args['model_'+marg]
       args['model'] = model_str
       from mrsnet.cnn import CNN
