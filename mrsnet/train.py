@@ -92,7 +92,7 @@ class Train:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
           if val_fold == 0:
             os.rename(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"),
-                      os.path.join(folder,"architectecture@"+str(dpi)+".png"))
+                      os.path.join(folder,"architecture@"+str(dpi)+".png"))
           else:
             os.remove(os.path.join(fold_folder,"architecture@"+str(dpi)+".png"))
       model.reset()
