@@ -100,6 +100,13 @@ class Select:
         args[a] = [str(v) for v in args[a]]
       else:
         args[a] = str(args[a])
+    # Same for key_vals (can be different due to model parametrs, but used for
+    # plots and must be all strings for sorting, etc)
+    for kv in key_vals:
+      if isinstance(key_vals[kv],list):
+        key_vals[kv] = [str(v) for v in key_vals[kv]]
+      else:
+        key_vals[kv] = str(key_vals[kv])
 
     # Find model_path and fold for model
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
@@ -173,7 +180,7 @@ class Select:
           print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
         if val_p is not None:
-          self.key_vals.append(t['args'])
+          self.key_vals.append(t['key_vals'])
           self.val_performance.append(val_p)
           self.train_performance.append(train_p)
       if val_p is None and not load_only:
@@ -186,7 +193,7 @@ class Select:
             self.val_performance.append(val_p)
             self.train_performance.append(train_p)
           else:
-            raise Exception("Local job failed: "+str(t)+" : "+model_str)
+            print("**Error:** Local job failed: "+str(t)+" : "+model_str)
         else:
           remote_run.append(['wait', t['args'], t['model_path'], t['fold'], t['key_vals']])
       counter += 1
@@ -208,7 +215,7 @@ class Select:
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
-                print("Error: Job failed: "+str(remote_run[k]))
+                print("**Error:** Remote job failed: "+str(remote_run[k]))
               remote_run[k][0] = 'complete'
             else:
               all_done = False
