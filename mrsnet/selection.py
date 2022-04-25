@@ -332,8 +332,7 @@ class Select:
     basename = os.path.basename(collection_name).replace(".json","")
     from mrsnet.getfolder import get_folder
     folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-"+str(self.validate)+"-%s")
-    if not os.path.exists(folder):
-      os.makedirs(folder)
+    os.makedirs(folder, exist_ok=True)
     # Store performance data
     idx = [l[0] for l in sorted(enumerate(self.val_performance), key=lambda x:np.mean(x[1]))]
     with open(os.path.join(folder,"model_performance.csv"), "w") as f:
@@ -534,7 +533,9 @@ class SelectGPO(Select):
     for k in fix_keys:
       key_vals[k] = models.values[k][0]
     # Load Existing - can be disabled, so we can run repeatedly and use existing results
-    if not Cfg.dev('selectgpo_optimse_noload'):
+    if not Cfg.dev('selectgpo_optimise_noload'):
+      if self.verbose > 0:
+        print("# Loading existing samples")
       for model in models:
         for ki,k in enumerate(keys):
           if k in var_keys:
@@ -559,7 +560,19 @@ class SelectGPO(Select):
       # Add results; multiple times if multiple evluations due to KFold validation, etc.
       for ri in range(0,res_n):
         for ki,k in enumerate(var_keys):
-          Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
+          if isinstance(models.values[k][0], list):
+            if isinstance(models.values[k][0][0], int):
+              Xnext[ll,ki] = models.values[k].index([int(v) for v in self.key_vals[l][k]])
+            elif isinstance(models.values[k][0][0], float):
+              Xnext[ll,ki] = models.values[k].index([float(v) for v in self.key_vals[l][k]])
+            else:
+              Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
+          elif isinstance(models.values[k][0], int):
+            Xnext[ll,ki] = models.values[k].index(int(self.key_vals[l][k]))
+          elif isinstance(models.values[k][0], float):
+            Xnext[ll,ki] = models.values[k].index(int(self.key_vals[l][k]))
+          else:
+            Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
         Ynext[ll,0] = self.val_performance[l][ri]
         ll += 1
     Xdata = np.vstack((Xdata,Xnext))
@@ -646,6 +659,7 @@ class SelectGPO(Select):
     ax[1].xaxis.get_major_locator().set_params(integer=True)
     fig.tight_layout()
     folder = os.path.join(self.dataset,collection_name+"-gpo-"+str(self.epochs))
+    os.makedirs(folder, exist_ok=True)
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"gpo_convergence@"+str(dpi)+".png"), dpi=dpi)
     if self.verbose > 1:

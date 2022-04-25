@@ -219,6 +219,19 @@ sub-command only).
 
 Note, loading of non-Siemens DICOM files has not been tested.
 
+## Issues
+
+* If GPyOpt for gpo selection fails with "not positive definite, even with jitter.",
+  see https://github.com/SheffieldML/GPy/issues/660 for a solution. Changing
+  ```
+  L = linalg.cholesky(A + np.eye(A.shape[0]) * jitter, lower=True)
+  ```
+  to
+  ```
+  L = np.linalg.cholesky(A + np.eye(A.shape[0]) * jitter)
+  ```
+  in `GPy/util/linalg.py` (GPy is a dependency of GPyOpt) seems to fix this.
+
 ## Versioning
 
 Released versions:
