@@ -172,6 +172,7 @@ class Select:
     counter = 1
     remote_run = []
     for t in self.tasks:
+      global ga_aux
       if not load_only and self.verbose > 0:
         print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
@@ -691,7 +692,7 @@ class SelectGA(Select):
       'last_fitness': 0
     }
     # GA Setup
-    pop = int(min(0.01*total,Cfg.val["ga_max_init_pop"]))
+    pop = int(min(0.1*total,Cfg.val["ga_max_init_pop"]))
     num_parents_mating = Cfg.val["ga_num_parents_mating"]
     gene_space = []
     gene_len = []
@@ -712,9 +713,9 @@ class SelectGA(Select):
                            gene_space=gene_space,
                            parent_selection_type="sus",
                            crossover_type="single_point",
-                           crossover_probability=0.25,
+                           crossover_probability=0.5,
                            mutation_type="adaptive",
-                           mutation_probability=(0.25,0.1),
+                           mutation_probability=(0.5,0.1),
                            mutation_percent_genes=(25,10),
                            fitness_func=_ga_fitness_func,
                            on_generation=_ga_on_generation,
@@ -765,7 +766,20 @@ def _ga_fitness_func(solution, solution_idx):
     kv = ga_aux['select'].key_vals[k]
     for l in range(0,len(ga_aux['var_keys'])):
       lv = ga_aux['var_keys'][l]
-      if kv[lv] != ga_aux['models'].values[lv][solution[l]]:
+      if isinstance(ga_aux['models'].values[lv][solution[l]],list):
+        if isinstance(ga_aux['models'].values[lv][solution[l]][0],int):
+          cmp = [int(v) for v in kv[lv]]
+        elif isinstance(ga_aux['models'].values[lv][solution[l]][0],float):
+          cmp = [float(v) for v in kv[lv]]
+        else:
+          cmp = kv[lv]
+      elif isinstance(ga_aux['models'].values[lv][solution[l]],int):
+        cmp = int(kv[lv])
+      elif isinstance(ga_aux['models'].values[lv][solution[l]],float):
+        cmp = float(kv[lv])
+      else:
+        cmp = kv[lv]
+      if cmp != ga_aux['models'].values[lv][solution[l]]:
         match = False
         break
     if match:

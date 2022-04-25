@@ -42,7 +42,7 @@ class Cfg:
     'beta1': 0.9, # Adam beta1
     'beta2': 0.999, # Adam beta2
     'epsilon': 1e-8, # Adam epsilon
-    'ga_num_parents_mating': 5, # SelectGA number of parents selected for mating
+    'ga_num_parents_mating': 10, # SelectGA number of parents selected for mating
     'ga_max_init_pop': 10, # SelectGA maximum initial population
     'default_screen_dpi': 96,
     'screen_dpi': None,
