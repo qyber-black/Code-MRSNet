@@ -434,6 +434,7 @@ class Select:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
+    return folder
 
 class SelectGrid(Select):
   def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
@@ -643,7 +644,7 @@ class SelectGPO(Select):
       current_iter += 1
 
     # Store performance info
-    self._save_performance(collection_name+"-gpo", var_keys, fix_keys)
+    folder = self._save_performance(collection_name+"-gpo", var_keys, fix_keys)
 
     # GPO convergence
     fig, ax = plt.subplots(1,2)
@@ -658,8 +659,6 @@ class SelectGPO(Select):
     ax[1].set_ylabel("Best Wasserstein distance error")
     ax[1].xaxis.get_major_locator().set_params(integer=True)
     fig.tight_layout()
-    folder = os.path.join(self.dataset,collection_name+"-gpo-"+str(self.epochs))
-    os.makedirs(folder, exist_ok=True)
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"gpo_convergence@"+str(dpi)+".png"), dpi=dpi)
     if self.verbose > 1:
