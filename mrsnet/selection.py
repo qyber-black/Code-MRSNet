@@ -572,7 +572,7 @@ class SelectGPO(Select):
           elif isinstance(models.values[k][0], int):
             Xnext[ll,ki] = models.values[k].index(int(self.key_vals[l][k]))
           elif isinstance(models.values[k][0], float):
-            Xnext[ll,ki] = models.values[k].index(int(self.key_vals[l][k]))
+            Xnext[ll,ki] = models.values[k].index(float(self.key_vals[l][k]))
           else:
             Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
         Ynext[ll,0] = self.val_performance[l][ri]
