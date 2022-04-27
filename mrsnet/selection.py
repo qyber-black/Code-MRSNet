@@ -94,6 +94,7 @@ class Select:
                            args['acquisitions'], args['datatype'], args['norm']))
     else:
       raise Exception(f"Unknown model string {args['model']}")
+
     # Make all arguments strings
     for a in args:
       if isinstance(args[a],list):
@@ -543,7 +544,12 @@ class SelectGPO(Select):
           if k in var_keys:
             key_vals[k] = models.values[k][models.values[k].index(model[ki])]
         self._add_task(key_vals, path_model)
-        self._run_tasks(load_only=True)
+      self._run_tasks(load_only=True)
+      if self.verbose > 0:
+        if len(self.key_vals) > 0:
+          print(f"  Models loaded: {len(self.key_vals)} x {len(self.val_performance[0])}")
+        else:
+          print(f"  Models loaded: None")
     # Evaluate first, if none available so far
     if len(self.key_vals) < 1:
       for ki,k in enumerate(keys):
