@@ -549,15 +549,23 @@ def quantify(args):
       train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
+      model_path = os.path.join(*id[0:k])
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
     print(f"# Loading model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
-  folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(folder)
+    try:
+      folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+      quantifier = CNN.load(folder)
+    except:
+      try:
+        folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+        quantifier = CNN.load(folder)
+      except:
+        raise Exception("Model not found")
   else:
     raise Exception("Unknown model "+name)
   if ds is None:
@@ -603,6 +611,7 @@ def benchmark(args):
       train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
+      model_path = os.path.join(*id[0:k])
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
@@ -610,7 +619,13 @@ def benchmark(args):
     print(f"# Model {name} : {batchsize} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
+    try:
+      quantifier = CNN.load(os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest))
+    except:
+      try:
+        quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
+      except:
+        raise Exception("Cannot find model")
   else:
     raise Exception("Unknown model "+name)
   import mrsnet.dataset as dataset
