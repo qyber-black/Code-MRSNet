@@ -56,7 +56,8 @@ class Cfg:
   dev_flags = set()
   # check_dataset_export - Test if exporting dataset to tensors is correct in train
   # flag_plots - Show some test graphs for the activated checks
-  # feature_selectgpo_optimse_noload - do not load existing results for SelectGPO
+  # selectgpo_optimse_noload - do not load existing results for SelectGPO
+  # selectgpo_no_search - only use existing results; do not execute GPO search
   file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod

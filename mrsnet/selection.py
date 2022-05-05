@@ -377,6 +377,7 @@ class Select:
     val_error = [np.mean(self.val_performance[idx[p]]) for p in range(0,len(self.val_performance))]
     train_error = [np.mean(self.train_performance[idx[p]]) for p in range(0,len(self.val_performance))]
     top_n = np.min([len(self.val_performance),50])
+    top_n = np.max(np.argwhere(np.array(val_error[:top_n]) < 999999.0)) # Don't plot failed
     Y = np.arange(2*len(val_error),1,-2)
     ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
             label="Val. Error", color="#4878D0", zorder=1)
@@ -605,6 +606,8 @@ class SelectGPO(Select):
       eval_per_step = 1
     else:
       eval_per_step = self.remote_tasks
+    if Cfg.dev('selectgpo_no_search'):
+      current_iter = self.repeats
     while current_iter < self.repeats and remaining_samples > 0:
       if eval_per_step  == 1:
         evaluator = 'sequential'
