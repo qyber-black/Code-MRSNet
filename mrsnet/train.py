@@ -63,7 +63,7 @@ class Train:
     val_res = { 'error': [None]*self.k }
     for val_fold in range(0,self.k):
       if verbose > 0:
-        print(f"# Fold {val_fold} of {self.k}")
+        print(f"# Fold {val_fold+1} of {self.k}")
       fold_folder = os.path.join(folder,"fold-"+str(val_fold))
       val_sel = (self._bucket_idx == val_fold)
       train_sel = np.logical_not(val_sel)

@@ -153,7 +153,7 @@ class Select:
               selected_id = repeat_id
           else:
             if self.verbose > 0:
-              print(f"# WARNING: {fn} - broken/incomplete model")
+              print(f"# WARNING: {ffn} - broken/incomplete model")
         else:
           if self.verbose > 0:
             print(f"# WARNING: {ffn} - this file should not be there")
@@ -190,12 +190,14 @@ class Select:
         if self.remote == 'local':
           self._run(t['args'])
           val_p, train_p = self._load_performance(t['model_path'], t['fold'])
+          self.key_vals.append(t['key_vals'])
           if val_p is not None:
-            self.key_vals.append(t['key_vals'])
             self.val_performance.append(val_p)
             self.train_performance.append(train_p)
           else:
-            print("**Error:** Local job failed: "+str(t)+" : "+model_str)
+            self.val_performance.append([999999.0]*len(self.val_performance[0]))
+            self.train_performance.append([999999.0]*len(self.val_performance[0]))
+            print("**Error:** Local job failed: "+str(t))
         else:
           remote_run.append(['wait', t['args'], t['model_path'], t['fold'], t['key_vals']])
       counter += 1
@@ -212,11 +214,13 @@ class Select:
             status = self._run_remote(k,remote_run)
             if status == 'done':
               val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
+              self.key_vals.append(remote_run[k][4])
               if val_p is not None:
-                self.key_vals.append(remote_run[k][4])
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
+                self.val_performance.append([999999.0]*len(self.val_performance[0]))
+                self.train_performance.append([999999.0]*len(self.val_performance[0]))
                 print("**Error:** Remote job failed: "+str(remote_run[k]))
               remote_run[k][0] = 'complete'
             else:
@@ -561,7 +565,7 @@ class SelectGPO(Select):
     Xdata = np.ndarray((0,len(var_keys)))
     Ydata = np.ndarray((0,1))
     res_n = len(self.val_performance[0])
-    Xnext = np.ndarray((len(self.key_vals)*res_n,len(var_keys)))
+    Xnext = np.ndarray((len(self.val_performance)*res_n,len(var_keys)))
     Ynext = np.ndarray((Xnext.shape[0],1))
     ll = 0
     for l in range(0,len(self.key_vals)):
@@ -585,6 +589,7 @@ class SelectGPO(Select):
         ll += 1
     Xdata = np.vstack((Xdata,Xnext))
     Ydata = np.vstack((Ydata,Ynext))
+    Perf_data_pos = len(self.val_performance)
     # Init GPO performance data
     remaining_samples = total - Xdata.shape[0] // res_n
     idx_best = np.argmin(Ydata,axis=0)[0]
@@ -620,8 +625,8 @@ class SelectGPO(Select):
                                              exact_feval=False,
                                              de_duplication=True)
       Xnext = bop.suggest_next_locations()
+
       # Evaluate next data points
-      Y_data_pos = len(self.val_performance)
       for x in Xnext:
         remaining_samples -= 1
         for l in range(0,len(var_keys)):
@@ -631,13 +636,17 @@ class SelectGPO(Select):
           print("  "+str([str(key_vals[k]) for k in var_keys]))
         self._add_task(key_vals, path_model)
       self._run_tasks()
-      Ynext = np.ndarray((Xnext.shape[0],1))
-      # Add results; multiple times if multipel evluations due to KFold validation, etc.
+
+      # Add results; multiple times if multiple evluations due to KFold validation
       for ri in range(0,len(self.val_performance[0])):
+        Ynext = np.ndarray((Xnext.shape[0],1))
         for l in range(0,Ynext.shape[0]):
-          Ynext[l,0] = self.val_performance[Y_data_pos+l][ri]
+          Ynext[l,0] = self.val_performance[Perf_data_pos+l][ri]
         Xdata = np.vstack((Xdata,Xnext))
         Ydata = np.vstack((Ydata,Ynext))
+      Perf_data_pos = len(self.val_performance)
+
+      # Update results
       idx_best = np.argmin(Ydata,axis=0)[0]
       Ybest.append(Ydata[idx_best,0])
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
