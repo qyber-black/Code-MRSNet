@@ -182,9 +182,16 @@ class EncQuant(Model):
     # Quantifier
     self.quantifier = tf.keras.Sequential(name='Quantifier')
     self.quantifier.add(Flatten())
-    for l in range(0, layers-1):
-      _dense_layer(self.quantifier, units, act, dp)
-      units //= 2
+    if act == "None":
+      if dp == -1:
+        self.quantifier.add(Dense(units, activation=None))
+      else:
+        self.quantifier.add(Dense(units, activation=None))
+        self.quantifier.add(Dropout(dp))
+    else:
+      for l in range(0, layers-1):
+        _dense_layer(self.quantifier, units, act, dp)
+        units //= 2
       # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
     if act_last == "None":
       self.quantifier.add(Dense(output_conc, activation=None)) # The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
