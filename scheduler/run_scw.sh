@@ -83,12 +83,12 @@ fi
 if [ "$cmd" == sync ]; then
 
   echo "# Sync'ing code from `pwd`"
-  rsync -aK --delete --append-verify --progress --exclude='.git' --exclude='__pycache__' --exclude 'data' --exclude 'mrsnet/simulators' . ${user}@${host}:code-mrsnet
+  rsync -a --delete --append-verify --progress --exclude='.git' --exclude='__pycache__' --exclude 'data' --exclude 'mrsnet/simulators' . ${user}@${host}:code-mrsnet
   ssh ${user}@${host} 'find code-mrsnet/data/jobs-scw -type d -empty -delete 2>/dev/null 1>&2'
 
   echo "# Sync'ing dataset $DATASET_PATH"
   ssh ${user}@${host} 'mkdir -p 'code-mrsnet/$DATASET_PATH
-  rsync -aK --delete --append-verify --progress $DATASET_PATH/ ${user}@${host}:code-mrsnet/$DATASET_PATH
+  rsync -a --delete --append-verify --progress $DATASET_PATH/ ${user}@${host}:code-mrsnet/$DATASET_PATH
 
 elif [ "$cmd" == run ]; then
 
@@ -154,7 +154,7 @@ else
       echo "Done: $MODEL_PATH"
       mkdir -p $MODEL_PATH
       src="`echo $MODEL_PATH | sed -e 's,^.*/data/model/,,'`"
-      rsync -aK --delete --append-verify --progress ${user}@${host}:code-mrsnet/data/model/$src/ $MODEL_PATH
+      rsync -a --delete --append-verify --progress ${user}@${host}:code-mrsnet/data/model/$src/ $MODEL_PATH
       # Delete job folder and model
       ssh ${user}@${host} rm -rf $folder code-mrsnet/$MODEL_PATH
       echo "DONE"
