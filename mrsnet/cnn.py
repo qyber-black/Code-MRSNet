@@ -221,7 +221,8 @@ class CNN:
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
-    validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
+    if validation_data != None:
+      validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.cnn.fit(train_data,

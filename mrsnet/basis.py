@@ -95,7 +95,6 @@ class Basis:
       self.sample_rate = sample_rate
       self.samples = samples
 
-
     self.acquisitions = None # Indicates if setup or not and lists acqusitions
     self.spectra = {}  # Dict of spectra in basis: spectra['METABOLITE'] = {'ACQUISITION': Spectrum}
 
@@ -178,7 +177,7 @@ class Basis:
       spec = {}
       for a in self.spectra['Gln'].keys():
         if a in self.spectra['Glu']:
-          spec[a] = Spectrum.comb(1.0,self.spectra['Gln'],1.0,self.spectra['Glu'],
+          spec[a] = Spectrum.comb(1.0,self.spectra['Gln'][a],1.0,self.spectra['Glu'][a],
                                   self.spectra['Gln'][a].id+"_+_"+self.spectra['Glu'][a].id,
                                   a)
       self.spectra['GlX'] = spec
