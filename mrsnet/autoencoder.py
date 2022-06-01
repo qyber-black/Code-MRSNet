@@ -120,7 +120,12 @@ def _dense_layer(m, units, activation, dropout):
   m.add(Dense(units))
   if dropout == 0.0:
     m.add(BatchNormalization())
-  m.add(Activation(activation))
+  if activation[0:10] == "leaky-relu":
+    m.add(LeakyReLU(alpha=activation[12:]))
+  elif activation == "None":
+    m
+  else:
+    m.add(Activation(activation))
   if dropout > 0.0:
     m.add(Dropout(dropout))
 
@@ -182,21 +187,11 @@ class EncQuant(Model):
     # Quantifier
     self.quantifier = tf.keras.Sequential(name='Quantifier')
     self.quantifier.add(Flatten())
-    if act == "None":
-      if dp == -1:
-        self.quantifier.add(Dense(units, activation=None))
-      else:
-        self.quantifier.add(Dense(units, activation=None))
-        self.quantifier.add(Dropout(dp))
-    else:
-      for l in range(0, layers-1):
-        _dense_layer(self.quantifier, units, act, dp)
-        units //= 2
-      # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    if act_last == "None":
-      self.quantifier.add(Dense(output_conc, activation=None)) # The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
-    else:
-      _dense_layer(self.quantifier, output_conc, act_last, -1)
+    for l in range(0, layers-1):
+      _dense_layer(self.quantifier, units, act, dp)
+      units //= 2
+    # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
+    _dense_layer(self.quantifier, output_conc, act_last, -1) #The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
 
     self.build((None, n_specs, n_freqs)) # Build encoder - quantifier
 
