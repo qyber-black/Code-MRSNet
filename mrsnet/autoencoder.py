@@ -120,9 +120,9 @@ def _dense_layer(m, units, activation, dropout):
   m.add(Dense(units))
   if dropout == 0.0:
     m.add(BatchNormalization())
-  if activation[0:10] == "leaky-relu":
-    m.add(LeakyReLU(alpha=activation[12:]))
-  elif activation == "None":
+  if activation[0:9] == "leakyrelu":
+    m.add(LeakyReLU(alpha=activation[9:]))
+  elif activation == "None": # Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
     m
   else:
     m.add(Activation(activation))
