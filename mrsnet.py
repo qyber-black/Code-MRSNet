@@ -532,6 +532,7 @@ def train(args):
                           ae_model.acquisitions, ae_model.datatype, ae_model.norm,
                           encoder=encoder, encoder_model=ae_model.model,
                           encoder_train_dataset_name=ae_model.train_dataset_name)
+      model.ae_path = os.path.join("./data/model", name, batchsize, epochs, train_model, trainer, rest)
       # Get data
       d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                         acquisitions=args.acquisitions, datatype=args.datatype,
