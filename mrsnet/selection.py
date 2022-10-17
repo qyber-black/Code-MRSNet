@@ -81,7 +81,7 @@ class Select:
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = 'cnn'
       for marg in ["S1", "S2", "C1", "C2", "C3", "C4", "O1", "O2", "F1", "F2", "D", "ACTIVATION"]:
-        model_str += str(args['model_'+marg])
+        model_str += "_"+str(args['model_'+marg])
         del args['model_'+marg]
       args['model'] = model_str
       from mrsnet.cnn import CNN
@@ -125,6 +125,13 @@ class Select:
         args[a] = [str(v) for v in args[a]]
       else:
         args[a] = str(args[a])
+    # Same for key_vals (can be different due to model parametrs, but used for
+    # plots and must be all strings for sorting, etc)
+    for kv in key_vals:
+      if isinstance(key_vals[kv],list):
+        key_vals[kv] = [str(v) for v in key_vals[kv]]
+      else:
+        key_vals[kv] = str(key_vals[kv])
 
     # Find model_path and fold for model
     train_model = self.dataset_name.replace("/","_")+"_"+self.ds_rest
@@ -170,7 +177,7 @@ class Select:
               selected_id = repeat_id
           else:
             if self.verbose > 0:
-              print(f"# WARNING: {fn} - broken/incomplete model")
+              print(f"# WARNING: {ffn} - broken/incomplete model")
         else:
           if self.verbose > 0:
             print(f"# WARNING: {ffn} - this file should not be there")
@@ -190,6 +197,7 @@ class Select:
     counter = 1
     remote_run = []
     for t in self.tasks:
+      global ga_aux
       if not load_only and self.verbose > 0:
         print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
@@ -198,7 +206,7 @@ class Select:
           print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
         if val_p is not None:
-          self.key_vals.append(t['args'])
+          self.key_vals.append(t['key_vals'])
           self.val_performance.append(val_p)
           self.train_performance.append(train_p)
       if val_p is None and not load_only:
@@ -206,12 +214,15 @@ class Select:
         if self.remote == 'local':
           self._run(t['args'])
           val_p, train_p = self._load_performance(t['model_path'], t['fold'])
+          self.key_vals.append(t['key_vals'])
           if val_p is not None:
-            self.key_vals.append(t['key_vals'])
+            #self.key_vals.append(t['key_vals'])
             self.val_performance.append(val_p)
             self.train_performance.append(train_p)
           else:
-            raise Exception("Local job failed: "+str(t)+" : "+model_str)
+            self.val_performance.append([999999.0]*len(self.val_performance[0]))
+            self.train_performance.append([999999.0]*len(self.val_performance[0]))
+            print("**Error:** Local job failed: "+str(t))
         else:
           remote_run.append(['wait', t['args'], t['model_path'], t['fold'], t['key_vals']])
       counter += 1
@@ -228,12 +239,15 @@ class Select:
             status = self._run_remote(k,remote_run)
             if status == 'done':
               val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
+              self.key_vals.append(remote_run[k][4])
               if val_p is not None:
-                self.key_vals.append(remote_run[k][4])
+                #self.key_vals.append(remote_run[k][4])
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
-                print("Error: Job failed: "+str(remote_run[k]))
+                self.val_performance.append([999999.0]*len(self.val_performance[0]))
+                self.train_performance.append([999999.0]*len(self.val_performance[0]))
+                print("**Error:** Remote job failed: "+str(remote_run[k]))
               remote_run[k][0] = 'complete'
             else:
               all_done = False
@@ -337,12 +351,20 @@ class Select:
         val_p = []
         f_cnt = 0
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
-          with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
-            data = json.load(f)
-          train_p.append(data['total']['abserror']['mean']) # total MAE
-          with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
-            data = json.load(f)
-          val_p.append(data['total']['abserror']['mean']) # total MAE
+          if self.model_str == "ae_fc":
+            with open(os.path.join(model_path, "fold-" + str(f_cnt), "train_spectra_errors.json"), 'r') as f:
+              data = json.load(f)
+            train_p.append(data['total']['abserror']['mean'])  # total MAE
+            with open(os.path.join(model_path, "fold-" + str(f_cnt), "validation_spectra_errors.json"), 'r') as f:
+              data = json.load(f)
+            val_p.append(data['total']['abserror']['mean'])  # total MAE
+          else:
+            with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
+              data = json.load(f)
+            train_p.append(data['total']['abserror']['mean']) # total MAE
+            with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
+              data = json.load(f)
+            val_p.append(data['total']['abserror']['mean']) # total MAE
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
@@ -358,8 +380,7 @@ class Select:
     basename = os.path.basename(collection_name).replace(".json","")
     from mrsnet.getfolder import get_folder
     folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-"+str(self.validate)+"-%s")
-    if not os.path.exists(folder):
-      os.makedirs(folder)
+    os.makedirs(folder, exist_ok=True)
     # Store performance data
     idx = [l[0] for l in sorted(enumerate(self.val_performance), key=lambda x:np.mean(x[1]))]
     with open(os.path.join(folder,"model_performance.csv"), "w") as f:
@@ -398,6 +419,7 @@ class Select:
     val_error = [np.mean(self.val_performance[idx[p]]) for p in range(0,len(self.val_performance))]
     train_error = [np.mean(self.train_performance[idx[p]]) for p in range(0,len(self.val_performance))]
     top_n = np.min([len(self.val_performance),50])
+    top_n = np.max(np.argwhere(np.array(val_error[:top_n]) < 999999.0)) # Don't plot failed
     Y = np.arange(2*len(val_error),1,-2)
     ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
             label="Val. Error", color="#4878D0", zorder=1)
@@ -462,6 +484,7 @@ class Select:
       fig.set_dpi(self.screen_dpi)
       plt.show(block=True)
     plt.close()
+    return folder
 
 class SelectGrid(Select):
   def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
@@ -561,13 +584,20 @@ class SelectGPO(Select):
     for k in fix_keys:
       key_vals[k] = models.values[k][0]
     # Load Existing - can be disabled, so we can run repeatedly and use existing results
-    if not Cfg.dev('selectgpo_optimse_noload'):
+    if not Cfg.dev('selectgpo_optimise_noload'):
+      if self.verbose > 0:
+        print("# Loading existing samples")
       for model in models:
         for ki,k in enumerate(keys):
           if k in var_keys:
             key_vals[k] = models.values[k][models.values[k].index(model[ki])]
         self._add_task(key_vals, path_model)
-        self._run_tasks(load_only=True)
+      self._run_tasks(load_only=True)
+      if self.verbose > 0:
+        if len(self.key_vals) > 0:
+          print(f"  Models loaded: {len(self.key_vals)} x {len(self.val_performance[0])}")
+        else:
+          print(f"  Models loaded: None")
     # Evaluate first, if none available so far
     if len(self.key_vals) < 1:
       for ki,k in enumerate(keys):
@@ -579,18 +609,31 @@ class SelectGPO(Select):
     Xdata = np.ndarray((0,len(var_keys)))
     Ydata = np.ndarray((0,1))
     res_n = len(self.val_performance[0])
-    Xnext = np.ndarray((len(self.key_vals)*res_n,len(var_keys)))
+    Xnext = np.ndarray((len(self.val_performance)*res_n,len(var_keys)))
     Ynext = np.ndarray((Xnext.shape[0],1))
     ll = 0
     for l in range(0,len(self.key_vals)):
       # Add results; multiple times if multiple evluations due to KFold validation, etc.
       for ri in range(0,res_n):
         for ki,k in enumerate(var_keys):
-          Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
+          if isinstance(models.values[k][0], list):
+            if isinstance(models.values[k][0][0], int):
+              Xnext[ll,ki] = models.values[k].index([int(v) for v in self.key_vals[l][k]])
+            elif isinstance(models.values[k][0][0], float):
+              Xnext[ll,ki] = models.values[k].index([float(v) for v in self.key_vals[l][k]])
+            else:
+              Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
+          elif isinstance(models.values[k][0], int):
+            Xnext[ll,ki] = models.values[k].index(int(self.key_vals[l][k]))
+          elif isinstance(models.values[k][0], float):
+            Xnext[ll,ki] = models.values[k].index(float(self.key_vals[l][k]))
+          else:
+            Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
         Ynext[ll,0] = self.val_performance[l][ri]
         ll += 1
     Xdata = np.vstack((Xdata,Xnext))
     Ydata = np.vstack((Ydata,Ynext))
+    Perf_data_pos = len(self.val_performance)
     # Init GPO performance data
     remaining_samples = total - Xdata.shape[0] // res_n
     idx_best = np.argmin(Ydata,axis=0)[0]
@@ -606,6 +649,8 @@ class SelectGPO(Select):
       eval_per_step = 1
     else:
       eval_per_step = self.remote_tasks
+    if Cfg.dev('selectgpo_no_search'):
+      current_iter = self.repeats
     while current_iter < self.repeats and remaining_samples > 0:
       if eval_per_step  == 1:
         evaluator = 'sequential'
@@ -627,7 +672,7 @@ class SelectGPO(Select):
                                              de_duplication=True)
       Xnext = bop.suggest_next_locations()
       # Evaluate next data points
-      Y_data_pos = len(self.val_performance)
+      #Y_data_pos = len(self.val_performance)
       for x in Xnext:
         remaining_samples -= 1
         for l in range(0,len(var_keys)):
@@ -637,13 +682,17 @@ class SelectGPO(Select):
           print("  "+str([str(key_vals[k]) for k in var_keys]))
         self._add_task(key_vals, path_model)
       self._run_tasks()
-      Ynext = np.ndarray((Xnext.shape[0],1))
-      # Add results; multiple times if multipel evluations due to KFold validation, etc.
+      #Ynext = np.ndarray((Xnext.shape[0],1))
+      # Add results; multiple times if multiple evluations due to KFold validation, etc.
       for ri in range(0,len(self.val_performance[0])):
+        Ynext = np.ndarray((Xnext.shape[0],1))
         for l in range(0,Ynext.shape[0]):
-          Ynext[l,0] = self.val_performance[Y_data_pos+l][ri]
+          Ynext[l,0] = self.val_performance[Perf_data_pos+l][ri]
         Xdata = np.vstack((Xdata,Xnext))
         Ydata = np.vstack((Ydata,Ynext))
+      Perf_data_pos = len(self.val_performance)
+
+      # Update results
       idx_best = np.argmin(Ydata,axis=0)[0]
       Ybest.append(Ydata[idx_best,0])
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
@@ -657,7 +706,7 @@ class SelectGPO(Select):
       current_iter += 1
 
     # Store performance info
-    self._save_performance(collection_name+"-gpo", var_keys, fix_keys)
+    folder = self._save_performance(collection_name+"-gpo", var_keys, fix_keys)
 
     # GPO convergence
     fig, ax = plt.subplots(1,2)
@@ -672,7 +721,6 @@ class SelectGPO(Select):
     ax[1].set_ylabel("Best Wasserstein distance error")
     ax[1].xaxis.get_major_locator().set_params(integer=True)
     fig.tight_layout()
-    folder = os.path.join(self.dataset,collection_name+"-gpo-"+str(self.epochs))
     for dpi in self.image_dpi:
       plt.savefig(os.path.join(folder,"gpo_convergence@"+str(dpi)+".png"), dpi=dpi)
     if self.verbose > 1:
@@ -705,7 +753,7 @@ class SelectGA(Select):
       'last_fitness': 0
     }
     # GA Setup
-    pop = int(min(0.01*total,Cfg.val["ga_max_init_pop"]))
+    pop = int(min(0.1*total,Cfg.val["ga_max_init_pop"]))
     num_parents_mating = Cfg.val["ga_num_parents_mating"]
     gene_space = []
     gene_len = []
@@ -726,9 +774,9 @@ class SelectGA(Select):
                            gene_space=gene_space,
                            parent_selection_type="sus",
                            crossover_type="single_point",
-                           crossover_probability=0.25,
+                           crossover_probability=0.5,
                            mutation_type="adaptive",
-                           mutation_probability=(0.25,0.1),
+                           mutation_probability=(0.5,0.1),
                            mutation_percent_genes=(25,10),
                            fitness_func=_ga_fitness_func,
                            on_generation=_ga_on_generation,
@@ -779,7 +827,20 @@ def _ga_fitness_func(solution, solution_idx):
     kv = ga_aux['select'].key_vals[k]
     for l in range(0,len(ga_aux['var_keys'])):
       lv = ga_aux['var_keys'][l]
-      if kv[lv] != ga_aux['models'].values[lv][solution[l]]:
+      if isinstance(ga_aux['models'].values[lv][solution[l]],list):
+        if isinstance(ga_aux['models'].values[lv][solution[l]][0],int):
+          cmp = [int(v) for v in kv[lv]]
+        elif isinstance(ga_aux['models'].values[lv][solution[l]][0],float):
+          cmp = [float(v) for v in kv[lv]]
+        else:
+          cmp = kv[lv]
+      elif isinstance(ga_aux['models'].values[lv][solution[l]],int):
+        cmp = int(kv[lv])
+      elif isinstance(ga_aux['models'].values[lv][solution[l]],float):
+        cmp = float(kv[lv])
+      else:
+        cmp = kv[lv]
+      if cmp != ga_aux['models'].values[lv][solution[l]]:
         match = False
         break
     if match:
