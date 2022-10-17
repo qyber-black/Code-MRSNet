@@ -12,13 +12,13 @@ import numpy as np
 from time import time_ns
 
 import tensorflow as tf
-import tensorflow.keras as keras
-from tensorflow.keras.layers import *
-from tensorflow.keras.models import Model, Sequential
+from tensorflow import keras
+from keras.layers import *
+from keras.models import Model, Sequential
 
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras.utils import plot_model
-from tensorflow.keras.models import load_model
+from keras.layers import Input, Dense
+from keras.utils import plot_model
+from keras.models import load_model
 
 from mrsnet.cfg import Cfg
 from .cnn import TimeHistory
@@ -228,6 +228,7 @@ class Autoencoder:
 
     self.train_dataset_name = None
     self.ae = None
+    self.ae_path = None
 
   def __str__(self):
     return os.path.join(self.model, "-".join(self.metabolites),
@@ -618,7 +619,7 @@ class Autoencoder:
       return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
     if self.output == "concentrations":
       return np.array(self.ae.predict(data,verbose=(verbose>0)*2), dtype=np.float64)
-    raise Exception(f"Unknown output {self.outpuot}")
+    raise Exception(f"Unknown output {self.output}")
 
   def save(self, folder):
     path=os.path.join(folder, "tf_model")
@@ -654,7 +655,7 @@ class Autoencoder:
     # History data
     with open(os.path.join(folder, prefix+'_history.csv'), "w") as out_file:
       writer = csv.writer(out_file, delimiter=",")
-      writer.writerows([[self.model+" "+prefix.upper()+" Training Results"],
+      writer.writerows([[self.model+" "+prefix.upper()+" Training Results", "", "", "", "", "Loaded AE: " + self.ae_path],
                         [""],
                         ["",     "Train",    "Validation"],
                         [loss.upper(),  d_score[0], v_score[0]],
