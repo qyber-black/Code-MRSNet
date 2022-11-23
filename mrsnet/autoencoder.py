@@ -439,7 +439,8 @@ class Autoencoder:
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
-    val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+    if val_data is not None:
+        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.ae.fit(train_data,
@@ -577,7 +578,8 @@ class Autoencoder:
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
-    val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+    if val_data is not None:
+        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.ae.fit(train_data,
@@ -655,13 +657,23 @@ class Autoencoder:
     # History data
     with open(os.path.join(folder, prefix+'_history.csv'), "w") as out_file:
       writer = csv.writer(out_file, delimiter=",")
-      writer.writerows([[self.model+" "+prefix.upper()+" Training Results", "", "", "", "", "Loaded AE: " + self.ae_path],
+      if self.model[0:3] =="aeq":
+        writer.writerows([[self.model+" "+prefix.upper()+" Training Results", "", "", "", "", "Loaded AE: " + self.ae_path],
                         [""],
                         ["",     "Train",    "Validation"],
                         [loss.upper(),  d_score[0], v_score[0]],
                         ["MAE",  d_score[1], v_score[1]],
                         [""],
                         ["History"]])
+      else:
+          writer.writerows(
+              [[self.model + " " + prefix.upper() + " Training Results"],
+               [""],
+               ["", "Train", "Validation"],
+               [loss.upper(), d_score[0], v_score[0]],
+               ["MAE", d_score[1], v_score[1]],
+               [""],
+               ["History"]])
       writer.writerow(keys)
       writer.writerows(zip(*[history[key] for key in keys]))
     # Plot
