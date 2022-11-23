@@ -117,6 +117,18 @@ class Select:
       from mrsnet.autoencoder import Autoencoder
       model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:7] == 'caeq_fc':
+      # CAEQ-FC model fully parameterised
+      # caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACTIVATION]_[ACTIVATION-LAST]_[DP]
+      model_str = 'caeq_fc'
+      for marg in ["LIN", "LOUT", "ACT", "ACT-LAST", "DO", "UNITS", "LAYERS", "ACTIVATION", "ACTIVATION-LAST", "DP"]:
+        model_str += "_"
+        model_str += str(args['model_' + marg])
+        del args['model_' + marg]
+      args['model'] = model_str
+      from mrsnet.ae_quantifier import Autoencoder_quantifier
+      model_name = str(Autoencoder_quantifier(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
     else:
       raise Exception(f"Unknown model string {args['model']}")
     # Make all arguments strings
