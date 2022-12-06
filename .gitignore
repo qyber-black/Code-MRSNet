@@ -8,8 +8,6 @@ __pycache__
 *.pyc
 .idea
 venv
-cfg.json
-data/model
-data/sim-spectra
-ae_fc_parameters.json
-aeq_fc_parameters.json
+/data/model*
+/data/sim-spectra
+/cfg.json
