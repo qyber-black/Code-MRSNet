@@ -298,7 +298,7 @@ class Dataset:
     return None
 
   def export(self, metabolites=None, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, norm='sum',
-             acquisitions=['edit_off','difference'],datatype='magnitude', normalise=True, verbose=0):
+             acquisitions=['edit_off','difference'],datatype='magnitude', normalise=True, export_concentrations=True, verbose=0):
     if metabolites is None:
       metabolites = self.metabolites
 
@@ -318,7 +318,7 @@ class Dataset:
         print("  Shape: " + str(d_inp.shape) + " - [spectrum, acquisition, datatype, frequency]")
     else:
       d_inp = np.ndarray((0,0))
-    if len(self.concentrations) > 0:
+    if export_concentrations and len(self.concentrations) > 0:
       if verbose > 0:
         print("Converting concentrations to tensor")
       d_out = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_concentrations)(c,
