@@ -131,6 +131,7 @@ class Select:
                            args['acquisitions'], args['datatype'], args['norm']))
     else:
       raise Exception(f"Unknown model string {args['model']}")
+
     # Make all arguments strings
     for a in args:
       if isinstance(args[a],list):
@@ -228,7 +229,6 @@ class Select:
           val_p, train_p = self._load_performance(t['model_path'], t['fold'])
           self.key_vals.append(t['key_vals'])
           if val_p is not None:
-            #self.key_vals.append(t['key_vals'])
             self.val_performance.append(val_p)
             self.train_performance.append(train_p)
           else:
@@ -253,7 +253,6 @@ class Select:
               val_p, train_p = self._load_performance(remote_run[k][2], remote_run[k][3])
               self.key_vals.append(remote_run[k][4])
               if val_p is not None:
-                #self.key_vals.append(remote_run[k][4])
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
@@ -469,7 +468,8 @@ class Select:
       ax = [ax]
     for k in range(0,len(var_keys)):
       group_id = var_keys[k]
-      key_vals = sorted(list(set([str(self.key_vals[p][group_id]) for p in range(0,len(self.val_performance))])))
+      key_vals = sorted(list(set([str(self.key_vals[p][group_id])
+                                  for p in range(0,len(self.val_performance))])))
       key_vals = [str(v) for v in key_vals]
       for ki in range(0,len(key_vals)):
         val_per = [val_error[p]
@@ -683,8 +683,8 @@ class SelectGPO(Select):
                                              exact_feval=False,
                                              de_duplication=True)
       Xnext = bop.suggest_next_locations()
+
       # Evaluate next data points
-      #Y_data_pos = len(self.val_performance)
       for x in Xnext:
         remaining_samples -= 1
         for l in range(0,len(var_keys)):
@@ -694,7 +694,7 @@ class SelectGPO(Select):
           print("  "+str([str(key_vals[k]) for k in var_keys]))
         self._add_task(key_vals, path_model)
       self._run_tasks()
-      #Ynext = np.ndarray((Xnext.shape[0],1))
+
       # Add results; multiple times if multiple evluations due to KFold validation, etc.
       for ri in range(0,len(self.val_performance[0])):
         Ynext = np.ndarray((Xnext.shape[0],1))
