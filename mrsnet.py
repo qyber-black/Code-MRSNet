@@ -200,7 +200,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_S1_S2_C1_C2_C3_C4_O1_O2_F1_F2_D_[softmax,sigmoid]- see mrsnet/models.py for details. Or  ae_cnn_FILTER_LATENT_[pool|stride]_DO, ae_fc_LIN_LOUT_ACT_ACT-LAST_DO, aeq_fc_UNITS_LAYERS_ACT_ACT-LAST_DO for autoencoder (see mrsnet/autoencoder.py). Or aeq_fc_LIN_LOUT_ACT_ACT-LAST_DO_UNITS_LAYERS_ACT_ACT-LAST_DP for combined network (see mrsnet/ae_quantifier.py).')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool] or cnn_S1_S2_C1_C2_C3_C4_O1_O2_F1_F2_D_[softmax,sigmoid]- see mrsnet/models.py for details. Or ae_cnn_FILTER_LATENT_[pool|stride]_DO, ae_fc_LIN_LOUT_ACT_ACT-LAST_DO, aeq_fc_UNITS_LAYERS_ACT_ACT-LAST_DO for autoencoder (see mrsnet/autoencoder.py). Or aeq_fc_LIN_LOUT_ACT_ACT-LAST_DO_UNITS_LAYERS_ACT_ACT-LAST_DP for combined network (see mrsnet/ae_quantifier.py).')
   p.add_argument('-a', '--autoencoder', type=str,
                  help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
@@ -269,7 +269,7 @@ def simulate(args):
   if "lcmodel" in args.source or "su-3tskyra" in args.source:
     lw = [None]
     if len(args.source) > 1:
-      for l in args.linewidths:
+      for l in args.linewidth:
         lw.append(l)
   name=os.path.join("-".join(args.source)+"_"+str(args.sample_rate)+"_"+str(args.samples),
                     "-".join(args.manufacturer),
@@ -348,17 +348,23 @@ def generate_datasets(args):
         na[k[ki]] = [str(val) for val in v[ki]]
       else:
         na[k[ki]] = [str(v[ki])]
+    lw = na['linewidth']
+    if "lcmodel" in na['source'] or "su-3tskyra" in na['source']:
+      lw = [None]
+      if len(na['source']) > 1:
+        for l in na['linewidth']:
+          lw.append(l)
     name=os.path.join("-".join(na['source'])+"_"+str(na['sample_rate'][0])+"_"+str(na['samples'][0]),
                       "-".join(na['manufacturer']),
-                      "-".join(na['omega']),
-                      "-".join(na['linewidth']),
+                      "-".join([str(k) for k in na['omega']]),
+                      "-".join([str(k) for k in lw]),
                       "-".join(na['metabolites']),
                       "-".join(na['pulse_sequence']),
                       "-".join(na['sample']),
                       na['noise_p'][0]+"-"+na['noise_type'][0]+"-"+na['noise_mu'][0]+"-"+na['noise_sigma'][0])
     if (os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")) or
         os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib"))):
-      if na['noise_p'][0] > 0.0:
+      if float(na['noise_p'][0]) > 0.0:
         if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_noisy.joblib")):
           raise Exception("No noisy dataset, even if requested: "+Cfg.val['path_simulation'],name,na['num'][0]+"-1")
       if not os.path.exists(os.path.join(Cfg.val['path_simulation'],name,na['num'][0]+"-1","spectra_clean.joblib")):
@@ -381,7 +387,8 @@ def generate_datasets(args):
               (isinstance(v[ki],list) and 'su-3tskyra' in v[ki]) or
               (not isinstance(v[ki],list) and v[ki] == 'su-3tskyra')):
             skip_lw = True
-        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0: # 1.0 for lcmodel/su-3tskyra interpreated a None linewidth
+        if k[ki] == 'linewidth' and not isinstance(v[ki],list) and v[ki] == 1.0:
+          # 1.0 for lcmodel/su-3tskyra interpreted as None linewidth
           linewidth1 = True
         cmd.append("--"+k[ki])
         if isinstance(v[ki],list):
@@ -389,7 +396,7 @@ def generate_datasets(args):
             cmd.append(str(val))
         else:
           cmd.append(str(v[ki]))
-      if not skip_lw or linewidth1: # Skip unsupported linwidths for lcmodel
+      if not skip_lw or linewidth1: # Skip unsupported linwidths for lcmodel/su-3tskyra
         if args.verbose > 0:
           print('# Run '+' '.join(cmd[3:]))
         try:
@@ -466,7 +473,7 @@ def train(args):
                              acquisitions=args.acquisitions, datatype=args.datatype,
                              high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                              verbose=args.verbose)
-    data = [d_inp, d_out] # output last
+    data = [d_inp, d_out]
     data_name = ds.name+"_"+ds_rest
   elif args.model[0:3] == 'ae_' or args.model[0:4] == 'aeq_':
     from mrsnet.autoencoder import Autoencoder
@@ -603,7 +610,6 @@ def train(args):
     trainer = NoValidation()
   else:
     raise Exception(f"Unknown validation {args.validate}")
-
   trainer.train(model, data, args.epochs, args.batchsize,
                 Cfg.val['path_model'], train_dataset_name=data_name,
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'],
@@ -611,7 +617,6 @@ def train(args):
 
 def model_selection(args):
   # Select sub-command
-  # FIXME: not tested with ae and aeq models; may not work / need expansion, load_ae need to be stay "None" when using selection for other model(cnn_, ae_fc, ae_cnn)
   import subprocess
   import mrsnet.grid as grid
   args.metabolites.sort()
@@ -669,18 +674,45 @@ def quantify(args):
       train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
+      model_path = os.path.join(*id[0:k])
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
   if args.verbose > 0:
     print(f"# Loading model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
-  folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(folder)
+    try:
+      folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+      quantifier = CNN.load(folder)
+    except:
+      try:
+        folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+        quantifier = CNN.load(folder)
+      except:
+        raise Exception("Model not found")
   elif name[0:3] == "ae_" or name[0:4] == "aeq_":
     from mrsnet.autoencoder import Autoencoder
-    quantifier = Autoencoder.load(folder)
+    try:
+        folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+        quantifier = Autoencoder.load(folder)
+    except:
+        try:
+            folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+            quantifier = Autoencoder.load(folder)
+        except:
+            raise Exception("Model not found")
+  elif name[0:5] == "caeq_":
+    from mrsnet.ae_quantifier import Autoencoder_quantifier
+    try:
+        folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+        quantifier = Autoencoder_quantifier.load(folder)
+    except:
+        try:
+            folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+            quantifier = Autoencoder_quantifier.load(folder)
+        except:
+            raise Exception("Model not found")
   else:
     raise Exception("Unknown model "+name)
   if ds is None:
@@ -733,13 +765,13 @@ def benchmark(args):
   name = []
   for k in range(0,len(id)):
     if id[k][0:4] == 'cnn_' or id[k][0:4] == 'aeq_' or id[k][0:4] == 'caeq':
-      print(id)
       name = os.path.join(*id[k:k+6])
       batchsize = id[k+6]
       epochs = id[k+7]
       train_model = id[k+8]
       trainer = id[k+9]
       rest = id[k+10] if len(id) > k+10 else '' # Folds
+      model_path = os.path.join(*id[0:k])
       break
   if len(name) == 0:
     raise Exception("Cannot get model name from model argument")
@@ -747,7 +779,13 @@ def benchmark(args):
     print(f"# Model {name} : {batchsize} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
-    quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
+    try:
+      quantifier = CNN.load(os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest))
+    except:
+      try:
+        quantifier = CNN.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
+      except:
+        raise Exception("Cannot find model")
   elif name[0:4] == "aeq_":
     from mrsnet.autoencoder import Autoencoder
     quantifier = Autoencoder.load(os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest))
@@ -781,7 +819,8 @@ def benchmark(args):
                                verbose=args.verbose)
       from mrsnet.analyse import analyse_model
       id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
-      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name, batchsize, epochs,
+      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name,
+                                                           batchsize, epochs,
                                                            train_model, trainer, rest),
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
