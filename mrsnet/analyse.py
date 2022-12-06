@@ -26,7 +26,6 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   # Analyse data (assumed to be exported from dataset in format as used by model for train call)
   if not os.path.exists(folder):
     os.makedirs(folder)
-
   pre = model.predict(inp,verbose=verbose)
 
   if model.output == "spectra":
@@ -88,6 +87,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   return pre, info, error
 
+
 def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi):
   error = pre - out
   error_mean = np.mean(error,axis=0)
@@ -105,18 +105,12 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
   fig, axes =  plt.subplots(2,len(model.metabolites)+1)
   fig.suptitle(f"Concentration Error Analysis ({prefix})")
   for l,m in enumerate(model.metabolites):
-    with warnings.catch_warnings():
-      warnings.filterwarnings('ignore')
-      # ignores division by zero warnings, which will happen in the analysis
-      try:
-        slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
-      except:
-        # Regression can fail, in particular if all actual concentrations are 0; so just set to nan
-        slope = np.nan
-        intercept = np.nan
-        r_value = np.nan
-        p_value = np.nan
-        std_err = np.nan
+    try: # ignore regression failures
+      slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
+    except:
+      slope, intercept, r_value, p_value, std_err = np.NAN, np.NAN, np.NAN, np.NAN, np.NAN
+      print("**ERROR**: linear regression failed")
+      pass
     info[m] = {
         'error': {
           'mean': error_mean[l],
