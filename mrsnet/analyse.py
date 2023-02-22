@@ -16,7 +16,7 @@ from scipy.stats import linregress
 
 from mrsnet.cfg import Cfg
 
-def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False,
+def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
                   verbose=0, image_dpi=[300], screen_dpi=96):
   pred_op = getattr(model, "predict", None)
   if not callable(pred_op):
@@ -28,9 +28,23 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     os.makedirs(folder)
   pre = model.predict(inp,verbose=verbose)
 
+  if norm == None:
+    pre = pre
+    out = out
+  elif norm == 'max':
+    for i in range(pre.shape[0]):
+      pre[i] /= np.max(pre[i, :])
+      out[i] /= np.max(out[i, :])
+  elif norm == 'sum':
+    for i in range(pre.shape[0]):
+      pre[i] /= np.sum(pre[i, :])
+      out[i] /= np.sum(out[i, :])
+  elif norm != 'none':
+    raise Exception(f"Unknown norm {norm}")
+
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
-    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
+    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi, norm)
 
   if model.output != "concentrations":
     raise Exception(f"Unknown output from model: {model.output} - cannot analyse")
