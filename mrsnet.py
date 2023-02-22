@@ -214,6 +214,8 @@ def add_arguments_quantify(p):
 def add_arguments_benchmark(p):
   # Add benchmark arguments
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
+  p.add_argument('--norm', choices=['sum', 'max'], default='sum',
+                 help='Concentration normalisation: sum or max equal to 1')
 
 def basis(args):
   # Basis sub-command
@@ -667,7 +669,7 @@ def quantify(args):
   id = get_std_name(args.model)
   name = []
   for k in range(0,len(id)):
-    if id[k][0:4] == 'cnn_' or id[k][0:3] == 'ae_' or id[k][0:4] == 'aeq_':
+    if id[k][0:4] == 'cnn_' or id[k][0:3] == 'ae_' or id[k][0:4] == 'aeq_' or id[k][0:4] == 'caeq':
       name = os.path.join(*id[k:k+6])
       batchsize = id[k+6]
       epochs = id[k+7]
@@ -827,8 +829,16 @@ def benchmark(args):
                                                            train_model, trainer, rest),
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
-                    verbose=args.verbose, prefix=id+":"+variant, image_dpi=Cfg.val['image_dpi'],
-                    screen_dpi=Cfg.val['screen_dpi'])
+                    verbose=args.verbose, prefix=id+":"+variant+"_"+quantifier.norm, image_dpi=Cfg.val['image_dpi'],
+                    screen_dpi=Cfg.val['screen_dpi'],norm=quantifier.norm)
+      if quantifier.norm != args.norm:
+          analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name,
+                                                               batchsize, epochs,
+                                                               train_model, trainer, rest),
+                        id=[s[id_ref].id for s in bm.spectra],
+                        show_conc=True, save_conc=True,
+                        verbose=args.verbose, prefix=id + ":" + variant+"_"+args.norm, image_dpi=Cfg.val['image_dpi'],
+                        screen_dpi=Cfg.val['screen_dpi'],norm=args.norm)
 
 def get_std_name(name):
   _, path = os.path.splitdrive(name)
