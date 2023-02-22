@@ -279,7 +279,7 @@ class Autoencoder_quantifier:
                       optimizer=optimiser,
                       metrics=['mae'])
 
-      for dpi in image_dpi:
+    for dpi in image_dpi:
         plot_model(self.aeq,
                   to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
                   show_shapes=True,
@@ -289,12 +289,12 @@ class Autoencoder_quantifier:
                   expand_nested=True,
                   dpi=dpi)
 
-      if verbose > 0:
+    if verbose > 0:
         self.aeq.summary()
 
 
-      timer = TimeHistory(epochs)
-      callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
+    timer = TimeHistory(epochs)
+    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
                                                  min_delta=1e-8,
                                                  patience=25,
                                                  mode='min',
