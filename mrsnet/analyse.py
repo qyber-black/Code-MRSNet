@@ -1,7 +1,7 @@
 # mrsnet/analyse.py - MRSNet - analyse model performance
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -28,10 +28,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     os.makedirs(folder)
   pre = model.predict(inp,verbose=verbose)
 
-  if norm == None:
-    pre = pre
-    out = out
-  elif norm == 'max':
+  if norm == 'max':
     for i in range(pre.shape[0]):
       pre[i] /= np.max(pre[i, :])
       out[i] /= np.max(out[i, :])
@@ -39,7 +36,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     for i in range(pre.shape[0]):
       pre[i] /= np.sum(pre[i, :])
       out[i] /= np.sum(out[i, :])
-  elif norm != 'none':
+  elif norm != 'none' and norm is not None:
     raise Exception(f"Unknown norm {norm}")
 
   if model.output == "spectra":
@@ -51,7 +48,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   # Analyse if we have concentrations
   if len(out) > 0:
-    info, error = _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi)
+    info, error = _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, screen_dpi)
   else:
     info = None
     error = None
@@ -102,7 +99,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   return pre, info, error
 
 
-def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dpi, screen_dpi):
+def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, screen_dpi):
   error = pre - out
   error_mean = np.mean(error,axis=0)
   error_std = np.std(error,axis=0)
@@ -124,7 +121,6 @@ def _analyse_model_error(model, pre, inp, out, folder, prefix, verbose, image_dp
     except:
       slope, intercept, r_value, p_value, std_err = np.NAN, np.NAN, np.NAN, np.NAN, np.NAN
       print("**ERROR**: linear regression failed")
-      pass
     info[m] = {
         'error': {
           'mean': error_mean[l],

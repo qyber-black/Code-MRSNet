@@ -28,10 +28,10 @@ def get_folder(folder, subfolder_pattern, timeout=30, delay=.1):
     raise Exception("Lock failed")
 
   # Create unique folder
-  id = 1
-  while os.path.exists(os.path.join(folder,subfolder_pattern % str(id))):
-    id = id + 1
-  subfolder = os.path.join(folder,subfolder_pattern % str(id))
+  idl = 1
+  while os.path.exists(os.path.join(folder,subfolder_pattern % str(idl))):
+    idl = idl + 1
+  subfolder = os.path.join(folder,subfolder_pattern % str(idl))
   os.makedirs(subfolder)
 
   # Unlock

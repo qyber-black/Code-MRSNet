@@ -1,6 +1,6 @@
 # mrsnet/comapre.py - MRSNet - compare and analyse spectra
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -11,7 +11,7 @@ import seaborn as sns
 import mrsnet.molecules as molecules
 from mrsnet.dataset import Dataset
 
-def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, image_dpi=[300], screen_dpi=96):
+def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, screen_dpi=96):
   # Compare dataset to spectra generated from basis
   # Setup basis
   if verbose > 0:
@@ -68,8 +68,8 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     print(f"              Real: {dd[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f}")
     print(f"         Imaginary: {dd[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f}")
     if verbose > 1:
-      fig = plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],nu,
-                              ds.metabolites,basis.source,image_dpi,screen_dpi)
+      plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],nu,
+                        ds.metabolites,basis.source,screen_dpi)
       plt.show(block=True)
       plt.close()
 
@@ -106,7 +106,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     plt.show(block=True)
     plt.close()
 
-def plot_diff_spectra(r, d, c, nu, metabolites, source, image_dpi, screen_dpi):
+def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     # Plot difference between dataset and basis reference spectrum
     figure, axes = plt.subplots(4, 4, sharex=True, dpi=screen_dpi)
     axes[0,3].remove()

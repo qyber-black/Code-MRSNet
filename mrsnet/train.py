@@ -1,7 +1,7 @@
 # mrsnet/train.py - MRSNet - training
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -61,7 +61,7 @@ class Train:
 
   def _cross_validate(self, model, epochs, batch_size, data, folder,
                       train_dataset_name, verbose, image_dpi, screen_dpi):
-    # Cross valildation
+    # Cross validation
     train_res = { 'error': [None]*self.k }
     val_res = { 'error': [None]*self.k }
     has_error = True # analyse_model produces error distribtuions if this is true
@@ -140,7 +140,7 @@ class Train:
       max_wd_err = None
       max_wd_aerr = None
 
-    # Plot corss-validation results
+    # Plot cross-validation results
     self._plot_cross_validate(model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi)
 
     # Save cross-validation result

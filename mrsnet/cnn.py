@@ -1,7 +1,7 @@
 # mrsnet/cnn.py - MRSNet - CNN models
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -13,7 +13,7 @@ from time import time_ns
 
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.keras.layers import *
+from tensorflow.keras.layers import InputLayer, Conv2D, BatchNormalization, ReLU, Dropout, MaxPool2D, Flatten, Dense
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import load_model
@@ -36,7 +36,7 @@ class CNN:
     self.fft_samples = 2048
 
     self.train_dataset_name = None
-    self.cnn = None
+    self.cnn_arch = None
 
   def __str__(self):
     n = os.path.join(self.model, "-".join(self.metabolites),
@@ -45,25 +45,25 @@ class CNN:
     return n
 
   def reset(self):
-    del self.cnn
-    self.cnn = None
+    del self.cnn_arch
+    self.cnn_arch = None
     self.train_dataset_name = None
 
   def _freq_conv_layer(self, filter, c, s, dropout):
     if s <= 0:
-      self.cnn.add(Conv2D(filter, c))
+      self.cnn_arch.add(Conv2D(filter, c))
     else:
-      self.cnn.add(Conv2D(filter, c, strides=(1,s)))
+      self.cnn_arch.add(Conv2D(filter, c, strides=(1,s)))
     if dropout == 0.0:
-      self.cnn.add(BatchNormalization())
-    self.cnn.add(ReLU())
+      self.cnn_arch.add(BatchNormalization())
+    self.cnn_arch.add(ReLU())
     if dropout > 0.0:
-      self.cnn.add(Dropout(dropout))
+      self.cnn_arch.add(Dropout(dropout))
     if s < 0:
-      self.cnn.add(MaxPool2D((1,-s)))
+      self.cnn_arch.add(MaxPool2D((1,-s)))
 
   def _construct(self, input_shape, output_shape):
-    self.cnn = Sequential(name=self.model)
+    self.cnn_arch = Sequential(name=self.model)
     vals = self.model.split("_")
     if vals[0] != 'cnn':
       raise Exception(f"Unknown model {vals[0]}")
@@ -109,13 +109,13 @@ class CNN:
       dense = int(vals[11])
       output_act = vals[12]
 
-    self.cnn.add(InputLayer(input_shape=input_shape))
+    self.cnn_arch.add(InputLayer(input_shape=input_shape))
     self._freq_conv_layer(filter1, (1,freq_convolution1), strides1, dropout1)
     self._freq_conv_layer(filter1, (1,freq_convolution2), strides1, dropout1)
 
-    while self.cnn.layers[-1].output.shape[1] != 1:
+    while self.cnn_arch.layers[-1].output.shape[1] != 1:
       self._freq_conv_layer(filter1,
-                            (min(self.cnn.layers[-1].output.shape[1],3),freq_convolution3),
+                            (min(self.cnn_arch.layers[-1].output.shape[1],3),freq_convolution3),
                             1, dropout1)
 
     for n_filters in [filter1, filter2]:
@@ -123,11 +123,11 @@ class CNN:
         self._freq_conv_layer(n_filters, (1, freq_convolution4), 1,        dropout1)
         self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
 
-    self.cnn.add(Flatten())
-    self.cnn.add(Dense(dense,activation="sigmoid"))
+    self.cnn_arch.add(Flatten())
+    self.cnn_arch.add(Dense(dense,activation="sigmoid"))
     if dropout2 > 0.0:
-      self.cnn.add(Dropout(dropout2))
-    self.cnn.add(Dense(output_shape[-1], activation=output_act))
+      self.cnn_arch.add(Dropout(dropout2))
+    self.cnn_arch.add(Dense(output_shape[-1], activation=output_act))
 
   def train(self, d_data, v_data, epochs, batch_size,
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -182,9 +182,9 @@ class CNN:
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
-        self.cnn.compile(loss='mse',
-                         optimizer=optimiser,
-                         metrics=['mae'])
+        self.cnn_arch.compile(loss='mse',
+                              optimizer=optimiser,
+                              metrics=['mae'])
     else:
       # Single GPU / CPU training
       dev_multiplier = 1
@@ -193,12 +193,12 @@ class CNN:
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
                                         epsilon=Cfg.val['epsilon'])
-      self.cnn.compile(loss='mse',
-                       optimizer=optimiser,
-                       metrics=['mae'])
+      self.cnn_arch.compile(loss='mse',
+                            optimizer=optimiser,
+                            metrics=['mae'])
 
     for dpi in image_dpi:
-      plot_model(self.cnn,
+      plot_model(self.cnn_arch,
                  to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
                  show_shapes=True,
                  show_dtype=True,
@@ -207,7 +207,7 @@ class CNN:
                  expand_nested=True,
                  dpi=dpi)
     if verbose > 0:
-      self.cnn.summary()
+      self.cnn_arch.summary()
 
     timer = TimeHistory(epochs)
     callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
@@ -226,20 +226,20 @@ class CNN:
       validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
-    history = self.cnn.fit(train_data,
-                           validation_data=validation_data,
-                           epochs=epochs,
-                           verbose=(verbose > 0)*2,
-                           shuffle=True,
-                           callbacks=callbacks)
+    history = self.cnn_arch.fit(train_data,
+                                validation_data=validation_data,
+                                epochs=epochs,
+                                verbose=(verbose > 0)*2,
+                                shuffle=True,
+                                callbacks=callbacks)
     le = len(history.history['loss'])
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
     if verbose > 0:
       print("# Evaluating")
-    d_score = self.cnn.evaluate(d_inp, d_out, verbose=(verbose > 0)*2)
+    d_score = self.cnn_arch.evaluate(d_inp, d_out, verbose=(verbose > 0)*2)
     if v_data != None:
-      v_score = self.cnn.evaluate(v_inp, v_out, verbose=(verbose > 0)*2)
+      v_score = self.cnn_arch.evaluate(v_inp, v_out, verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
@@ -259,11 +259,11 @@ class CNN:
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     data = tf.data.Dataset.from_tensor_slices((d_inp)).batch(32).with_options(options)
-    return np.array(self.cnn.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
+    return np.array(self.cnn_arch.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 
   def save(self, folder):
     path=os.path.join(folder, "tf_model")
-    self.cnn.save(path)
+    self.cnn_arch.save(path)
     with open(os.path.join(path, "mrsnet.json"), 'w') as f:
       print(json.dumps({
           'model': self.model,
@@ -282,7 +282,7 @@ class CNN:
     model = CNN(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                 data['datatype'], data['norm'])
     model.train_dataset_name = data['train_dataset_name']
-    model.cnn = load_model(os.path.join(path,"tf_model"))
+    model.cnn_arch = load_model(os.path.join(path,"tf_model"))
     return model
 
   def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
