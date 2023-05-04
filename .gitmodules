@@ -1,3 +1,20 @@
-[submodule "Simulators/FIDA/FID-A"]
-	url = git@github.com:CIC-methods/FID-A.git
-	path = Simulators/FIDA/FID-A
+# .gitmodules - MRSNet
+#
+# SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2021, 2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[submodule "mrsnet/simulators/fida/FID-A"]
+	path = mrsnet/simulators/fida/FID-A
+	url = https://github.com/CIC-methods/FID-A.git
+[submodule "mrsnet/qdicom"]
+	path = mrsnet/qdicom
+	url = git@qyber.black:pca/code-qdicom-utilities.git
+[submodule "data/benchmark"]
+	path = data/benchmark
+	url = git@qyber.black:mrs/data-megapress-spectra.git
+[submodule "data/basis-dist"]
+	path = data/basis-dist
+	url = git@qyber.black:mrs/data-mrsnet-basis.git
+[submodule "data/model-dist"]
+	path = data/model-dist
+	url = git@qyber.black:mrs/data-mrsnet-model-dist.git
