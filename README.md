@@ -1,15 +1,15 @@
 # MRSNet
 
 > SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University  
-> SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University  
+> SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University  
 > SPDX-FileCopyrightText: Copyright (C) 2021-2022 S Shermer <lw1660@gmail.com>, Swansea University
 > SPDX-License-Identifier: AGPL-3.0-or-later  
 
-MRSNet is aimed at MR spectral quantification using convolutional neural
-networks. It is mainly aimed at MEGAPRESS spectra. It also provides methods to
+MRSNet is aimed at MR spectral quantification using artificial neural
+networks. It is aimed at MEGAPRESS spectra. It also provides methods to
 generate datasets from loaded LCModel ".BASIS" files or simulated by
 [FID-A](https://github.com/CIC-methods/FID-A) or
-[PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma).
+[PyGamma](https://vespa-mrs.github.io/vespa.io/other_packages/dev_gamma).
 
 More information can be found in the associated paper:
 
@@ -18,47 +18,32 @@ Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural
 Network**. Preprint, 2019. [arXiv:1909.03836](https://arxiv.org/abs/1909.03836)
 https://langbein.org/mrsnet-paper/
 
-## Built With
-
-### Software
-
-* [Keras](https://keras.io/) - The Deep Learning framework used.
-* [Tensorflow](https://www.tensorflow.org/) - Underlying Machine Learning
-  library.
-* [FID-A](https://github.com/CIC-methods/FID-A) - MRS simulation toolbox.
-* [PyGamma](https://scion.duhs.duke.edu/vespa/gamma/wiki/PyGamma) - Another MRS
-  simulation toolbox.
-* For all packages used, see `requirements.txt`.
-
-### Data Sources
-
-* [Swansea Benchmark Dataset](https://langbein.org/gabaphantoms_20190815) -
-  Benchmark phantom datasets collected at Swansea University's 3T Siemens
-  scanner.
-* [Purdue LCModel basis sets](http://purcell.healthsciences.purdue.edu/mrslab/basis_sets.html) -
-  Data source for the LCModel basis sets
-
 ## Getting Started
 
 ### Prerequisites
 
-* Tested mostly on Linux and may not work on any other platform without some
-  adjustments.
-* In particular for training, but also for quantification, a GPU (with
-  tensorflow support) is strongly recommended.
-* Standard packages
+* Tested on Linux and may not work on any other platform without some adjustments.
+  Standard packages for Linux are:
   * Git and git-lfs for git with submodules and LFS support.
-  * Python 3.9 with pip (recent python3 versions should be OK).
+  * Python 3.9 or later with pip (recent python3 versions should work).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
-    `sudo apt update && sudo apt install git git-lfs python3.9 pip`.
+    `sudo apt update && sudo apt install git git-lfs python3 pip`.
+* [Tensorflow](https://www.tensorflow.org/) as machine learning library. In particular 
+  for training, but also for quantification, a GPU (with tensorflow support) is strongly
+  recommended, with [cudnn](https://developer.nvidia.com/cudnn) or [OneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/optimization-for-tensorflow-installation-guide.html).
+* For all standard python packages used, see `requirements.txt`.
+  * [PyGamma](https://vespa-mrs.github.io/vespa.io/other_packages/dev_gamma),
+    a MRS simulation toolbox.
   * For scipy/numpy you may need to install lapack and blas libraries for your
-    system. We use fftw3 for the Fourier transform functions via pyfftw by
-    default (see the `npfft_module` config variable and configuration files
-    below), so you may also have to install `libfftw3`. Any such missing
-    packages may cause the pip3 install command below to fail.
-* MATLAB - Only required if you plan to simulate new FID-A spectra (the basis
-  sets we used in the paper are in the git data/basis submodule).
+    system. By default we use numpy's fft, but you can also use fftw3 for the
+    Fourier transform functions via pyfftw (see the `npfft_module` config 
+    variable and configuration files below), for which you should install `libfftw3`.
+    Any missing libraries may cause the pip3 install command below to fail.
+* [FID-A](https://github.com/CIC-methods/FID-A), a MRS simulation toolbox. This is provided
+  via a git submodule and integrated during the installation process below.
+  * MATLAB - Only required if you plan to simulate new FID-A spectra (the basis
+    sets we used in the paper are in the git data/basis-dist submodule).
 
 ### Install Instructions (Linux)
 
@@ -106,30 +91,51 @@ Generally it is best to run `mrsnet.py` from the base-folder of the git
 repository. The folder locations in data are determined by the real location of
 the `mrsnet.py` file (not symbolic links). These and other configuration values
 can be overwritten by providing a `~/.config/mrsnet.json` file (see `Cfg` class
-in `mrsnet/cfg.py` for details). If you change the location of the folders in
-data, you do have to make sure the submodule data is available in the new
-location. MRSNet does not search multiple paths. MRSNet also stores configuration
-values in `cfg.json` in the project folder. This overwrites the defaults from
-`cfg.py` (`mrsnet.json` overwrites `cfg.json`).
+in `mrsnet/cfg.py` for details; there is also a `cfg.json` file in the project
+folder, generated by this class, with the default values that can also be
+changed there). If you change the location of the folders in data, you do have
+to make sure the submodule data is available in the new location. MRSNet has 
+search paths for basis, model and simulation datasets defined as `search_*`
+variables in the configuration files. It stores any newly generated data
+under the data folder in `basis`, `sim-spectra`, or `model` as default paths
+that are always added by `cfg.py`. MRSNet also stores other configuration 
+values in `cfg.json` in the project folder or alternatively `mrsnet.json` in
+the config folder. This overwrites the defaults from `cfg.py` (`mrsnet.json`
+overwrites `cfg.json`).
 
-#### Folders and Git Submodules
+### Folders and Git Submodules
 
-The benchmark dataset is in `data/bechmark` and the basis sets in `data/basis`
-and the best models for distribution in `data/model-dist`. All these folders are
-git submodules and installed with the procedure above. They are generally
-required to run MRSNet.
+The benchmark dataset is in `data/benchmark`. Newly generated basis sets are stored in
+`data/basis`. The default basis set is in a separate git repository as submodule in
+`data/basis-dist`. Newly generated artificial neural network models are stored under
+`data/model`. Our best models we distribute are stored in `data/model-dist` as a separate
+git submodule. Newly simulated spectra are stored in `data/sim-spectra`. The submodules
+with this data are automatically installed with the above git submodule command. The 
+`*-dist` paths are automatically added to the search paths in the configuration.
 
-By default, networks are stored in `data/models` along with some basic
-analytics and the simulated spectra are stored in `data/sim-spectra`. Usually
-these folders are empty on installation. There are two git repositories on
-qyber.black with some data for these folders, generated for the publications,
-etc.:
+The additional git submodules containing the data are
 
-* [Data - MRSNet Models](https://qyber.black/mrs/data-mrsnet-model)
-* [Data - MRSNet Simulated Spectra](https://qyber.black/mrs/data-mrsnet-simulated-spectra)
+* [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-mrs-megapress-spectra) -
+  Swansea benchmark phantom datasets collected at Swansea University's 3T Siemens scanner (in `data/benchmark`);
+* [Data - MRSNet - Models - Dist](https://qyber.black/mrs/data-mrsnet-model-dist) -
+  Best performing trained models for MRSNet (in `data/models-dist`);
+* [Data - MRSNet - Basis Spectra - Dist](https://qyber.black/mrs/data-mrsnet-basis) -
+  Standard basis sets used ofr MEGAPRESS simulation (in `data/basis-dist`).
+* [Code - QDicom Utilities](https://qyber.black/ca/code-qdicom-utilities) -
+  Library to read dicoms.
 
-These can be cloned into those folders, if you wish to explore this data and use
-it for your own analysis.
+There are further git repositories on qyber.black with more data, generated for the
+publications, etc. that you can also use for your own analysis:
+
+* [Data - MRSNet - Models CNN](https://qyber.black/mrs/data-mrsnet-model-cnn): contains 
+  a large amount of CNN models that you could clone into `data/model-cnn` and then add that
+  path to the model search path in `cfg.json` or `mrsnet.json`. Note that this is a very
+  large repository. It contains the complete analysis data for the CNN models.
+* [Data - MRSNet - Simulated Spectra - MEGAPRESS](https://qyber.black/mrs/data-mrsnet-simulated-spectra-megapress):
+  contains a range of simulated MEGAPRESS spectra with our simulators using the basis datasets in
+  `data/basis-dist`. These datases have been used in the papers for training and testing the
+  models. You may use these to train your own models, etc. You can clone this into 
+  `data/sim-spectra-megapress`. Note, this is a very large repository.
 
 ## Simulating Spectra
 
@@ -236,8 +242,9 @@ Note, loading of non-Siemens DICOM files has not been tested.
 
 Released versions:
 * v1.0 - first release, tensorflow 1 and python2.
-* v1.1-dev1 - update to python3 and tensorflow 2; code, api and ui cleanups.
-* v1.1-dev2 - updates to spectra processing; extended dataset generation and model selection.
+* v2.0 - update to python3 and tensorflow 2; code, api and ui cleanups; updates to
+  spectra processing; extended dataset generation, model training, model selection, 
+  and quantification.
 
 ## Locations
 
@@ -245,7 +252,7 @@ The code is developed and maintained on [qyber\\black](https://qyber.black)
 at https://qyber.black/mrs/code-mrsnet
 
 This code is mirrored at
-* https://github.com/MaxChandler/MRSNet
+* https://github.com/qyber-black/code-mrsnet
 
 The mirrors are only for convenience, accessibility and backup.
 
@@ -266,7 +273,6 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 1.0. _FigShare_, Software, 16th August 2019.
-[[10.6084/m9.figshare.9824417.v1]](https://doi.org/10.6084/m9.figshare.9824417.v1)
+M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.0. Software, 2023.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
-[[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/MaxChandler/MRSNet)
+[[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/qyber-black/code-mrsnet)

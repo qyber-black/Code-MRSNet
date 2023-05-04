@@ -1,6 +1,6 @@
 # mrsnet/cfg.py - MRSNet - config
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -16,11 +16,14 @@ class Cfg:
   # defaults here) or ~/config/mrsnet.json (not generated; overwrites cfg.json and
   # defaults here).
   val = {
-    'path_root': None,
-    'path_basis': None,
-    'path_simulation': None,
-    'path_model': None,
-    'path_benchmark': None,
+    'path_root': None,        # MRSNet root path
+    'path_basis': None,       # Save path for basis, searched first
+    'path_simulation': None,  # Save path for simulation, searched first
+    'path_model': None,       # Save path for model, searched first
+    'path_benchmark': None,   # Save path for benchmark, searched first
+    'search_basis': [],       # Basis path list for searching
+    'search_simulation': [],  # Simulation path list for searching
+    'search_model': [],       # Model path list for searching
     'figsize': (26.67,15.0),
     'fft_peak_location_estimator': 'jain' , # 'quadratic' or 'quinn2' or 'jain' or None
     'b0_correct_ppm_range': 0.25,
@@ -49,18 +52,18 @@ class Cfg:
     'image_dpi': [300],
     'analysis_spectra_error_dist_sampling': 5, # Percentage of error samples to estimate
                                                # error distribution for spectra matching (for autoencoders)
-    'analysis_predicted_spectra_samples': 10 # Max. number of predicted spectra plotted when ground truth available
+    'analysis_predicted_spectra_samples': 10, # Max. number of predicted spectra plotted when ground truth available
+    'disable_gpu': False # Disable gpu for tensorflow (for testing)
   }
   # Development flags for extra functionalities and test (not relevant for use).
-  # These are set via the environment vairbale MRSNET_DEV (colon separated list),
+  # These are set via the environment variable MRSNET_DEV (colon separated list),
   # but all in use should be in the comments here for reference:
-  # * selectgpo_optimise_noload: do not load existing datapoints for GPO model selection
+  # * check_dataset_export - Test if exporting dataset to tensors is correct in train
+  # * flag_plots - Show some test graphs for the activated checks
+  # * selectgpo_optimse_noload - do not load existing results for SelectGPO
+  # * selectgpo_no_search - only use existing results; do not execute GPO search
   # * spectrum_set_phase_correct: show phase correction effect
   dev_flags = set()
-  # check_dataset_export - Test if exporting dataset to tensors is correct in train
-  # flag_plots - Show some test graphs for the activated checks
-  # selectgpo_optimse_noload - do not load existing results for SelectGPO
-  # selectgpo_no_search - only use existing results; do not execute GPO search
   file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod
@@ -96,12 +99,22 @@ class Cfg:
         Cfg.val[p] = os.path.join(data_dir,paths[p])
       if not os.path.isdir(Cfg.val[p]):
         os.makedirs(Cfg.val[p])
+    changed = False # Any changes to cfg's so we need to save it again?
+    # Extend search paths, to make sure -dist files are always available
+    search = {
+      "search_basis": "basis-dist",
+      "search_model": "model-dist"
+    }
+    for s in search:
+      sp = os.path.join(data_dir,search[s])
+      if sp not in Cfg.val[s]:
+        Cfg.val[s].append(sp)
+        changed = True
     # Setup plot defaults
     if Cfg.val["screen_dpi"] == None:
       Cfg.val["screen_dpi"] = Cfg._screen_dpi()
     plt.rcParams["figure.figsize"] = Cfg.val['figsize']
     # Store configs in ROOT/mrsnet.json if it does not exist
-    changed = False
     del_keys = []
     for k in root_cfg_vals.keys(): # Do not store paths and remove old values
       if k[0:5] == 'path_' or k not in Cfg.val:

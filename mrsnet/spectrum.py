@@ -1,7 +1,7 @@
 # mrsnet/spectrum.py - MRSNet - individual spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -174,7 +174,7 @@ class Spectrum:
     para = lmfit.Parameters()
     para.add('phi0', value=0.0, min=-np.pi/4.0, max=np.pi/4.0)
     para.add('phi1', value=0.0, min=-0.1, max=0.1)
-    res = lmfit.minimize(entropy, para, method='simplex')
+    res = lmfit.minimize(err, para, method='simplex')
     val = res.params
     # Adjust phase
     idx = np.argmax(np.abs(np.real(self.fft)))
@@ -306,7 +306,7 @@ class Spectrum:
       Y = np.imag(Y)
       axes.set_ylabel('Im')
     else:
-      raise Exception("Unkonw plot mode "+mode)
+      raise Exception("Unknown plot mode "+mode)
     axes.plot(X,Y)
 
   def plot_spectrum(self, concentrations={}, screen_dpi=96, type='fft'):
@@ -542,12 +542,15 @@ class Spectrum:
     return s
 
   @staticmethod
-  def load_pygamma(pygamma_dir, metabolite, pulse_sequence, omega, linewidth,
-                   npts, dt):
-    cache_dir = os.path.join(pygamma_dir,
-                             pulse_sequence + '_' + str(omega) + '_' +
-                             str(linewidth) + '_' + str(npts) + '_' + str(dt))
-    filename = os.path.join(cache_dir, metabolite+".json")
+  def load_pygamma(pygamma_dir, search_path, metabolite, pulse_sequence, omega, linewidth,
+                   npts, dt, simulate=True):
+    for spath in [pygamma_dir, *search_path]:
+      cache_dir = os.path.join(spath,
+                               pulse_sequence + '_' + str(omega) + '_' +
+                               str(linewidth) + '_' + str(npts) + '_' + str(dt))
+      filename = os.path.join(cache_dir, metabolite+".json")
+      if os.path.exists(filename):
+        break
     if not os.path.exists(filename):
       if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
@@ -650,7 +653,7 @@ class Spectrum:
                 fft[:ishift] = 0.0
               elif ishift < 0:
                 fft[fft.shape[0]-ishift:] = 0.0
-              # ON = OFF + 2*diff
+              # We have ON = OFF + 2*diff
               fft_scale = metadata["BASIS"]["TRAMP"]*100.0/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
               adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
@@ -685,7 +688,7 @@ class Spectrum:
     return specs
 
   @staticmethod
-  def load_dicom(file, concentrations=None, metabolites=[], verbose=0):
+  def load_dicom(file, concentrations=None, metabolites=None, verbose=0):
     if not os.path.exists(file):
         raise Exception('Dicom file does not exist: ' + file)
     from mrsnet.qdicom.read_dicom_siemens import read_dicom
@@ -701,7 +704,7 @@ class Spectrum:
 
     # Get pulse sequence (this works for Siemens)
     pulse_sequence = info["[CSA Image Header Info]"]["SequenceName"]
-    if pulse_sequence in ['svs_edit', 'svs_ed', 'megapress']:
+    if pulse_sequence in ['svs_edit', 'svs_ed', 'eja_svs_mpress', 'megapress']:
       pulse_sequence = 'megapress'
     else:
       raise Exception(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
@@ -719,9 +722,14 @@ class Spectrum:
     else:
       raise Exception(f"Pulse sequence {pulse_sequence} not supported")
 
-    id = dicom[TAG_PATIENT_ID].value
-    if len(id) < 1:
-      id = "/".join([x for x in file.split("/")[-4:] if x[-4:].lower() != '.ima'])
+    fn = os.path.abspath(file).split(os.sep)
+    if len(fn) > 4:
+      fn = fn[-4:]
+    fn = fn[:-1]
+    idl = "/".join(fn)
+    pid = dicom[TAG_PATIENT_ID].value
+    if len(pid) < 1:
+      idl += "/"+pid
 
     omega = float(info["[CSA Image Header Info]"]["ImagingFrequency"])
     dt = float(info["[CSA Image Header Info]"]["RealDwellTime"]) * 1e-9
@@ -752,7 +760,7 @@ class Spectrum:
                 ms = molecules.short_name(m)
                 if ms == "Gln" or ms == "Glu":
                   cs["GlX"] += float(js[ids[l]][m])
-    spec = Spectrum(id=id,
+    spec = Spectrum(id=idl,
                     pulse_sequence=pulse_sequence,
                     acquisition=acquisition,
                     omega=omega,
@@ -766,16 +774,16 @@ class Spectrum:
         axs[0].plot(data)
         axs[0].set_title("Dicom Data")
       filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
-      filter = np.zeros(len(data))
+      filterv = np.zeros(len(data))
       if Cfg.val['filter_dicom'] == 'hamming':
-        filter[0:filter_length//2] = np.hamming(filter_length)[filter_length//2:]
+        filterv[0:filter_length//2] = np.hamming(filter_length)[filter_length//2:]
       elif Cfg.val['filter_dicom'] == 'hanning':
-        filter[0:filter_length//2] = np.hanning(filter_length)[filter_length//2:]
+        filterv[0:filter_length//2] = np.hanning(filter_length)[filter_length//2:]
       elif Cfg.val['filter_dicom'] == 'kaiser':
-        filter[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
+        filterv[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
       else:
         raise Exception("Unknown dicom filter")
-      data = np.multiply(data,filter)
+      data = np.multiply(data,filterv)
       if verbose > 4:
         fig, axs = plt.subplot(1,2)
         axs[0].plot(data)

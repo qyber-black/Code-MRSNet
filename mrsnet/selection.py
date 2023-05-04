@@ -21,18 +21,11 @@ class Select:
 
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
     from mrsnet.dataset import Dataset
-    if os.path.isfile(os.path.join(dataset,"spectra_noisy.joblib")):
-      id = _get_std_name(dataset)
-      name = os.path.join(*id[-9:-1])
-      self.ds_rest = id[-1]
-      if verbose > 0:
-        print(f"# Loading dataset {name} : {self.ds_rest}")
-      ds = Dataset.load(dataset, info_only=True)
-      self.pulse_sequence = ds.pulse_sequence
-    elif os.path.isfile(os.path.join(dataset,"spectra_clean.joblib")):
-      id = _get_std_name(dataset)
-      name = os.path.join(*id[-9:-1])
-      self.ds_rest = id[-1]
+    if os.path.isfile(os.path.join(dataset,"spectra_noisy.joblib")) or \
+       os.path.isfile(os.path.join(dataset,"spectra_clean.joblib")):
+      idl = _get_std_name(dataset)
+      name = os.path.join(*idl[-9:-1])
+      self.ds_rest = idl[-1]
       if verbose > 0:
         print(f"# Loading dataset {name} : {self.ds_rest}")
       ds = Dataset.load(dataset, info_only=True)
@@ -140,7 +133,7 @@ class Select:
         args[a] = [str(v) for v in args[a]]
       else:
         args[a] = str(args[a])
-    # Same for key_vals (can be different due to model parametrs, but used for
+    # Same for key_vals (can be different due to model parameters, but used for
     # plots and must be all strings for sorting, etc)
     for kv in key_vals:
       if isinstance(key_vals[kv],list):
@@ -579,12 +572,12 @@ class SelectGPO(Select):
     self.values = {}
     for k in var_keys:
       if isinstance(models.values[k][0],int) or isinstance(models.values[k][0],float):
-        type = 'discrete'
+        dtype = 'discrete'
       else:
-        type = 'categorical'
+        dtype = 'categorical'
       domain.append({
           'name': k,
-          'type': type,
+          'type': dtype,
           'domain': np.arange(0,len(models.values[k])),
           'dimensionality': 1
         })
@@ -611,7 +604,7 @@ class SelectGPO(Select):
         if len(self.key_vals) > 0:
           print(f"  Models loaded: {len(self.key_vals)} x {len(self.val_performance[0])}")
         else:
-          print(f"  Models loaded: None")
+          print("  Models loaded: None")
     # Evaluate first, if none available so far
     if len(self.key_vals) < 1:
       for ki,k in enumerate(keys):
@@ -843,18 +836,18 @@ def _ga_fitness_func(solution, solution_idx):
       lv = ga_aux['var_keys'][l]
       if isinstance(ga_aux['models'].values[lv][solution[l]],list):
         if isinstance(ga_aux['models'].values[lv][solution[l]][0],int):
-          cmp = [int(v) for v in kv[lv]]
+          xcmp = [int(v) for v in kv[lv]]
         elif isinstance(ga_aux['models'].values[lv][solution[l]][0],float):
-          cmp = [float(v) for v in kv[lv]]
+          xcmp = [float(v) for v in kv[lv]]
         else:
-          cmp = kv[lv]
+          xcmp = kv[lv]
       elif isinstance(ga_aux['models'].values[lv][solution[l]],int):
-        cmp = int(kv[lv])
+        xcmp = int(kv[lv])
       elif isinstance(ga_aux['models'].values[lv][solution[l]],float):
-        cmp = float(kv[lv])
+        xcmp = float(kv[lv])
       else:
-        cmp = kv[lv]
-      if cmp != ga_aux['models'].values[lv][solution[l]]:
+        xcmp = kv[lv]
+      if xcmp != ga_aux['models'].values[lv][solution[l]]:
         match = False
         break
     if match:
@@ -875,12 +868,12 @@ def _ga_on_generation(ga_instance):
 
 def _get_std_name(name):
   _, path = os.path.splitdrive(name)
-  id = []
+  idl = []
   while True:
     path, folder = os.path.split(path)
     if folder != "":
-      id.append(folder)
+      idl.append(folder)
     if path == "":
       break
-  id.reverse()
-  return id
+  idl.reverse()
+  return idl

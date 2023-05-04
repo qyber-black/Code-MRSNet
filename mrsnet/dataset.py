@@ -1,7 +1,7 @@
 # mrsnet/dataset.py - MRSNet - spectra dataset
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -18,7 +18,7 @@ from mrsnet.grid import Grid
 from mrsnet.cfg import Cfg
 
 class Dataset:
-  # A dataset is a collection of spectra for training, tesing or predicting.
+  # A dataset is a collection of spectra for training, testing or predicting.
 
   def __init__(self, name):
     self.name = name
@@ -44,6 +44,8 @@ class Dataset:
               self.metabolites.append(m)
           if s.id not in specs:
             specs[s.id] = {}
+          if s.acquisition in specs[s.id]:
+            raise Exception(f"Duplicate spectrum id would overwrite spectra: {s.id}-{s.acquisition}")
           specs[s.id][s.acquisition] = s
           concs[s.id] = c
           if len(c) == 0:
@@ -88,14 +90,14 @@ class Dataset:
         # Random uniform concentrations
         concentrations = np.random.ranf((n, n_metabolites))
       elif sampler == 'dirichlet':
-        # Dirichlet sampling, equal weight for all metablites
+        # Dirichlet sampling, equal weight for all metabolites
         concentrations = np.random.default_rng().dirichlet([1] * n_metabolites, n)
       elif sampler == 'sobol':
         # Sobol sampling
         skip = math.floor(math.log(n*n_metabolites,2)) # Skip broken in sobol package!
         concentrations = sobol_seq.i4_sobol_generate(n_metabolites, n+skip)[skip:,:]
       elif sampler[-6:] == '-zeros':
-        # Select all zero concentration possibilities, equal weight for all remaining metablites according to sampling method
+        # Select all zero concentration possibilities, equal weight for all remaining metabolites according to sampling method
         concentrations = np.zeros((n, n_metabolites))
         groups = []
         groups_n = []
@@ -126,12 +128,12 @@ class Dataset:
             # Random uniform concentrations
             concentrations[idx:idx+n_g,g] = np.random.ranf((n_g, len(g)))
           elif sampler == 'dirichlet-zeros':
-            # Dirichlet sampling, equal weight for all metablites
+            # Dirichlet sampling, equal weight for all metabolites
             concentrations[idx:idx+n_g,g] = np.random.default_rng().dirichlet([1]*len(g), n_g)
           elif sampler == 'sobol-zeros':
             # Sobol sampling
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
-            skip += n_g # Get differnt samples for the groups
+            skip += n_g # Get different samples for the groups
           else:
             raise Exception(f"Unknown concentration generation method: {sampler}")
           idx += n_g
@@ -163,12 +165,12 @@ class Dataset:
             # Random uniform concentrations
             concentrations[idx:idx+n_g,g] = np.random.ranf((n_g, len(g)))
           elif sampler == 'dirichlet-one':
-            # Dirichlet sampling, equal weight for all metablites
+            # Dirichlet sampling, equal weight for all metabolites
             concentrations[idx:idx+n_g,g] = np.random.default_rng().dirichlet([1]*len(g), n_g)
           elif sampler == 'sobol-ones':
             # Sobol sampling
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
-            skip += n_g # Get differnt samples for the groups
+            skip += n_g # Get different samples for the groups
           else:
             raise Exception('Unknown concentration generation method: ' + sampler)
           for one in range(0,n_metabolites):
@@ -212,7 +214,7 @@ class Dataset:
               if noise_type == "adc_normal":
                 self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
               else:
-                raise Exception("Unknonw noise type "+noise_type)
+                raise Exception("Unknown noise type "+noise_type)
           if 'difference' in self.spectra[idx]:
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
@@ -330,10 +332,10 @@ class Dataset:
     else:
       d_out = np.ndarray((0,0))
 
-    if np.sum(d_out.shape) > 0:
-      if d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or \
-         d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or \
-         d_inp.shape[3] != n_fft_pts:
+    if np.sum(d_out.shape) > 0 and \
+      (d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or \
+       d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or \
+       d_inp.shape[3] != n_fft_pts):
         raise Exception("Unexpected input/output tensor shape(s)")
 
     if verbose > 4:
