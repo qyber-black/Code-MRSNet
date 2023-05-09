@@ -29,35 +29,37 @@ https://langbein.org/mrsnet-paper/
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
     `sudo apt update && sudo apt install git git-lfs python3 python3-pip`.
-* [Tensorflow](https://www.tensorflow.org/) as machine learning library. In particular 
-  for training, but also for quantification, a GPU (with tensorflow support) is strongly
-  recommended, with [cudnn](https://developer.nvidia.com/cudnn) or [OneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/optimization-for-tensorflow-installation-guide.html).
-* For all standard python packages used, see `requirements.txt`.
-  * [PyGamma](https://vespa-mrs.github.io/vespa.io/other_packages/dev_gamma),
-    a MRS simulation toolbox, installed via a python package or separately.
-    You only need this if you wish to use the pygamma basis spectra simulation.
-    It is currently commented out from `requirements.txt` and has to be installed
-    manually. See https://pygamma-mrs.github.io/gamma.io/installing/PyGamma.html
-    for installation instructions.
+* For all standard python packages used, see `requirements.txt`. These will be 
+  installed with the commands below, but here are some extra notes on potential
+  issues.
+  * [Tensorflow](https://www.tensorflow.org/) as machine learning library. In particular 
+    for training, but also for quantification, a GPU (with tensorflow support) is strongly
+    recommended, with [cudnn](https://developer.nvidia.com/cudnn) or [OneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/optimization-for-tensorflow-installation-guide.html).
   * For scipy/numpy you may need to install lapack and blas libraries for your
     system. By default we use numpy's fft, but you can also use fftw3 for the
     Fourier transform functions via pyfftw (see the `npfft_module` config 
     variable and configuration files below), for which you should install `libfftw3`.
     pyfftw is currently commented out from `requirements.txt` and has to be installed
     manually.
+  * [PyGamma](https://vespa-mrs.github.io/vespa.io/other_packages/dev_gamma),
+    a MRS simulation toolbox, installed via a python package or separately.
+    You only need this if you wish to use the pygamma basis spectra simulation.
+    It is currently commented out from `requirements.txt` and has to be installed
+    manually. See https://pygamma-mrs.github.io/gamma.io/installing/PyGamma.html
+    for installation instructions.
   * GPyOpt is no longer maintained, but usable, and depends on gpy. It can be safely
-    commented out if model selection is not used.
+    commented out from `requirements.txt` if model selection is not used.
   * Any missing libraries may cause the pip3 install command below to fail.
 * [FID-A](https://github.com/CIC-methods/FID-A), a MRS simulation toolbox. This is provided
   via a git submodule and integrated during the installation process below.
-  * MATLAB - Only required if you plan to simulate new FID-A spectra (the basis
+  * [MATLAB](https://mathworks.com/) - Only required if you plan to simulate new FID-A spectra (the basis
     sets we used in the paper are in the git data/basis-dist submodule).
 
 ### Install Instructions (Linux)
 
 1. Clone the repository:
    ```
-   git clone git@qyber.black:mrs/code-mrsnet.git mrsnet
+   git clone https://qyber.black/mrs/code-mrsnet.git mrsnet
    ```
    Check the clone url, as it may be different if you use a different
    repository, e.g. from a mirror or alternative versions for development, etc.
@@ -79,9 +81,10 @@ https://langbein.org/mrsnet-paper/
    installed on you system that pip does not add (see note above). Potentially
    you may have to set this up in a virtual environment or use the
    `--break-system-packages` options (on your own risk of breaking something else).
-   In general dependency issues of python packages failing to installed can be
-   addressed by commenting them out of `requirements.txt`, but it may mean that
-   certain MRSNet functionality may then not work.
+   Optionally you may want to install pygamma and pyfftw manually (see prerequisites
+   above). In general dependency issues of python packages failing to installed 
+   can be addressed by commenting them out of `requirements.txt`, but it may mean
+   that certain MRSNet functionality may not work.
 
 To update to the latest version (of your selected branch), run `git pull` and
 step 3 and 4 above in the project folder. To switch to another version or branch
@@ -286,6 +289,6 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-M Chandler, C Jenkins, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.0. Software, 2023.
+M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.0. Software, 2023.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/qyber-black/code-mrsnet)
