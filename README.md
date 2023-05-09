@@ -39,13 +39,11 @@ https://langbein.org/mrsnet-paper/
     system. By default we use numpy's fft, but you can also use fftw3 for the
     Fourier transform functions via pyfftw (see the `npfft_module` config 
     variable and configuration files below), for which you should install `libfftw3`.
-    pyfftw is currently commented out from `requirements.txt` and has to be installed
-    manually.
   * [PyGamma](https://vespa-mrs.github.io/vespa.io/other_packages/dev_gamma),
-    a MRS simulation toolbox, installed via a python package or separately.
-    You only need this if you wish to use the pygamma basis spectra simulation.
-    It is currently commented out from `requirements.txt` and has to be installed
-    manually. See https://pygamma-mrs.github.io/gamma.io/installing/PyGamma.html
+    a MRS simulation toolbox. You only need this if you wish to use the pygamma basis
+    spectra simulation. If it fails to install you can comment it out from
+    `requirements.txt`. If needed you can still try to install it manually or use a 
+    supported python version. See https://pygamma-mrs.github.io/gamma.io/installing/PyGamma.html
     for installation instructions.
   * GPyOpt is no longer maintained, but usable, and depends on gpy. It can be safely
     commented out from `requirements.txt` if model selection is not used.
