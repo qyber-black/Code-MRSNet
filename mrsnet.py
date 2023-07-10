@@ -207,6 +207,8 @@ def add_arguments_quantify(p):
   # Add quantification arguments
   p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OMEGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
+  p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='default',
+                 help='Concentration normalisation: sum or max equal to 1; default means to use quantifier norm; none uses raw output)')
 
 def add_arguments_benchmark(p):
   # Add benchmark arguments

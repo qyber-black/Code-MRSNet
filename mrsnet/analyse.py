@@ -23,12 +23,14 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   if norm == 'max':
     for i in range(pre.shape[0]):
-      pre[i] /= np.max(pre[i, :])
-      out[i] /= np.max(out[i, :])
+      pre[i,:] /= np.max(pre[i, :])
+      if len(out) > 0:
+        out[i,:] /= np.max(out[i, :])
   elif norm == 'sum':
     for i in range(pre.shape[0]):
-      pre[i] /= np.sum(pre[i, :])
-      out[i] /= np.sum(out[i, :])
+      pre[i,:] /= np.sum(pre[i, :])
+      if len(out) > 0:
+        out[i,:] /= np.sum(out[i, :])
   elif norm != 'none' and norm is not None:
     raise Exception(f"Unknown norm {norm}")
 
