@@ -321,7 +321,7 @@ class Spectrum:
       super_title += " Linewidth: " + str(self.linewidth)
     if self.noise != None:
       if self.noise[0] == "adc" and self.noise[1] == "normal":
-        super_title += f" - ADC Noise N({self.noise[2]},{self.adc_noise[3]})"
+        super_title += f" - ADC Noise N({self.noise[2]},{self.noise[3]})"
       else:
         raise Exception("Unknown noise model")
 
