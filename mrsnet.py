@@ -585,13 +585,14 @@ def quantify(args):
     except:
       quantifier = None
     if quantifier is None:
-      try:
-        for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
+      for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
+        try:
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = CNN.load(folder)
+          model_path = spath
           break
-      except:
-        quantifier = None
+        except:
+          quantifier = None
       if quantifier is None:
         raise Exception("Model not found")
   else:
@@ -659,13 +660,14 @@ def benchmark(args):
     except:
       quantifier = None
     if quantifier is None:
-      try:
-        for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
+      for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
+        try:
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = CNN.load(folder)
+          model_path = spath
           break
-      except:
-        quantifier = None
+        except:
+          quantifier = None
       if quantifier is None:
         raise Exception("Model not found")
   else:
@@ -698,7 +700,7 @@ def benchmark(args):
       id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
       if args.norm == "default":
         args.norm = quantifier.norm
-      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name,
+      analyse_model(quantifier, d_inp, d_out, os.path.join(model_path, name,
                                                            batchsize, epochs,
                                                            train_model, trainer, rest),
                     id=[s[id_ref].id for s in bm.spectra],
@@ -713,7 +715,10 @@ def get_std_name(name):
     path, folder = os.path.split(path)
     if folder != "":
       idl.append(folder)
-    if path == "" or path == '/':
+    if path == '/':
+      idl.append('/')
+      break
+    if path == "":
       break
   idl.reverse()
   return idl
