@@ -607,6 +607,8 @@ def quantify(args):
                                                    concentrations=concentrations,
                                                    metabolites=quantifier.metabolites,
                                                    verbose=args.verbose)
+    if len(ds.spectra) < 1:
+      raise Exception("No spectra found")
     idl = get_std_name(args.dataset)
     while idl[0] == '.' or idl[0] == '..':
       idl = idl[1:]
