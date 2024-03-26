@@ -45,7 +45,7 @@ class Dataset:
           if s.id not in specs:
             specs[s.id] = {}
           if s.acquisition in specs[s.id]:
-            raise Exception(f"Duplicate spectrum id would overwrite spectra: {s.id}-{s.acquisition}")
+            raise RuntimeError(f"Duplicate spectrum id would overwrite spectra: {s.id}-{s.acquisition}")
           specs[s.id][s.acquisition] = s
           concs[s.id] = c
           if len(c) == 0:
@@ -61,21 +61,21 @@ class Dataset:
   def generate_spectra(self, basis, num, samplers, verbose):
     # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
     if num <= 0:
-      raise Exception(f"n_samples must be greater than 0, not {num}!")
+      raise RuntimeError(f"n_samples must be greater than 0, not {num}!")
     if self.metabolites == None:
       self.metabolites = basis.metabolites
     else:
       for m in basis.metabolites:
         if m not in self.metabolites:
-          raise Exception(f"Basis metabolite not in dataset: {m}")
+          raise RuntimeError(f"Basis metabolite not in dataset: {m}")
       for m in self.metabolites:
         if m not in basis.metabolites:
-          raise Exception(f"Dataset metabolite not in basis: {m}")
+          raise RuntimeError(f"Dataset metabolite not in basis: {m}")
 
     if self.pulse_sequence == None:
       self.pulse_sequence = basis.pulse_sequence
     elif self.pulse_sequence != basis.pulse_sequence:
-      raise Exception("Dataset pulse sequence does not match basis pulse sequence")
+      raise RuntimeError("Dataset pulse sequence does not match basis pulse sequence")
 
     n0 = num // len(samplers)
     n1 = num % len(samplers)
@@ -109,7 +109,7 @@ class Dataset:
           if verbose > 0:
             print(f"  For {n_excited} excited: {n_per_group} samples per {len(combs)} combinations")
           if n_per_group < 1:
-            raise Exception(f"Insufficient samples for *-zeros with {len(groups)} groups")
+            raise RuntimeError(f"Insufficient samples for *-zeros with {len(groups)} groups")
           for comb in combs:
             groups.append(comb)
             groups_n.append(n_per_group)
@@ -135,7 +135,7 @@ class Dataset:
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
             skip += n_g # Get different samples for the groups
           else:
-            raise Exception(f"Unknown concentration generation method: {sampler}")
+            raise RuntimeError(f"Unknown concentration generation method: {sampler}")
           idx += n_g
       elif sampler[-4:] == '-one':
         # Set one concentration to one
@@ -145,7 +145,7 @@ class Dataset:
         if verbose > 0:
           print(f"  {n_per_group} samples for {len(combs)} combinations with one 1.0")
         if n_per_group < 1:
-          raise Exception(f"Insufficient samples for *-one with {len(combs)} combinations")
+          raise RuntimeError(f"Insufficient samples for *-one with {len(combs)} combinations")
         n_total = 0
         groups = []
         groups_n = []
@@ -172,13 +172,13 @@ class Dataset:
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
             skip += n_g # Get different samples for the groups
           else:
-            raise Exception('Unknown concentration generation method: ' + sampler)
+            raise RuntimeError('Unknown concentration generation method: ' + sampler)
           for one in range(0,n_metabolites):
             if one not in g:
               concentrations[idx:idx+n_g,one] = 1.0
           idx += n_g
       else:
-        raise Exception('Unknown concentration generation method: ' + sampler)
+        raise RuntimeError('Unknown concentration generation method: ' + sampler)
       all_concentrations = np.concatenate((all_concentrations,concentrations),axis=0)
 
     if verbose > 0:
@@ -192,13 +192,13 @@ class Dataset:
   def add_noise(self, noise_p, noise_type, noise_mu, noise_sigma, verbose):
     # Add noise to all spectra
     if self.noise_added:
-      raise Exception("Noise added twice to dataset")
+      raise RuntimeError("Noise added twice to dataset")
     if noise_p > 0.0 and noise_type != "none":
       if verbose > 0:
         if noise_type == "adc_normal":
           print(f"Adding ADC noise Normal(mu={noise_mu},sigma={noise_sigma}) with probability {noise_p} to time signal")
         else:
-          raise Exception("Unknown noise type "+noise_type)
+          raise RuntimeError("Unknown noise type "+noise_type)
       self.noise_added = True
       num = len(self.spectra)
       n_add = np.random.uniform(0.0,1.0,num)
@@ -214,11 +214,11 @@ class Dataset:
               if noise_type == "adc_normal":
                 self.spectra[idx][a].add_noise_adc_normal(mu=n_mu[idx], sigma=n_sigma[idx])
               else:
-                raise Exception("Unknown noise type "+noise_type)
+                raise RuntimeError("Unknown noise type "+noise_type)
           if 'difference' in self.spectra[idx]:
             # Add difference of noisy spectra
             if 'edit_off' not in self.spectra[idx] or 'edit_on' not in self.spectra[idx]:
-              raise Exception("Difference spectrum without edit_off or edit_on")
+              raise RuntimeError("Difference spectrum without edit_off or edit_on")
             self.spectra[idx]['difference'] = Spectrum.comb(1.0,self.spectra[idx]['edit_on'],
                                                             -1.0,self.spectra[idx]['edit_off'],
                                                             self.spectra[idx]['edit_on'].id+"_+_"+self.spectra[idx]['edit_off'].id,
@@ -336,7 +336,7 @@ class Dataset:
       (d_out.shape[0] != d_inp.shape[0] or d_out.shape[1] != len(metabolites) or \
        d_inp.shape[1] != len(acquisitions) or d_inp.shape[2] != len(datatype) or \
        d_inp.shape[3] != n_fft_pts):
-        raise Exception("Unexpected input/output tensor shape(s)")
+        raise RuntimeError("Unexpected input/output tensor shape(s)")
 
     if verbose > 4:
       self._check_export(d_inp,d_out,metabolites, high_ppm, low_ppm, n_fft_pts, norm,
@@ -477,7 +477,7 @@ class Dataset:
           if normalise:
             inp[a_idx,d_idx,:] = (inp[a_idx,d_idx,:]/np.pi+1.0)/2.0 # Normalise to (0..1]
         else:
-          raise Exception(f"Unknown datatype {d}")
+          raise RuntimeError(f"Unknown datatype {d}")
         d_idx += 1
     return inp
 
@@ -490,5 +490,5 @@ class Dataset:
     elif norm == 'sum':
       out /= np.sum(out)
     elif norm != 'none':
-      raise Exception(f"Unknown norm {norm}")
+      raise RuntimeError(f"Unknown norm {norm}")
     return out

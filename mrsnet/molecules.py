@@ -52,7 +52,7 @@ def convert_names(molecules, shorten=False):
           new_name = NAMES[long_name][0] if shorten else long_name
           break
     if new_name is None:
-      raise Exception('Metabolite name "' + name + '" invalid')
+      raise RuntimeError('Metabolite name "' + name + '" invalid')
     new_names.append(new_name)
   return new_names
 

@@ -32,7 +32,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       if len(out) > 0:
         out[i,:] /= np.sum(out[i, :])
   elif norm != 'none' and norm is not None:
-    raise Exception(f"Unknown norm {norm}")
+    raise RuntimeError(f"Unknown norm {norm}")
 
   # Analyse if we have concentrations
   if len(out) > 0:

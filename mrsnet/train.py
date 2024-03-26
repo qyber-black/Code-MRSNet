@@ -482,7 +482,7 @@ class DuplexKFold(Train):
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
         if n_selected > data_dim:
-          raise Exception("Insufficient data-points for finding buckets")
+          raise RuntimeError("Insufficient data-points for finding buckets")
         k_b += 1
     del ddm
     if verbose > 2:

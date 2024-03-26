@@ -8,4 +8,5 @@ __pycache__
 /data/basis*
 /data/model*
 /data/sim-spectra*
+/data/data-exp*
 /cfg.json

@@ -31,7 +31,7 @@ class Select:
       ds = Dataset.load(dataset, info_only=True)
       self.pulse_sequence = ds.pulse_sequence
     else:
-      raise Exception("Cannot find dataset")
+      raise RuntimeError("Cannot find dataset")
     self.metabolites = metabolites
     self.dataset = dataset
     self.epochs = epochs
@@ -86,7 +86,7 @@ class Select:
       model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
     else:
-      raise Exception(f"Unknown model string {args['model']}")
+      raise RuntimeError(f"Unknown model string {args['model']}")
 
     # Make all arguments strings
     for a in args:
@@ -118,7 +118,7 @@ class Select:
     elif self.validate == 0.0:
       trainer = "NoValidation"
     else:
-      raise Exception(f"Unknown validation {args.validate}")
+      raise RuntimeError(f"Unknown validation {args.validate}")
     # Check if sane, delete otherwise
     base_path = os.path.join(path_model, model_name, args['batchsize'], str(self.epochs),
                              train_model)
@@ -251,7 +251,7 @@ class Select:
     try:
       p = subprocess.Popen(cmd)
     except OSError as e:
-      raise Exception('MRSNet training failed') from e
+      raise RuntimeError('MRSNet training failed') from e
     p.wait()
 
   def _run_remote(self,id,all):
@@ -797,7 +797,7 @@ def _ga_fitness_func(solution, solution_idx):
       val = ga_aux['select'].val_performance[k][0]
       break
   if val == None:
-    raise Exception("Could not find result")
+    raise RuntimeError("Could not find result")
   if ga_aux['select'].verbose > 0:
     print(f" = {val}")
   return 1/(val+1e-8)

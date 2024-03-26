@@ -1,6 +1,6 @@
 # mrsnet/cfg.py - MRSNet - config
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -52,6 +52,8 @@ class Cfg:
     'image_dpi': [300],
     'disable_gpu': False # Disable gpu for tensorflow (for testing)
   }
+  # Cache for list of SU bases
+  _su_bases = []
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment variable MRSNET_DEV (colon separated list),
   # but all in use should be in the comments here for reference:
@@ -82,7 +84,7 @@ class Cfg:
               Cfg.val[k] = js[k]
             else:
               if fc != root_cfg_file: # We fix this here later
-                raise Exception(f"Unknown config file entry {k} in {fc}")
+                raise RuntimeError(f"Unknown config file entry {k} in {fc}")
     # Check data folders and create as needed
     data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {
@@ -130,6 +132,17 @@ class Cfg:
     if 'MRSNET_DEV' in os.environ:
       for f in os.environ['MRSNET_DEV'].split(":"):
         Cfg.dev_flags.add(f)
+
+  @staticmethod
+  def get_su_bases(reload=False):
+    if reload:
+      Cfg._su_bases = []
+    if len(Cfg._su_bases) == 0:
+      for path in [Cfg.val['path_basis'],*Cfg.val['search_basis']]:
+        for fldr in next(os.walk(path))[1]:
+          if fldr[0:3] == 'su-' and fldr not in Cfg._su_bases:
+            Cfg._su_bases.append(fldr)
+    return Cfg._su_bases
 
   @staticmethod
   def dev(flag):
