@@ -1,6 +1,7 @@
 # mrsnet/comapre.py - MRSNet - compare and analyse spectra
 #
 # SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -102,10 +103,8 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     axs[2,0].set_ylabel("Real - Count")
     axs[3,0].set_ylabel("Imaginary - Count")
     axs[3,0].set_xlabel("Difference - Error")
-    axs[3,1].set_xlabel("Edit Off - Error")
-    axs[3,2].set_xlabel("Edif On - Error")
-    plt.show(block=True)
-    plt.close()
+    axs[3,1].set_xlabel("Edit Off - Error")        both added:      mrsnet/selection.py
+
 
 def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     # Plot difference between dataset and basis reference spectrum

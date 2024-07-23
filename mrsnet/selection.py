@@ -1,6 +1,7 @@
 # mrsnet/selection.py - MRSNet - model selection
 #
 # SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -40,7 +41,7 @@ class Select:
     self.image_dpi = image_dpi
     self.verbose = verbose
     self.dataset_name = ds.name
-
+    self.model_str = None
     if len(remote) > 0:
       remote = remote.split(":")
       self.remote = remote[0]
@@ -85,6 +86,44 @@ class Select:
       from mrsnet.cnn import CNN
       model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:5] == 'ae_fc':
+      # AE-FC model fully parameterised
+      # ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]
+      model_str = 'ae_fc'
+      for marg in ["LIN", "LOUT", "ACT", "ACT-LAST", "DO"]:
+        model_str += "_"
+        model_str += str(args['model_' + marg])
+        del args['model_' + marg]
+      args['model'] = model_str
+      from mrsnet.autoencoder import Autoencoder
+      self.model_str = model_str[0:5]
+      model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:6] == 'aeq_fc':
+      # AEQ-FC model fully parameterised
+      # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
+      model_str = 'aeq_fc'
+      for marg in ["UNITS", "LAYERS", "ACT", "ACT-LAST", "DO"]:
+        model_str += "_"
+        model_str += str(args['model_' + marg])
+        del args['model_' + marg]
+      args['model'] = model_str
+      from mrsnet.autoencoder import Autoencoder
+      model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:7] == 'caeq_fc':
+      # CAEQ-FC model fully parameterised
+      # caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACTIVATION]_[ACTIVATION-LAST]_[DP]
+      model_str = 'caeq_fc'
+      for marg in ["LIN", "LOUT", "ACT", "ACT-LAST", "DO", "UNITS", "LAYERS", "ACTIVATION", "ACTIVATION-LAST", "DP"]:
+        model_str += "_"
+        model_str += str(args['model_' + marg])
+        del args['model_' + marg]
+      args['model'] = model_str
+      from mrsnet.ae_quantifier import Autoencoder_quantifier
+      model_name = str(Autoencoder_quantifier(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
+
     else:
       raise RuntimeError(f"Unknown model string {args['model']}")
 
@@ -299,23 +338,39 @@ class Select:
   def _load_performance(self, model_path, fold):
     try:
       if len(fold) == 0:
-        with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
-          data = json.load(f)
-        train_p = [data['total']['abserror']['mean']] # total MAE
-        with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
-          data = json.load(f)
-        val_p = [data['total']['abserror']['mean']] # total MAE
+        if self.model_str == "ae_fc":                       # FIXME: I insert a self.model_str in __init__() to make here recognize the mddel string, training autoencoder produces the spectra_errors
+          with open(os.path.join(model_path, "train_spectra_errors.json"), 'r') as f:
+            data = json.load(f)
+          train_p = [data['total']['abserror']['mean']]  # total MAE
+          with open(os.path.join(model_path, "validation_spectra_errors.json"), 'r') as f:
+            data = json.load(f)
+          val_p = [data['total']['abserror']['mean']]  # total MAE
+        else:
+          with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
+            data = json.load(f)
+          train_p = [data['total']['abserror']['mean']] # total MAE
+          with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
+            data = json.load(f)
+          val_p = [data['total']['abserror']['mean']] # total MAE
       else:
         train_p = []
         val_p = []
         f_cnt = 0
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
-          with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
-            data = json.load(f)
-          train_p.append(data['total']['abserror']['mean']) # total MAE
-          with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
-            data = json.load(f)
-          val_p.append(data['total']['abserror']['mean']) # total MAE
+          if self.model_str == "ae_fc":
+            with open(os.path.join(model_path, "fold-" + str(f_cnt), "train_spectra_errors.json"), 'r') as f:
+              data = json.load(f)
+            train_p.append(data['total']['abserror']['mean'])  # total MAE
+            with open(os.path.join(model_path, "fold-" + str(f_cnt), "validation_spectra_errors.json"), 'r') as f:
+              data = json.load(f)
+            val_p.append(data['total']['abserror']['mean'])  # total MAE
+          else:
+            with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
+              data = json.load(f)
+            train_p.append(data['total']['abserror']['mean']) # total MAE
+            with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
+              data = json.load(f)
+            val_p.append(data['total']['abserror']['mean']) # total MAE
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
@@ -404,9 +459,11 @@ class Select:
         x_max = m
     X = np.arange(1,x_max+1)
     fig, ax = plt.subplots(len(var_keys),1)
+    if len(var_keys) == 1:
+      ax = [ax]
     for k in range(0,len(var_keys)):
       group_id = var_keys[k]
-      key_vals = sorted(list(set([self.key_vals[p][group_id]
+      key_vals = sorted(list(set([str(self.key_vals[p][group_id])
                                   for p in range(0,len(self.val_performance))])))
       key_vals = [str(v) for v in key_vals]
       for ki in range(0,len(key_vals)):
@@ -633,7 +690,7 @@ class SelectGPO(Select):
         self._add_task(key_vals, path_model)
       self._run_tasks()
 
-      # Add results; multiple times if multiple evluations due to KFold validation
+      # Add results; multiple times if multiple evluations due to KFold validation, etc.
       for ri in range(0,len(self.val_performance[0])):
         Ynext = np.ndarray((Xnext.shape[0],1))
         for l in range(0,Ynext.shape[0]):

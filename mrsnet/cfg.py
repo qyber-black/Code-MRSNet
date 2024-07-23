@@ -1,6 +1,7 @@
 # mrsnet/cfg.py - MRSNet - config
 #
 # SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -50,10 +51,11 @@ class Cfg:
     'default_screen_dpi': 96,
     'screen_dpi': None,
     'image_dpi': [300],
+    'analysis_spectra_error_dist_sampling': 5, # Percentage of error samples to estimate
+                                               # error distribution for spectra matching (for autoencoders)
+    'analysis_predicted_spectra_samples': 10, # Max. number of predicted spectra plotted when ground truth available
     'disable_gpu': False # Disable gpu for tensorflow (for testing)
   }
-  # Cache for list of SU bases
-  _su_bases = []
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment variable MRSNET_DEV (colon separated list),
   # but all in use should be in the comments here for reference:

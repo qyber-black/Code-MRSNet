@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -15,6 +16,7 @@ from scipy.stats import wasserstein_distance
 
 from mrsnet.analyse import analyse_model
 from mrsnet.getfolder import get_folder
+from mrsnet.cfg import Cfg
 
 class Train:
 
@@ -24,6 +26,8 @@ class Train:
 
   def _plot_distributions(self,d_out,folder,image_dpi,screen_dpi,verbose):
     # Plot distributions
+    if len(d_out.shape) != 2:
+      return # Nothing to plot, d_out is not a concentration tensor
     data_dim = d_out.shape[0]
     out_dim = d_out.shape[-1]
     if self.k > 1:
@@ -61,6 +65,7 @@ class Train:
     # Cross validation
     train_res = { 'error': [None]*self.k }
     val_res = { 'error': [None]*self.k }
+    has_error = True # analyse_model produces error distribtuions if this is true
     for val_fold in range(0,self.k):
       if verbose > 0:
         print(f"# Fold {val_fold+1} of {self.k}")
@@ -84,10 +89,12 @@ class Train:
         val_res[k].append(val_score[k])
       _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
                                    verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      train_res['error'][val_fold] = err
+      if err is not None:
+        train_res['error'][val_fold] = err
+      else:
+        has_error = False # Should be the same across all calls, but set it each time anyway
       _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      val_res['error'][val_fold] = err
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
           if val_fold == 0:
@@ -98,37 +105,45 @@ class Train:
       model.reset()
 
     # Pairwise Wasserstein distance between validation error distributions
-    if verbose > 0:
-      print("# Wasserstein distance between fold error distributions")
-    max_wd_err = 0.0
-    max_wd_aerr = 0.0
-    for k1 in range(1,self.k):
-      # Compare distributions
-      for k2 in range(0,k1):
-        wd = wasserstein_distance(val_res['error'][k1],val_res['error'][k2],
-                                  np.ones(len(val_res['error'][k1])) / len(val_res['error'][k1]),
-                                  np.ones(len(val_res['error'][k2])) / len(val_res['error'][k2]))
-        if verbose > 1:
-          print(f"    {k1} - {k2} = {wd}")
-        if wd > max_wd_err:
-          max_wd_err = wd
-        wd = wasserstein_distance(np.abs(val_res['error'][k1]), np.abs(val_res['error'][k2]),
-                                  np.ones(len(val_res['error'][k1])) / len(val_res['error'][k1]),
-                                  np.ones(len(val_res['error'][k2])) / len(val_res['error'][k2]))
-        if verbose > 1:
-          print(f"    |{k1}| - |{k2}| = {wd}")
-        if wd > max_wd_aerr:
-          max_wd_aerr = wd
-    if verbose > 0:
-      print(f"  Max 1st order Wasserstein distance between error: {max_wd_err}")
-      print(f"  Max 1st order Wasserstein distance between absolute error: {max_wd_aerr}")
+    if has_error:
+      if verbose > 0:
+        print("# Wasserstein distance between fold error distributions")
+      max_wd_err = 0.0
+      max_wd_aerr = 0.0
+      for k1 in range(1,self.k):
+        # Compare distributions
+        for k2 in range(0,k1):
+          if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+            # Sample distributions for large number of values, depending on cfg.
+            l = len(val_res['error'][k1])
+            sel1 = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+            sel2 = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+            wd = wasserstein_distance(val_res['error'][k1][sel1],val_res['error'][k2][sel2])
+            wda = wasserstein_distance(np.abs(val_res['error'][k1][sel1]), np.abs(val_res['error'][k2][sel2]))
+          else:
+            wd = wasserstein_distance(val_res['error'][k1],val_res['error'][k2])
+            wda = wasserstein_distance(np.abs(val_res['error'][k1]), np.abs(val_res['error'][k2]))
+          if verbose > 1:
+            print(f"    {k1} - {k2} = {wd}")
+            print(f"    |{k1}| - |{k2}| = {wda}")
+          if wd > max_wd_err:
+            max_wd_err = wd
+          if wda > max_wd_aerr:
+            max_wd_aerr = wda
+      if verbose > 0:
+        print(f"  Max 1st order Wasserstein distance between validation error: {max_wd_err}")
+        print(f"  Max 1st order Wasserstein distance between absolute validation error: {max_wd_aerr}")
+    else:
+      max_wd_err = None
+      max_wd_aerr = None
 
     # Plot cross-validation results
-    self._plot_cross_validate(train_res, val_res, folder, verbose, image_dpi, screen_dpi)
+    self._plot_cross_validate(model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi)
 
     # Save cross-validation result
-    del train_res['error']
-    del val_res['error']
+    if has_error:
+      del train_res['error']
+      del val_res['error']
     with open(os.path.join(folder, "cv_result.json"), 'w') as f:
       print(json.dumps({
           'folds': self.k,
@@ -138,58 +153,95 @@ class Train:
           'max_wasserstein_distance_absolute_error': max_wd_aerr,
         }, indent=2, sort_keys=True), file=f)
 
-  def _plot_cross_validate(self, train_res, val_res, folder, verbose, image_dpi, screen_dpi):
+  def _plot_cross_validate(self, model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi):
     # Plot cross validation results
-    err_min = np.min([np.min([np.min(train_res['error'][l]),np.min(val_res['error'][l])])
-                      for l in range(0,self.k)])
-    err_max = np.max([np.max([np.max(train_res['error'][l]),np.max(val_res['error'][l])])
-                      for l in range(0,self.k)])
-    aerr_min = np.min([np.min([np.min(np.abs(train_res['error'][l])),np.min(np.abs(val_res['error'][l]))])
-                       for l in range(0,self.k)])
-    aerr_max = np.max([np.max([np.max(np.abs(train_res['error'][l])),np.max(np.abs(val_res['error'][l]))])
-                       for l in range(0,self.k)])
-    err_d = (err_max-err_min)*0.025
-    err_min -= err_d
-    err_max += err_d
-    err_d = (aerr_max-aerr_min)*0.025
-    aerr_min -= err_d
-    aerr_max += err_d
+
+    # Error distributions
+    if has_error:
+      err_min = np.min([np.min([np.min(train_res['error'][l]),np.min(val_res['error'][l])])
+                        for l in range(0,self.k)])
+      err_max = np.max([np.max([np.max(train_res['error'][l]),np.max(val_res['error'][l])])
+                        for l in range(0,self.k)])
+      aerr_min = np.min([np.min([np.min(np.abs(train_res['error'][l])),np.min(np.abs(val_res['error'][l]))])
+                         for l in range(0,self.k)])
+      aerr_max = np.max([np.max([np.max(np.abs(train_res['error'][l])),np.max(np.abs(val_res['error'][l]))])
+                         for l in range(0,self.k)])
+      err_d = (err_max-err_min)*0.025
+      err_min -= err_d
+      err_max += err_d
+      err_d = (aerr_max-aerr_min)*0.025
+      aerr_min -= err_d
+      aerr_max += err_d
 
     import matplotlib.gridspec as gridspec
     fig = plt.figure()
-    gs = gridspec.GridSpec(ncols=4,nrows=3,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
-    ax00 = fig.add_subplot(gs[0,0:2])
-    ax01 = fig.add_subplot(gs[0,2:])
-    ax10 = fig.add_subplot(gs[1,0:2])
-    ax11 = fig.add_subplot(gs[1,2:])
-    ax20 = fig.add_subplot(gs[2,0:1])
-    ax21 = fig.add_subplot(gs[2,2:3])
+    if has_error:
+      gs = gridspec.GridSpec(ncols=4,nrows=3,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
+      ax00 = fig.add_subplot(gs[0,0:2])
+      ax01 = fig.add_subplot(gs[0,2:])
+      ax10 = fig.add_subplot(gs[1,0:2])
+      ax11 = fig.add_subplot(gs[1,2:])
+      ax20 = fig.add_subplot(gs[2,0:1])
+      ax21 = fig.add_subplot(gs[2,2:3])
+    else:
+      gs = gridspec.GridSpec(ncols=4,nrows=1,figure=fig,width_ratios=[0.499,0.001,0.499,0.001])
+      ax20 = fig.add_subplot(gs[0,0:1])
+      ax21 = fig.add_subplot(gs[0,2:3])
 
-    ax00.set_title("Train Error Distributions")
-    sns.boxplot(data=train_res['error'], ax=ax00)
-    ax00.set_ylim([err_min,err_max])
-    ax00.set_xlabel("Fold")
-    ax00.set_ylabel("Error")
+    if has_error:
+      ax00.set_title(f"Train Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[train_res['error'][k][np.random.randint(0,len(train_res['error'][k]),
+                                                                  size=len(train_res['error'][k])
+                                                                       *Cfg.val['analysis_spectra_error_dist_sampling']//100)]
+                          for k in range(0,self.k)], ax=ax00)
+      else:
+        sns.boxplot(data=train_res['error'], ax=ax00)
+      ax00.set_ylim([err_min,err_max])
+      ax00.set_xlabel("Fold")
+      ax00.set_ylabel("Error")
 
-    ax01.set_title("Validation Error Distributions")
-    sns.boxplot(data=val_res['error'], ax=ax01)
-    ax01.set_ylim([err_min,err_max])
-    ax01.set_xlabel("Fold")
-    ax01.set_ylabel("Error")
+      ax01.set_title(f"Validation Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[val_res['error'][k][np.random.randint(0,len(val_res['error'][k]),
+                                                                size=len(val_res['error'][k])
+                                                                     *Cfg.val['analysis_spectra_error_dist_sampling']//100)]
+                          for k in range(0,self.k)], ax=ax01)
+      else:
+        sns.boxplot(data=val_res['error'], ax=ax01)
+      ax01.set_ylim([err_min,err_max])
+      ax01.set_xlabel("Fold")
+      ax01.set_ylabel("Error")
 
-    ax10.set_title("Train Absolute Error Distributions")
-    sns.boxplot(data=[np.abs(train_res['error'][k]) for k in range(0,self.k)],
-                ax=ax10)
-    ax10.set_ylim([aerr_min,aerr_max])
-    ax10.set_xlabel("Fold")
-    ax10.set_ylabel("Abs. Error")
+      ax10.set_title("Train Absolute Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[np.abs(train_res['error'][k][np.random.randint(0,len(train_res['error'][k]),
+                                                                         size=len(train_res['error'][k])
+                                                                              *Cfg.val['analysis_spectra_error_dist_sampling']//100)])
+                          for k in range(0,self.k)], ax=ax10)
+      else:
+        sns.boxplot(data=[np.abs(train_res['error'][k]) for k in range(0,self.k)],
+                    ax=ax10)
+      ax10.set_ylim([aerr_min,aerr_max])
+      ax10.set_xlabel("Fold")
+      ax10.set_ylabel("Abs. Error")
 
-    ax11.set_title("Validation Absolute Error Distributions")
-    sns.boxplot(data=[np.abs(np.array(val_res['error'][k])).tolist() for k in range(0,self.k)],
-                ax=ax11)
-    ax11.set_ylim([aerr_min,aerr_max])
-    ax11.set_ylabel("Abs. Error")
-    ax11.set_xlabel("Fold")
+      ax11.set_title("Validation Absolute Error Distributions")
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample distributions for large number of values, depending on cfg.
+        sns.boxplot(data=[np.abs(np.array(val_res['error'][k][np.random.randint(0,len(val_res['error'][k]),
+                                                                                size=len(val_res['error'][k])
+                                                                                     *Cfg.val['analysis_spectra_error_dist_sampling']//100)]))
+                          for k in range(0,self.k)], ax=ax11)
+      else:
+        sns.boxplot(data=[np.abs(np.array(val_res['error'][k])) for k in range(0,self.k)],
+                    ax=ax11)
+      ax11.set_ylim([aerr_min,aerr_max])
+      ax11.set_ylabel("Abs. Error")
+      ax11.set_xlabel("Fold")
 
     ax20.set_title("Train Metrics")
     keys = [k for k in sorted(train_res.keys())]
@@ -307,6 +359,7 @@ class Split(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
+    # data = [d_noise, d_conc, d_clean]
     analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
                   verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
     analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,

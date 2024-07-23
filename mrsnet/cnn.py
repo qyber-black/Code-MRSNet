@@ -28,6 +28,7 @@ class CNN:
     self.acquisitions = acquisitions
     self.datatype = datatype
     self.norm = norm
+    self.output = "concentrations"
 
     # Input spectra data (constant!)
     self.low_ppm = -1.0

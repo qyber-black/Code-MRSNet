@@ -17,7 +17,7 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
   elif source =="fid-a-2d":
     script="run_custom_simMegaPress_2D"
   else:
-    raise Exception(f"Unknown fid-a basis {source}")
+    raise RuntimeError(f"Unknown fid-a basis {source}")
 
   matlab_command = "addpath(genpath(fullfile('"+Cfg.val['path_root']+"','mrsnet','simulators','fida')));"
   matlab_command += "mrsnet_omega="+str(omega)+";"
