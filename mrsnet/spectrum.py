@@ -579,7 +579,11 @@ class Spectrum:
               center_ppm = -fida_data['center_ppm'][0][0])
     else:
       # Read FID-A
-      s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
+      # Note, fid and fft are not on the same scale (due to combine)
+      #s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
+      #        1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+      #        center_ppm = -np.median(fida_data['nu']))
+      s.set_f(np.conjugate(np.array(fida_data['fft']).flatten()),
               1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
               center_ppm = -np.median(fida_data['nu']))
     return s
