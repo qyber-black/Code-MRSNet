@@ -9,5 +9,6 @@ __pycache__
 /data/model*
 /data/sim-spectra*
 /data/data-exp*
-/cfg.json
+/mrsnet/simulators/pygamma/gamma/
 /venv
+/cfg.json
