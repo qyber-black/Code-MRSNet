@@ -258,7 +258,7 @@ class Autoencoder:
         dropout = float(p[6])
         self.ae = EncQuant(self.encoder,n_specs,n_freqs,output_conc,units,layers,act,act_last,dropout)
       else:
-        raise Exception(f"Unknown encoder-quantifier architecture {self.model}")
+        raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
     elif p[0] == "ae":
       if p[1] == "cnn":
         # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
@@ -273,7 +273,7 @@ class Autoencoder:
         elif p[4] == "stride":
           pooling = False
         else:
-          raise Exception("2nd arg must be pool|stride")
+          raise RuntimeError("2nd arg must be pool|stride")
         dropout = float(p[5])
         self.ae = ConvAutoEnc(n_specs,n_freqs,filter,latent,pooling,dropout)
       elif p[1] == "fc":
@@ -289,9 +289,9 @@ class Autoencoder:
         dropout = float(p[6])
         self.ae = FCAutoEnc(n_specs,n_freqs,lin,lout,act,act_last,dropout)
       else:
-        raise Exception(f"Unknown autoencoder variant: {p[1]}")
+        raise RuntimeError(f"Unknown autoencoder variant: {p[1]}")
     else:
-      raise Exception(f"Not an autoencoder: {p[0]}")
+      raise RuntimeError(f"Not an autoencoder: {p[0]}")
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
             image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -304,9 +304,9 @@ class Autoencoder:
       if verbose > 0:
         print(f"GPU Devices: {devices}")
     if len(d_data) != 2:
-      raise Exception("d_data argument must be a list [spectra_in,spectra_out|conc]")
+      raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out|conc]")
     if v_data != None and len(v_data) != 2:
-      raise Exception("v_data argument must be a list [spectra_in,spectra_out|conc]")
+      raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out|conc]")
 
     if len(train_dataset_name) > 0:
       self.train_dataset_name = train_dataset_name
@@ -320,7 +320,7 @@ class Autoencoder:
     if self.model[0:4] == "aeq_":
       return self._train_aeq(d_data, v_data, epochs, batch_size, folder, verbose,
                              image_dpi, screen_dpi, train_dataset_name, devices)
-    raise Exception(f"Unknown autoencoder model {self.model}")
+    raise RuntimeError(f"Unknown autoencoder model {self.model}")
 
   def _train_ae(self, d_data, v_data, epochs, batch_size, folder, verbose,
                 image_dpi, screen_dpi, train_dataset_name, devices):
@@ -621,7 +621,7 @@ class Autoencoder:
       return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
     if self.output == "concentrations":
       return np.array(self.ae.predict(data,verbose=(verbose>0)*2), dtype=np.float64)
-    raise Exception(f"Unknown output {self.output}")
+    raise RuntimeError(f"Unknown output {self.output}")
 
   def save(self, folder):
     path=os.path.join(folder, "tf_model")

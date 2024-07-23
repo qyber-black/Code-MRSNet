@@ -1,7 +1,8 @@
 # mrsnet/basis.py - MRSNet - spectral basis
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -32,7 +33,7 @@ class BasisCollection:
                   sample_rate=sample_rate, samples=samples).setup(path_basis, search_basis)
     idx = basis.name()
     if idx in self._bases:
-      raise Exception(f"Basis {idx} already in basis collection")
+      raise RuntimeError(f"Basis {idx} already in basis collection")
     self._bases[idx] = basis
 
   def get(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence):
@@ -86,10 +87,10 @@ class Basis:
       self.linewidth = None # Unknown
       self.sample_rate = 2000 # Taken from lcmodel basis file
       self.samples = 8192 # Taken from lcmodel basis file
-    elif  self.source == "su-3tskyra":
+    elif  self.source[0:3] == "su-":
       self.linewidth = None # Unknown
-      self.sample_rate = 2000 # Fixed, see filename
-      self.samples = 2048 # Fixed, see filename
+      self.sample_rate = None # Collect from filename (only one per source name)
+      self.samples = None # Collect from filename (only one per source name)
     else:
       self.linewidth = linewidth
       self.sample_rate = sample_rate
@@ -115,24 +116,24 @@ class Basis:
     # Load set
     self._load(path_basis, search_basis)
     if len(self.spectra) < 1:
-      raise Exception("No basis loaded")
+      raise RuntimeError("No basis loaded")
     # Add missing spectra (for megapress)
     self._add_missing_spectra()
     # Check for consistency
     for m in self.metabolites:
       if m not in self.spectra.keys():
-        raise Exception(f"Metabolite {m} not in basis")
+        raise RuntimeError(f"Metabolite {m} not in basis")
     acqs = []
     for m in self.spectra.keys():
       if m not in self.metabolites:
-        raise Exception(f"Basis spectra contain additional spectrum for {m}")
+        raise RuntimeError(f"Basis spectra contain additional spectrum for {m}")
       if len(acqs) == 0:
         acqs = sorted(self.spectra[m].keys())
         if len(acqs) == 0:
-          raise Exception("No acquisitons")
+          raise RuntimeError("No acquisitons")
       else:
         if sorted(self.spectra[m].keys()) != acqs:
-          raise Exception("Acquisitions between metabolite spectra for basis not consistent")
+          raise RuntimeError("Acquisitions between metabolite spectra for basis not consistent")
     self.acquisitions = acqs
     # Global normalisation
     self._normalise()
@@ -150,30 +151,36 @@ class Basis:
       glx = True
     if self.source == 'lcmodel':
       if self.linewidth != None:
-        raise Exception('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
+        raise RuntimeError('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
       self._load_lcm(path_basis=os.path.join(path_basis,'lcmodel'),search_basis=[os.path.join(x,'lcmodel') for x in search_basis])
     elif self.source[0:5] == 'fid-a':
       if self.manufacturer == 'siemens':
         self._load_fida(path_basis=os.path.join(path_basis,self.source),search_basis=[os.path.join(x,self.source) for x in search_basis],source=self.source)
       else:
-        raise Exception('No FID-A simulator for ' + self.manufacturer + ' scanner.')
+        raise RuntimeError('No FID-A simulator for ' + self.manufacturer + ' scanner.')
     elif self.source == 'su-3tskyra':
       if self.manufacturer == 'siemens':
         if self.linewidth != None:
-          raise Exception('Cannot supply SU-3TSkyra basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
+          raise RuntimeError('Cannot supply SU-3TSkyra basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
         self._load_su3t(path_basis=os.path.join(path_basis,self.source),search_basis=[os.path.join(x,self.source) for x in search_basis],source=self.source)
+    elif self.source[0:3] == 'su-':
+      if self.manufacturer == 'siemens':
+        if self.linewidth != None:
+          raise RuntimeError('Cannot supply SU-* basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
+        self._load_su3t(path_basis=os.path.join(path_basis, self.source),
+                        search_basis=[os.path.join(x, self.source) for x in search_basis], source=self.source)
       else:
-        raise Exception('No SU-3TSkyra basis for ' + self.manufacturer + ' scanner.')
+        raise RuntimeError('No SU-* basis for ' + self.manufacturer + ' scanner.')
     elif self.source == 'pygamma':
       if self.manufacturer == 'siemens':
         self._load_pygamma(path_basis=os.path.join(path_basis,'pygamma'),search_basis=[os.path.join(x,'pygamma') for x in search_basis])
       else:
-        raise Exception('No PyGamma simulator for ' + self.manufacturer + ' scanner.')
+        raise RuntimeError('No PyGamma simulator for ' + self.manufacturer + ' scanner.')
     else:
-      raise Exception('Unknown basis source: ' + self.source)
+      raise RuntimeError('Unknown basis source: ' + self.source)
     if glx:
       if 'Glu' not in self.spectra or 'Gln' not in self.spectra:
-        raise Exception("Cannot use GlX as Glu/Gln not in basis")
+        raise RuntimeError("Cannot use GlX as Glu/Gln not in basis")
       spec = {}
       for a in self.spectra['Gln'].keys():
         if a in self.spectra['Glu']:
@@ -190,7 +197,7 @@ class Basis:
 
   def _load_fida(self, path_basis, search_basis, source, second_call=False):
     if source[0:5] != 'fid-a':
-      raise Exception(f"Source is not fid-a: {source}")
+      raise RuntimeError(f"Source is not fid-a: {source}")
     if source == 'fid-a':
       start='FIDA_'
     else:
@@ -198,7 +205,7 @@ class Basis:
       if len(source_id) == 3:
         start='FIDA'+source_id[2].upper()+'_'
       else:
-        raise Exception(f"Unknown FID-A source format {source}")
+        raise RuntimeError(f"Unknown FID-A source format {source}")
     if not os.path.isdir(os.path.join(path_basis,'basis_files')):
       os.makedirs(os.path.join(path_basis,'basis_files'))
     to_simulate = copy.copy(self.metabolites)
@@ -215,7 +222,7 @@ class Basis:
               and np.abs(float(vals[7][0:-4]) - self.omega) < 1e-2:
               spec = Spectrum.load_fida(os.path.join(spath,'basis_files',file),file[0:-4],source)
               if len(spec.metabolites) > 1:
-                raise Exception("More than one metabolite in FID-A basis")
+                raise RuntimeError("More than one metabolite in FID-A basis")
               if spec.metabolites[0].lower() in [x.lower() for x in self.metabolites] \
                 and np.abs(spec.linewidth - self.linewidth) < 1e-2 \
                 and np.abs(spec.omega - self.omega) < 1e-2 \
@@ -230,8 +237,8 @@ class Basis:
             pass
     if len(to_simulate) > 0:
       if second_call:
-        raise Exception('Recursion error, should have simulated spectra - but I can\'t seem to find it and '
-                        'I\'m going to end up in an endless loop.')
+        raise RuntimeError('Recursion error, should have simulated spectra - but I can\'t seem to find it and '
+                           'I\'m going to end up in an endless loop.')
       else:
         print('Some spectra are missing, simulating: ' + str(to_simulate))
         from mrsnet.simulators.fida.fida_simulator import fida_spectra
@@ -239,25 +246,32 @@ class Basis:
                      npts=self.samples, sample_rate=self.sample_rate,
                      source=source,
                      save_dir=os.path.join(path_basis,'basis_files'))
-        self._load_fida(path_basis, search_path, source, second_call=True)
+        self._load_fida(path_basis, search_basis, source, second_call=True)
 
   def _load_su3t(self, path_basis, search_basis, source):
-    if source != 'su-3tskyra':
-      raise Exception(f"Unknown source: {source}")
+    if source[0:3] != 'su-':
+      raise RuntimeError(f"Unknown source: {source}")
     to_load = copy.copy(self.metabolites)
     for spath in [path_basis, *search_basis]:
       if os.path.isdir(spath):
         for file in os.listdir(spath):
           if file.startswith("SU3T_") and file.endswith('.mat'):
             vals = file.split("_")
+            # Set sample_rate and samples from filename (but check below so
+            # they are the same across files; there should only be one sample_rate
+            # and one number of samples per source name for the su-* bases).
+            if self.sample_rate == None:
+              self.sample_rate = int(vals[4])
+            if self.samples == None:
+              self.samples = int(vals[5])
             try:
               if vals[2].lower() == self.pulse_sequence \
                 and (vals[3] == "EDITON" or vals[3] == "EDITOFF") \
                 and int(vals[4]) == self.sample_rate \
                 and int(vals[5]) == self.samples:
-                spec = Spectrum.load_fida(os.path.join(spath,file),file[0:-4],source)
+                spec = Spectrum.load_fida(os.path.join(spath,file),file[0:-4],source,su=True)
                 if len(spec.metabolites) > 1:
-                  raise Exception("More than one metabolite in SU3T basis")
+                  raise RuntimeError("More than one metabolite in SU3T basis")
                 if spec.metabolites[0].lower() in [x.lower() for x in self.metabolites] \
                   and np.abs(spec.omega - self.omega) < 1e-2 \
                   and spec.sample_rate == self.sample_rate \
@@ -270,7 +284,7 @@ class Basis:
             except:
               pass
     if len(to_load) > 0:
-      raise Exception("Metabolites missing from basis: " + str(to_load))
+      raise RuntimeError("Metabolites missing from basis: " + str(to_load))
 
   def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), search_basis=[]):
     # Constants, synchronise with pygamma_simulator (passed as arguments, but defaults hardcoded
@@ -293,12 +307,12 @@ class Basis:
     elif self.manufacturer == 'phillips':
       m_str = 'Phillips'
     else:
-      raise Exception('No LCModel basis set for ' + scanner_manufacturer + ' scanner')
+      raise RuntimeError('No LCModel basis set for ' + scanner_manufacturer + ' scanner')
     if self.pulse_sequence == 'megapress':
       p_str = 'MEGAPRESS'
       acqs = ['edit_off', 'difference']
     else:
-      raise Exception('No LCModel basis set for ' + self.pulse_sequence + ' pulse sequence')
+      raise RuntimeError('No LCModel basis set for ' + self.pulse_sequence + ' pulse sequence')
     for spath in [path_basis, *search_basis]:
       for a in acqs:
         diff_var_str = ("_"+Cfg.val['lcmodel_megapress_difference_variant']) if a == 'difference' else ''
@@ -307,7 +321,7 @@ class Basis:
           specs = Spectrum.load_lcm(basis_file, a, self.omega, self.metabolites)
           for s in specs:
             if len(s.metabolites) > 1:
-              raise Exception("More than one metabolite in basis spectrum")
+              raise RuntimeError("More than one metabolite in basis spectrum")
             if s.metabolites[0] in self.metabolites:
               if s.metabolites[0] not in self.spectra:
                 self.spectra[s.metabolites[0]] = {}
@@ -340,7 +354,7 @@ class Basis:
                                                       self.spectra[m]['edit_on'].id+"_-_"+self.spectra[m]['difference'].id,
                                                       "edif_off")
         else:
-          raise Exception(f"Incomplete megapress spectrum for {m}")
+          raise RuntimeError(f"Incomplete megapress spectrum for {m}")
 
   def _normalise(self):
     # All spectra are normalised against the maximum fft magnitude.
@@ -367,9 +381,9 @@ class Basis:
             b0_shift = shift
             peak_val = val
     else:
-      raise Exception(f"No B0 correction for {self.pulse_sequence}")
+      raise RuntimeError(f"No B0 correction for {self.pulse_sequence}")
     if b0_shift == None:
-      raise Exception("B0 correction for basis failed")
+      raise RuntimeError("B0 correction for basis failed")
     # Apply shift
     for m in self.spectra.keys():
       for a in self.spectra[m].keys():
@@ -377,7 +391,7 @@ class Basis:
 
   def combine(self, concentrations, id):
     if len(concentrations) != len(self.spectra.keys()):
-      raise Exception("Concentrations do not match number of spectra in basis")
+      raise RuntimeError("Concentrations do not match number of spectra in basis")
     spectra = {}
     con = {}
     if type(concentrations) is dict:
@@ -398,7 +412,7 @@ class Basis:
     # Sanity check for difference
     if self.pulse_sequence == "megapress" and \
        np.max(np.abs(spectra['edit_on'].get_f()[0] - spectra['edit_off'].get_f()[0] - spectra['difference'].get_f()[0])) > 1e-8:
-      raise Exception("Combined difference spectrum differs from edit_on - edit_off")
+      raise RuntimeError("Combined difference spectrum differs from edit_on - edit_off")
     return spectra, con
 
   def plot(self, data='magnitude', type='fft'):

@@ -37,14 +37,14 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       pre[i] /= np.sum(pre[i, :])
       out[i] /= np.sum(out[i, :])
   elif norm != 'none' and norm is not None:
-    raise Exception(f"Unknown norm {norm}")
+    raise RuntimeError(f"Unknown norm {norm}")
 
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
     return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
 
   if model.output != "concentrations":
-    raise Exception(f"Unknown output from model: {model.output} - cannot analyse")
+    raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
 
   # Analyse if we have concentrations
   if len(out) > 0:

@@ -1,7 +1,8 @@
 # mrsnet/spectrum.py - MRSNet - individual spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -12,6 +13,7 @@ import numpy as np
 from scipy.io import loadmat
 from scipy import signal
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 from mrsnet import molecules
 from mrsnet.cfg import Cfg
@@ -68,7 +70,7 @@ class Spectrum:
       elif Cfg.val['phase_correct'] == 'ernst':
         self._phase_correct_ernst()
       else:
-        raise Exception(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
+        raise RuntimeError(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
       if Cfg.dev('spectrum_set_phase_correct'):
         freq, nu = self.get_f()
         axs[1].plot(nu, np.real(freq), color='r')
@@ -153,7 +155,7 @@ class Spectrum:
             a = y3/y2
           d = a/(1.0+a)
         else:
-          raise Exception(f"Unknown fft peak location estimator {Cfg.val['fft_peak_location_estimator']}")
+          raise RuntimeError(f"Unknown fft peak location estimator {Cfg.val['fft_peak_location_estimator']}")
         return nu[idx] + (nu[1]-nu[0])*d, -fft_abs[idx]
       if fft_abs[idx] > cut_off:
         break
@@ -222,7 +224,7 @@ class Spectrum:
     # Resample fft to prescribed frequency bins via zero filling
     fft, nu = self.get_f()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
-      raise Exception(f"Requested ppm rescale range out of range [{nu[0]},{nu[len(nu)-1]}]")
+      raise RuntimeError(f"Requested ppm rescale range out of range [{nu[0]},{nu[len(nu)-1]}]")
     freq_step = (low_ppm-high_ppm)/npts
     bw = self.sample_rate/2.0/self.omega
     t_samples = int(2.0*bw/freq_step)
@@ -235,7 +237,7 @@ class Spectrum:
       index = (rnu >= high_ppm) & (rnu <= low_ppm)
       repeats += 1
       if repeats > Cfg.val['spectrum_rescale_fft_max_repeats']:
-        raise Exception(f"Length error: got {len(rnu[index])}, expected {npts}")
+        raise RuntimeError(f"Length error: got {len(rnu[index])}, expected {npts}")
     ifft = npfft.ifft(npfft.ifftshift(self.fft))
     if t_samples > len(self.fft):
       ifft = np.append(ifft, np.zeros(t_samples - len(self.fft)))
@@ -276,7 +278,7 @@ class Spectrum:
 
   def add_noise_adc_normal(self, mu=0, sigma=0):
     if self.noise != None:
-      raise Exception("Adding noise twice is not advised")
+      raise RuntimeError("Adding noise twice is not advised")
     self.noise = ("adc", "normal", mu, sigma)
     adc, _ = self.get_t()
     m = np.max(np.abs(adc))
@@ -291,8 +293,9 @@ class Spectrum:
     elif type == 'fft':
       Y, X = self.rescale_fft()
       axes.set_xlabel('Frequency (ppm)')
+      axes.xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
     else:
-      raise Exception("Unknown plot type")
+      raise RuntimeError("Unknown plot type")
     if mode == 'magnitude':
       Y = np.abs(Y)
       axes.set_ylabel('Magn.')
@@ -306,7 +309,7 @@ class Spectrum:
       Y = np.imag(Y)
       axes.set_ylabel('Im')
     else:
-      raise Exception("Unknown plot mode "+mode)
+      raise RuntimeError("Unknown plot mode "+mode)
     axes.plot(X,Y)
 
   def plot_spectrum(self, concentrations={}, screen_dpi=96, type='fft'):
@@ -321,9 +324,9 @@ class Spectrum:
       super_title += " Linewidth: " + str(self.linewidth)
     if self.noise != None:
       if self.noise[0] == "adc" and self.noise[1] == "normal":
-        super_title += f" - ADC Noise N({self.noise[2]},{self.adc_noise[3]})"
+        super_title += f" - ADC Noise N({self.noise[2]},{self.noise[3]})"
       else:
-        raise Exception("Unknown noise model")
+        raise RuntimeError("Unknown noise model")
 
     figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
     if len(axes.shape) == 1:
@@ -372,7 +375,7 @@ class Spectrum:
     noise = set([spectra[a].noise for a in spectra])
     if len(source) != 1 or len(pulse_sequence) != 1 or len(omega) != 1 or len(linewidth) != 1 or \
        len(noise) != 1:
-      raise Exception("Spectra differ in more than acqusition")
+      raise RuntimeError("Spectra differ in more than acquisition")
 
     omega = next(iter(omega))
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
@@ -385,42 +388,53 @@ class Spectrum:
       if noise[0] == "adc" and noise[1] == "normal":
         super_title += f" - ADC Noise N({noise[2]},{noise[3]})"
       else:
-        raise Exception("Unknown noise model")
+        raise RuntimeError("Unknown noise model")
 
-    figure, axes = plt.subplots(4, n_cols, sharex=True, dpi=screen_dpi)
+    figure, axes = plt.subplots(4, n_cols, dpi=screen_dpi)
     if len(axes.shape) == 1:
       axes = np.reshape(axes, (4, 1))
 
     plt.suptitle(super_title)
-
     col = 0
     for a in sorted(spectra):
       axes[0,col].set_title(a.upper())
       spectra[a].plot(axes[0,col], type=type, mode='magnitude')
       axes[0,col].set_xlabel("")
       if col > 0:
-        axes[0,0].get_shared_y_axes().join(axes[0,0], axes[0,col])
+        axes[0,col].sharey(axes[0,0])
+        axes[0,col].sharex(axes[0,0])
       spectra[a].plot(axes[1,col], type=type, mode='phase')
       axes[1,col].set_xlabel("")
       if col > 0:
-        axes[1,0].get_shared_y_axes().join(axes[1,0], axes[1,col])
+        axes[1,col].sharey(axes[1,0])
+      axes[1,col].sharex(axes[0,0])
       spectra[a].plot(axes[2,col], type=type, mode='real')
       axes[2,col].set_xlabel("")
       if col > 0:
-        axes[2,0].get_shared_y_axes().join(axes[2,0], axes[2,col])
+        axes[2,col].sharey(axes[2,0])
+      axes[2,col].sharex(axes[0,0])
       spectra[a].plot(axes[3,col], type=type, mode='imaginary')
       if col > 0:
-        axes[3,0].get_shared_y_axes().join(axes[3,0], axes[3,col])
+        axes[3,col].sharey(axes[3,0])
+      axes[3,col].sharex(axes[0,0])
       col += 1
 
     if n_cols > col:
+      axes[3,n_cols-1].set_xticks([])
       ax = plt.subplot(1, n_cols, n_cols)
       plt.title('Concentrations')
       cn = [n for n in concentrations.keys()]
       cv = [concentrations[v] for v in cn]
-      ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv)
-      ax.set_xticks(np.arange(len(metabolites)))
+      ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv, align='center')
+      ax.set_xticks(np.arange(len(metabolites)),molecules.short_name(cn))
       ax.set_xticklabels(molecules.short_name(cn))
+
+    # Remove tick labels from inner axes and fix tick labels
+    for ax in figure.axes:
+      try:
+        ax.label_outer()
+      except:
+        pass
 
     return figure
 
@@ -428,18 +442,18 @@ class Spectrum:
   def comb(f1,s1,f2,s2,id,acq):
     # Weighted addition of two spectra
     if s1.pulse_sequence != s2.pulse_sequence:
-      raise Exception("Combing spectra from different pulse sequences")
+      raise RuntimeError("Combing spectra from different pulse sequences")
     if np.abs(s1.omega - s2.omega) >= 1e-8:
-      raise Exception("Combing spectra with different omega")
+      raise RuntimeError("Combing spectra with different omega")
     if s1.source != s2.source:
-      raise Exception("Combing spectra from different sources")
+      raise RuntimeError("Combing spectra from different sources")
     metabolites = s1.metabolites
     for m in s2.metabolites:
       if m not in metabolites:
         metabolites.append(m)
     metabolites.sort()
     if s1.linewidth != s2.linewidth and np.abs(s1.linewidth - s2.linewidth) >= 1e-8:
-      raise Exception("Combing spectra with different linewidths")
+      raise RuntimeError("Combing spectra with different linewidths")
     s = Spectrum(id=id,
                  pulse_sequence=s1.pulse_sequence,
                  acquisition=acq,
@@ -448,13 +462,13 @@ class Spectrum:
                  metabolites=metabolites,
                  linewidth=None if s1.linewidth == None else (s1.linewidth + s2.linewidth)/2.0)
     if s1.center_ppm != s2.center_ppm:
-      raise Exception("Combining spectra with different center_ppm")
+      raise RuntimeError("Combining spectra with different center_ppm")
     if s1.b0_shift_ppm != s2.b0_shift_ppm:
-      raise Exception("Combining spectra with different b0_shift_ppm")
+      raise RuntimeError("Combining spectra with different b0_shift_ppm")
     if s1.sample_rate != s2.sample_rate:
-      raise Exception("Combining spectra with different sample rates")
+      raise RuntimeError("Combining spectra with different sample rates")
     if s1.noise != s2.noise:
-      raise Exception("Combining spectra with different added noise")
+      raise RuntimeError("Combining spectra with different added noise")
     fft1, _ = s1.get_f()
     fft2, _ = s2.get_f()
     s.set_f(f1*fft1 + f2*fft2, s1.sample_rate, center_ppm = s1.center_ppm, b0_shift_ppm = s1.b0_shift_ppm)
@@ -466,9 +480,9 @@ class Spectrum:
     # Weighted sum of spectra
     for n in range(1,len(ss)):
       if ss[0].pulse_sequence != ss[n].pulse_sequence:
-        raise Exception("Combing spectra from different pulse sequences")
+        raise RuntimeError("Combing spectra from different pulse sequences")
       if ss[0].source != ss[n].source:
-        raise Exception("Combing spectra from different sources")
+        raise RuntimeError("Combing spectra from different sources")
     avg_omega = np.mean([s.omega for s in ss])
     if ss[0].linewidth == None:
       avg_linewidth = None
@@ -477,11 +491,11 @@ class Spectrum:
     all_metabolites = []
     for n in range(len(ss)):
       if np.abs(ss[n].omega - avg_omega) >= 1e-8:
-        raise Exception("Combing spectra with different omega")
+        raise RuntimeError("Combing spectra with different omega")
       if (avg_linewidth == None and ss[n].linewidth != None) or \
          (avg_linewidth != None and ss[n].linewidth == None) or \
          (avg_linewidth != None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
-        raise Exception("Combing spectra with different linewidths")
+        raise RuntimeError("Combing spectra with different linewidths")
       for m in ss[n].metabolites:
         if m not in all_metabolites:
           all_metabolites.append(m)
@@ -495,15 +509,25 @@ class Spectrum:
                  linewidth=avg_linewidth)
     fft = fs[0] * ss[0].get_f()[0]
     for n in range(1,len(ss)):
-      if ss[0].center_ppm != ss[n].center_ppm:
-        raise Exception("Combining spectra with different center_ppm")
       if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
-        raise Exception("Combining spectra with different b0_shift_ppm")
+        raise RuntimeError("Combining spectra with different b0_shift_ppm")
       if ss[0].sample_rate != ss[n].sample_rate:
-        raise Exception("Combining spectra with different sample rates")
+        raise RuntimeError("Combining spectra with different sample rates")
       if ss[0].noise != ss[n].noise:
-        raise Exception("Combining spectra with different added noise")
-      fft +=  fs[n] * ss[n].get_f()[0]
+        raise RuntimeError("Combining spectra with different added noise")
+      if ss[0].center_ppm != ss[n].center_ppm:
+        # We need to frequency shift the FFT signal by shifting it in the time domain
+        # x'[n] = exp(i\pi df/(Fs/2) n) x[n]
+        # where x' is the new and x the original signal; Fs the sample rate and df the shift,
+        # determined by the difference in center_ppm, in Hz.
+        df = (ss[n].center_ppm - ss[0].center_ppm) * ss[n].omega
+        D = 2j*np.pi * df / ss[n].sample_rate
+        x = ss[n].get_t()[0]
+        x = np.exp(D * np.arange(0,len(x))) * x
+        F = npfft.fftshift(npfft.fft(x))
+      else:
+        F = ss[n].get_f()[0]
+      fft +=  fs[n] * F
     s.set_f(fft, ss[0].sample_rate, center_ppm = ss[0].center_ppm, b0_shift_ppm = ss[0].b0_shift_ppm)
     s.noise = ss[0].noise
     return s
@@ -513,7 +537,7 @@ class Spectrum:
     # B0 correction across multiple acquisitions
     for a in spectra:
       if spectra[a].pulse_sequence != "megapress":
-        raise Exception("Multi-b0-correction only for megapress")
+        raise RuntimeError("Multi-b0-correction only for megapress")
     b0_shift, _ = spectra['edit_off'].correct_b0()
     if b0_shift == None:
       b0_shift = 0.0 # No shift as no peak found
@@ -522,7 +546,7 @@ class Spectrum:
     return b0_shift
 
   @staticmethod
-  def load_fida(fida_file,id,source):
+  def load_fida(fida_file,id,source,su=False):
     fida_data = loadmat(fida_file)
     if 'linewidth' in fida_data:
       lw = float(fida_data['linewidth'][0][0])
@@ -536,9 +560,33 @@ class Spectrum:
                  metabolites=[molecules.short_name(str(fida_data['m_name'][0]))],
                  linewidth=lw)
     # Time signal produced by fid-a seems mirrored, so need to take the complex conjugate
-    s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
-            1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
-            center_ppm = -np.median(fida_data['nu']))
+    if su:
+      # Read SU-3TSkyra in a somewhat different format from actual fid-a
+      # Specifically we've got an explicit center_ppm value from the file
+      if 'scale_formate_peak' in fida_data:
+        if 'scale_dss_peak' in fida_data or 'scaling' in fida_data:
+          raise RuntimeError("Ambiguous scaling factors")
+        scale = fida_data['scale_formate_peak'][0][0]
+      elif 'scale_dss_peak' in fida_data:
+        if 'scaling' in fida_data:
+          raise RuntimeError("Ambiguous scaling factors")
+        scale = fida_data['scale_dss_peak'][0][0]
+      elif 'scaling' in fida_data:
+        scale = fida_data['scaling'][0][0]
+      else:
+        scale = 1.0
+      s.set_t(np.conjugate(np.array(fida_data['fid']).flatten())/scale,
+              1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+              center_ppm = -fida_data['center_ppm'][0][0])
+    else:
+      # Read FID-A
+      # Note, fid and fft are not on the same scale (due to combine)
+      #s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
+      #        1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+      #        center_ppm = -np.median(fida_data['nu']))
+      s.set_f(np.conjugate(np.array(fida_data['fft']).flatten()),
+              1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+              center_ppm = -np.median(fida_data['nu']))
     return s
 
   @staticmethod
@@ -566,7 +614,7 @@ class Spectrum:
           elif raw["count"] == 1:
             acq = 'edit_on'
           else:
-            raise Exception('More than 2 mx objects for megapress? Something is wrong here.')
+            raise RuntimeError('More than 2 mx objects for megapress? Something is wrong here.')
         s = Spectrum(id=filename, source='pygamma',
                      pulse_sequence=pulse_sequence,
                      metabolites=[molecules.short_name(metabolite)],
@@ -584,7 +632,7 @@ class Spectrum:
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
     if not os.path.exists(basis_file):
-      raise Exception('Basis file does not exist: ' + basis_file)
+      raise RuntimeError('Basis file does not exist: ' + basis_file)
     specs = []
     with open(basis_file) as file:
       line_buffer = []
@@ -630,11 +678,11 @@ class Spectrum:
           elif area == "spectrum":
             if np.abs(metadata['SEQPAR']['HZPPPM'] - req_omega) > (molecules.GYROMAGNETIC_RATIO/5):
               # more than a 0.2T difference, there's an issue
-              raise Exception('LCModel basis set (%.2fT) is more than 0.2T different to prescibed '
-                              'omega (%.2fT).' % (metadata['SEQPAR']['HZPPPM']/molecules.GYROMAGNETIC_RATIO,
+              raise RuntimeError('LCModel basis set (%.2fT) is more than 0.2T different to prescibed '
+                                 'omega (%.2fT).' % (metadata['SEQPAR']['HZPPPM']/molecules.GYROMAGNETIC_RATIO,
                                                   req_omega/molecules.GYROMAGNETIC_RATIO))
             if metadata['SEQPAR']['SEQ'] != "MEGA-": # not megapress
-              raise Exception('Unrecognised LCM pulse sequence: ' + metadata['SEQ'])
+              raise RuntimeError('Unrecognised LCM pulse sequence: ' + metadata['SEQ'])
             try:
               metabolite = molecules.short_name(metadata["BASIS"]["METABO"])
             except:
@@ -643,7 +691,7 @@ class Spectrum:
               # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
               nums = " ".join(line_buffer).split()
               if len(nums) % 2 != 0:
-                raise Exception('Uneven fft number, the real/imag switching does not work here or the file has been loaded in wrong!')
+                raise RuntimeError('Uneven fft number, the real/imag switching does not work here or the file has been loaded in wrong!')
               fft = []
               for ii in range(0, len(nums), 2):
                 fft.append(float(nums[ii]) + 1j*float(nums[ii + 1]))
@@ -690,7 +738,7 @@ class Spectrum:
   @staticmethod
   def load_dicom(file, concentrations=None, metabolites=None, verbose=0):
     if not os.path.exists(file):
-        raise Exception('Dicom file does not exist: ' + file)
+        raise RuntimeError('Dicom file does not exist: ' + file)
     from mrsnet.qdicom.read_dicom_siemens import read_dicom
     import struct
     # We assume it's a Siemens dicom spectrum, so do not check this
@@ -707,7 +755,7 @@ class Spectrum:
     if pulse_sequence in ['svs_edit', 'svs_ed', 'eja_svs_mpress', 'megapress']:
       pulse_sequence = 'megapress'
     else:
-      raise Exception(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
+      raise RuntimeError(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
     # Acquisition
     if pulse_sequence == 'megapress':
       if 'EDIT_OFF' in file:
@@ -717,10 +765,10 @@ class Spectrum:
       elif 'DIFF' in file:
         acquisition = 'difference'
       else:
-        raise Exception('Loaded dicom file for MEGA-PRESS, but acquisition cannot be determined.\n'
-                        'Add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere.')
+        raise RuntimeError('Loaded dicom file for MEGA-PRESS, but acquisition cannot be determined.\n'
+                           'Add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere.')
     else:
-      raise Exception(f"Pulse sequence {pulse_sequence} not supported")
+      raise RuntimeError(f"Pulse sequence {pulse_sequence} not supported")
 
     fn = os.path.abspath(file).split(os.sep)
     if len(fn) > 4:
@@ -782,7 +830,7 @@ class Spectrum:
       elif Cfg.val['filter_dicom'] == 'kaiser':
         filterv[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
       else:
-        raise Exception("Unknown dicom filter")
+        raise RuntimeError("Unknown dicom filter")
       data = np.multiply(data,filterv)
       if verbose > 4:
         fig, axs = plt.subplot(1,2)

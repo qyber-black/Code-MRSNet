@@ -1,11 +1,13 @@
 # mrsnet/comapre.py - MRSNet - compare and analyse spectra
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 import seaborn as sns
 
 import mrsnet.molecules as molecules
@@ -101,10 +103,8 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     axs[2,0].set_ylabel("Real - Count")
     axs[3,0].set_ylabel("Imaginary - Count")
     axs[3,0].set_xlabel("Difference - Error")
-    axs[3,1].set_xlabel("Edit Off - Error")
-    axs[3,2].set_xlabel("Edif On - Error")
-    plt.show(block=True)
-    plt.close()
+    axs[3,1].set_xlabel("Edit Off - Error")        both added:      mrsnet/selection.py
+
 
 def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     # Plot difference between dataset and basis reference spectrum
@@ -130,6 +130,7 @@ def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     axes[3,0].plot(nu,r[0,3,:],linewidth=.75)
     axes[3,0].set_ylabel("Imaginary")
     axes[3,0].set_xlabel("Frequency (ppm)")
+    axes[3,0].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
 
     axes[0,1].set_title("Edit Off")
     axes[0,1].plot(nu,d[1,0,:])
@@ -145,6 +146,7 @@ def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     axes[3,1].plot(nu,r[1,3,:],linewidth=.75)
     axes[3,0].get_shared_y_axes().join(axes[3,0], axes[3,1])
     axes[3,1].set_xlabel("Frequency (ppm)")
+    axes[3,1].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
 
     axes[0,2].set_title("Edit On")
     axes[0,2].plot(nu,d[2,0,:])
@@ -160,6 +162,7 @@ def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     axes[3,2].plot(nu,r[2,3,:],linewidth=.75)
     axes[3,0].get_shared_y_axes().join(axes[3,0], axes[3,2])
     axes[3,2].set_xlabel("Frequency (ppm)")
+    axes[3,2].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
 
     ax = plt.subplot(1, 4, 4)
     plt.title('Concentrations')

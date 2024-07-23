@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -94,10 +95,6 @@ class Train:
         has_error = False # Should be the same across all calls, but set it each time anyway
       _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
                                    verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
-      if err is not None:
-        val_res['error'][val_fold] = err
-      else:
-        has_error = False # Should be the same across all calls, but set it each time anyway
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
           if val_fold == 0:
@@ -538,7 +535,7 @@ class DuplexKFold(Train):
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
         if n_selected > data_dim:
-          raise Exception("Insufficient data-points for finding buckets")
+          raise RuntimeError("Insufficient data-points for finding buckets")
         k_b += 1
     del ddm
     if verbose > 2:

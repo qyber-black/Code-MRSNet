@@ -45,7 +45,7 @@ def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache
   elif pulse_sequence.lower() == 'megapress':
     mx = megapress(spin_system, omega=omega)
   else:
-    raise Exception('Unrecognised PyGamma pulse sequence: ' + pulse_sequence)
+    raise RuntimeError('Unrecognised PyGamma pulse sequence: ' + pulse_sequence)
 
   for count, acq in enumerate(mx):
     raw = {}

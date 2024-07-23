@@ -1,6 +1,7 @@
 # mrsnet/cfg.py - MRSNet - config
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -85,7 +86,7 @@ class Cfg:
               Cfg.val[k] = js[k]
             else:
               if fc != root_cfg_file: # We fix this here later
-                raise Exception(f"Unknown config file entry {k} in {fc}")
+                raise RuntimeError(f"Unknown config file entry {k} in {fc}")
     # Check data folders and create as needed
     data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {
@@ -133,6 +134,17 @@ class Cfg:
     if 'MRSNET_DEV' in os.environ:
       for f in os.environ['MRSNET_DEV'].split(":"):
         Cfg.dev_flags.add(f)
+
+  @staticmethod
+  def get_su_bases(reload=False):
+    if reload:
+      Cfg._su_bases = []
+    if len(Cfg._su_bases) == 0:
+      for path in [Cfg.val['path_basis'],*Cfg.val['search_basis']]:
+        for fldr in next(os.walk(path))[1]:
+          if fldr[0:3] == 'su-' and fldr not in Cfg._su_bases:
+            Cfg._su_bases.append(fldr)
+    return Cfg._su_bases
 
   @staticmethod
   def dev(flag):

@@ -17,7 +17,7 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
   elif source =="fid-a-2d":
     script="run_custom_simMegaPress_2D"
   else:
-    raise Exception(f"Unknown fid-a basis {source}")
+    raise RuntimeError(f"Unknown fid-a basis {source}")
 
   matlab_command = "addpath(genpath(fullfile('"+Cfg.val['path_root']+"','mrsnet','simulators','fida')));"
   matlab_command += "mrsnet_omega="+str(omega)+";"
@@ -39,9 +39,9 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
     p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])
   except OSError as e:
     if e.errno == errno.ENOENT:
-      raise Exception('Matlab is not installed on this system! Can\'t simulate FID-A spectra.\n'
-                      'You can simulate them on another system, and put them into ' +
-                      os.path.join('data', 'basis', source)) from e
+      raise RuntimeError('Matlab is not installed on this system! Can\'t simulate FID-A spectra.\n'
+                         'You can simulate them on another system, and put them into ' +
+                         os.path.join('data', 'basis', source)) from e
     else:
       raise
   p.wait()

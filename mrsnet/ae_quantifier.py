@@ -157,7 +157,7 @@ class Autoencoder_quantifier:
         self.aeq = FCAutoEncQuant(n_specs,n_freqs,lin,lout,activation,activation_last,dropout,output_conc,unit,layers,act,act_last,dp).model
         #For example: FCAEQ = FCAutoEncQuant(2, 2048, 5, 7, "tanh", "tanh", 0.3, 5, 256, 4, "tanh", "tanh", 0.3)
       else:
-        raise Exception(f"Unknown encoder-quantifier architecture {self.model}")
+        raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
               image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -170,9 +170,9 @@ class Autoencoder_quantifier:
         if verbose > 0:
           print(f"GPU Devices: {devices}")
       if len(d_data) != 3:
-        raise Exception("d_data argument must be a list [spectra_in,spectra_out|conc]")
+        raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out|conc]")
       if v_data != None and len(v_data) != 3:
-        raise Exception("v_data argument must be a list [spectra_in,spectra_out|conc]")
+        raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out|conc]")
 
       if len(train_dataset_name) > 0:
         self.train_dataset_name = train_dataset_name
@@ -183,7 +183,7 @@ class Autoencoder_quantifier:
       if self.model[0:4] == "caeq":
         return self._train_aeq(d_data, v_data, epochs, batch_size, folder, verbose,
                                image_dpi, screen_dpi, train_dataset_name, devices)
-      raise Exception(f"Unknown autoencoder model {self.model}")
+      raise RuntimeError(f"Unknown autoencoder model {self.model}")
 
   def _train_aeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
                 image_dpi, screen_dpi, train_dataset_name, devices):
@@ -358,7 +358,7 @@ class Autoencoder_quantifier:
         return np.array(self.aeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
     if self.output == "spectra":
         return np.array(tf.reshape(self.aeq.predict(data, verbose=(verbose > 0) * 2)[0], out_shape), dtype=np.float64)
-    raise Exception(f"Unknown output {self.output}")
+    raise RuntimeError(f"Unknown output {self.output}")
 
 
   def save(self, folder):

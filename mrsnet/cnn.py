@@ -66,7 +66,7 @@ class CNN:
     self.cnn_arch = Sequential(name=self.model)
     vals = self.model.split("_")
     if vals[0] != 'cnn':
-      raise Exception(f"Unknown model {vals[0]}")
+      raise RuntimeError(f"Unknown model {vals[0]}")
     if vals[1] == 'small' or vals[1] == 'medium' or vals[1] == 'large':
       # cnn_[small,medium,large]_[softmax,sigmoid][_pool]
       if vals[1] == 'small':
@@ -140,9 +140,9 @@ class CNN:
       if verbose > 0:
         print(f"GPU Devices: {devices}")
     if len(d_data) != 2:
-      raise Exception("d_data argument must be a list [spectra,conc]")
+      raise RuntimeError("d_data argument must be a list [spectra,conc]")
     if v_data != None and len(v_data) != 2:
-      raise Exception("v_data argument must be a list [spectra,conc]")
+      raise RuntimeError("v_data argument must be a list [spectra,conc]")
 
     if len(train_dataset_name) > 0:
       self.train_dataset_name = train_dataset_name

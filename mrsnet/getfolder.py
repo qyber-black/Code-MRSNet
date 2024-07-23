@@ -22,10 +22,10 @@ def get_folder(folder, subfolder_pattern, timeout=30, delay=.1):
       if e.errno != errno.EEXIST:
         raise
       if (time.time() - start_time) >= timeout:
-        raise Exception("get_folder timeout.")
+        raise RuntimeError("get_folder timeout.")
       time.sleep(delay)
   if not locked:
-    raise Exception("Lock failed")
+    raise RuntimeError("Lock failed")
 
   # Create unique folder
   idl = 1
