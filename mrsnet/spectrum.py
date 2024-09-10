@@ -358,6 +358,29 @@ class Spectrum:
 
     return figure
 
+  def save_json(self, filename, version=1):
+    if version == 1:
+      data = {
+        'id': self.id,
+        'pulse_sequence': self.pulse_sequence,
+        'acquisition': self.acquisition,
+        'omega': self.omega,
+        'source': self.source,
+        'metabolites': self.metabolites,
+        'linewidth': self.linewidth,
+        'sample_rate': self.sample_rate,
+        'fft': [(np.real(v),np.imag(v)) for v in self.fft],
+        'scale': self.scale,
+        'center_ppm': self.center_ppm,
+        'b0_shift_ppm': self.b0_shift_ppm,
+        'noise': self.noise,
+        'mrsnet_json_format': 1
+      }
+    else:
+      raise Runtime(f"Unknown json format version {version}")
+    with open(filename, 'w', encoding='utf-8') as f:
+      json.dump(data, f, ensure_ascii=False, indent=2)
+
   @staticmethod
   def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
     n_cols = len(spectra)

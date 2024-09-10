@@ -391,7 +391,7 @@ class Basis:
 
   def combine(self, concentrations, id):
     if len(concentrations) != len(self.spectra.keys()):
-      raise RuntimeError("Concentrations do not match number of spectra in basis")
+      raise RuntimeError(f"Concentrations ({len(concentrations)}) do not match number of spectra in basis ({len(self.spectra.keys())})")
     spectra = {}
     con = {}
     if type(concentrations) is dict:
