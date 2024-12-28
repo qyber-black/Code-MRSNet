@@ -319,7 +319,7 @@ class Spectrum:
       n_cols = 2
     else:
       super_title += "-".join(self.metabolites[0]) + ' '
-    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} Hz"
+    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} MHz"
     if self.linewidth != None:
       super_title += " Linewidth: " + str(self.linewidth)
     if self.noise != None:
@@ -402,7 +402,7 @@ class Spectrum:
 
     omega = next(iter(omega))
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
-                   f" @ {omega:.2f} Hz"
+                   f" @ {omega:.2f} MHz"
     linewidth = next(iter(linewidth))
     if linewidth != None:
       super_title += " Linewidth: " + str(linewidth)
@@ -860,4 +860,117 @@ class Spectrum:
         axs[0].plot(data)
         axs[0].set_title("Filtered Dicom Data")
     spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True,phase_correct=True)
+    return spec, cs
+
+  @staticmethod
+  def load_csv(file, concentrations=None, metabolites=None, verbose=0):
+    if not os.path.exists(file):
+        raise RuntimeError('CSV file does not exist: ' + file)
+    import csv
+    with open(file) as csvfile:
+      data = csv.reader(csvfile)
+      for row in data:
+        if row[0] == "WriteSpec2asc-v1":
+          pass
+        elif row[0] == "ID":
+          pid = row[1]
+        elif row[0] == "Pulse_sequence":
+          pulse_sequence = row[1]
+          if pulse_sequence in ["EJA_MPRESS"]:
+            pulse_sequence = 'megapress'
+          else:
+            raise RuntimeError(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
+        elif row[0] == "Transmitter_frequency":
+          omega = float(row[1]) / 1000000.
+        elif row[0] == "Sampling_frequency":
+          dt = 1. / float(row[1])
+        elif row[0] == "FID":
+          data = np.array(row[1:],dtype=np.float64)
+        elif row[0] == "t":
+          pass
+        elif row[0] == "TE":
+          pass
+        elif row[0] == "Samples":
+          pass
+        elif row[0] == "Center_ppm":
+          center_ppm = -float(row[1])
+        else:
+          raise RuntimeError(f"Unknown csv field {row[0]}")
+
+    # Acquisition
+    if pulse_sequence == 'megapress':
+      if 'EDIT_OFF' in file:
+        acquisition = 'edit_off'
+      elif 'EDIT_ON' in file:
+        acquisition = 'edit_on'
+      elif 'DIFF' in file:
+        acquisition = 'difference'
+      else:
+        raise RuntimeError('Loaded csv file for MEGA-PRESS, but acquisition cannot be determined.\n'
+                            'Add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere.')
+    else:
+      raise RuntimeError(f"Pulse sequence {pulse_sequence} not supported")
+
+    fn = os.path.abspath(file).split(os.sep)
+    if len(fn) > 4:
+      fn = fn[-4:]
+    fn = fn[:-1]
+    idl = "/".join(fn)
+    idl += pid
+
+    cs = np.array([])
+    if concentrations is not None:
+      ids = file.split('/')
+      with open(concentrations, 'r') as f:
+        js = json.load(f)
+        if len(metabolites) == 0:
+          metabolites = set()
+          for k in js.keys():
+            for l in js[k].keys():
+              metabolites.add(l)
+          metabolites = molecules.short_name(list(metabolites))
+          metabolites.sort()
+        cs = {}
+        for m in metabolites:
+          cs[m] = 0.0
+        for l in range(len(ids)-1,-1,-1):
+          if ids[l] in js:
+            for m in js[ids[l]].keys():
+              ms = molecules.short_name(m)
+              if ms in metabolites:
+                cs[ms] = float(js[ids[l]][m])
+            if "GlX" in metabolites:
+              for m in js[ids[l]].keys():
+                ms = molecules.short_name(m)
+                if ms == "Gln" or ms == "Glu":
+                  cs["GlX"] += float(js[ids[l]][m])
+    spec = Spectrum(id=idl,
+                    pulse_sequence=pulse_sequence,
+                    acquisition=acquisition,
+                    omega=omega,
+                    source='dicom',
+                    metabolites=metabolites,
+                    linewidth=None) # Unknown
+    if Cfg.val['filter_dicom'] != None:
+      # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Dicom Data")
+      filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
+      filterv = np.zeros(len(data))
+      if Cfg.val['filter_dicom'] == 'hamming':
+        filterv[0:filter_length//2] = np.hamming(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'hanning':
+        filterv[0:filter_length//2] = np.hanning(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'kaiser':
+        filterv[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
+      else:
+        raise RuntimeError("Unknown dicom filter")
+      data = np.multiply(data,filterv)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Filtered Dicom Data")
+    spec.set_t(data,1/dt,center_ppm=center_ppm,remove_water_peak=True,phase_correct=True)
     return spec, cs

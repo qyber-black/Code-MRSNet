@@ -1,7 +1,7 @@
 # mrsnet/dataset.py - MRSNet - spectra dataset
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -40,6 +40,11 @@ class Dataset:
       for file in sorted(files):
         if file[-4:].lower() == '.ima':
           s, c = Spectrum.load_dicom(os.path.join(dir,file), concentrations, metabolites, verbose)
+        elif file[-4:].lower() == '.csv':
+          s, c = Spectrum.load_csv(os.path.join(dir,file), concentrations, metabolites, verbose)
+        else:
+          s = None
+        if s is not None:
           for m in s.metabolites:
             if m not in self.metabolites:
               self.metabolites.append(m)
