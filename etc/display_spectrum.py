@@ -28,6 +28,7 @@ show_spec = 0
 # Spectrum is a dictionary of individual spectra (edit_off, edit_on, difference),
 # plot each of them
 import matplotlib.pyplot as plt
+print(f"Showing spectrum {ds.spectra[show_spec]["edit_on"].id}")
 for spec in ds.spectra[show_spec]:
   # Plot spectrum (all datatypes)
   fig = ds.spectra[show_spec][spec].plot_spectrum()

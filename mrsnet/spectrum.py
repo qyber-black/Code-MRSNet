@@ -293,6 +293,7 @@ class Spectrum:
     elif type == 'fft':
       Y, X = self.rescale_fft()
       axes.set_xlabel('Frequency (ppm)')
+      # Note, we are using negative frequencies
       axes.xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
     else:
       raise RuntimeError("Unknown plot type")
@@ -598,6 +599,7 @@ class Spectrum:
         scale = fida_data['scaling'][0][0]
       else:
         scale = 1.0
+      # Conjugation due to negative frequencies
       s.set_t(np.conjugate(np.array(fida_data['fid']).flatten())/scale,
               1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
               center_ppm = -fida_data['center_ppm'][0][0])
@@ -607,6 +609,7 @@ class Spectrum:
       #s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
       #        1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
       #        center_ppm = -np.median(fida_data['nu']))
+      # Conjugation due to negative frequencies
       s.set_f(np.conjugate(np.array(fida_data['fft']).flatten()),
               1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
               center_ppm = -np.median(fida_data['nu']))
@@ -644,7 +647,7 @@ class Spectrum:
                      acquisition=acq,
                      omega=omega,
                      linewidth=linewidth)
-        # Time signal produced by pygamma seems mirrored, so need to take the complex conjugate
+        q# Conjugation due to negative frequencies
         s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
                 1/dt)
         specs.append(s)
@@ -868,8 +871,8 @@ class Spectrum:
         raise RuntimeError('CSV file does not exist: ' + file)
     import csv
     with open(file) as csvfile:
-      data = csv.reader(csvfile)
-      for row in data:
+      rows = csv.reader(csvfile)
+      for row in rows:
         if row[0] == "WriteSpec2asc-v1":
           pass
         elif row[0] == "ID":
