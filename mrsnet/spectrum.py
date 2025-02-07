@@ -647,7 +647,7 @@ class Spectrum:
                      acquisition=acq,
                      omega=omega,
                      linewidth=linewidth)
-        q# Conjugation due to negative frequencies
+        # Conjugation due to negative frequencies
         s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
                 1/dt)
         specs.append(s)
