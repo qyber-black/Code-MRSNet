@@ -181,7 +181,7 @@ class Spectrum:
     # Adjust phase
     idx = np.argmax(np.abs(np.real(self.fft)))
     max_fft = np.real(self.fft[idx])
-    shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+    shift = val['phi0'] + val['phi1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
     self.fft *= np.exp(1j*shift)
     idx = np.argmax(np.abs(np.real(self.fft)))
     max_s_fft = np.real(self.fft[idx])
