@@ -25,11 +25,7 @@ print(f"Requested concentrations: {cs}")
 # We need the mrsnet configuration to find the basis files
 import os
 from mrsnet.cfg import Cfg
-# Find mrsnet path via path to script, assuming it is in the root folder of mrsnet
-bin_path = os.path.realpath(__file__)
-if not os.path.isfile(bin_path):
-  raise Exception("Cannot find location of mrsnet.py root folder")
-Cfg.init(bin_path)
+Cfg.init(os.path.dirname(os.path.realpath(__file__)))
 
 # Get a basis set (search path from Cfg info)
 import mrsnet.basis as basis

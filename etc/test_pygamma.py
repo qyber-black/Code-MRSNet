@@ -10,10 +10,7 @@ from mrsnet.spectrum import Spectrum
 # We need the mrsnet configuration
 import os
 from mrsnet.cfg import Cfg
-bin_path = os.path.realpath(__file__)
-if not os.path.isfile(bin_path):
-  raise Exception("Cannot find location of mrsnet.py root folder")
-Cfg.init(bin_path)
+Cfg.init(os.path.dirname(os.path.realpath(__file__)))
 Cfg.dev_flags.add('spectrum_set_phase_correct') # Show phase correct effect
 
 # Load pygamma spectrum
