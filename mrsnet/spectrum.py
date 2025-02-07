@@ -44,30 +44,31 @@ class Spectrum:
     self.noise = None
 
   def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
-            remove_water_peak=False, phase_correct=False):
+            remove_water_peak=False, phase_correct=False, force_phase_correct=None):
     self.fft = np.asarray(fft)
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct)
 
   def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
-            remove_water_peak=False, phase_correct=False):
+            remove_water_peak=False, phase_correct=False, force_phase_correct=None):
     self.fft = npfft.fftshift(npfft.fft(adc))
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct)
 
-  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct):
+  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct=None):
     self.sample_rate = sample_rate
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
-    if phase_correct and Cfg.val['phase_correct'] != None: # Only phase correct if also configured
+    if (phase_correct and Cfg.val['phase_correct'] != None) or (force_phase_correct is not None): 
+      # Only phase correct if also configured or it is forced (specifically used by load_pygamma)
       if Cfg.dev('spectrum_set_phase_correct'):
         fig, axs = plt.subplots(1,2)
         freq, nu = self.get_f()
         axs[0].plot(nu, np.real(freq), color='r')
         axs[0].plot(nu, np.imag(freq), color='g')
         axs[0].set_title("Raw Dicom Data")
-      if Cfg.val['phase_correct'] == 'acme':
+      if Cfg.val['phase_correct'] == 'acme' or force_phase_correct == 'acme':
         self._phase_correct_acme()
-      elif Cfg.val['phase_correct'] == 'ernst':
+      elif Cfg.val['phase_correct'] == 'ernst' or force_phase_correct == 'ernst':
         self._phase_correct_ernst()
       else:
         raise RuntimeError(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
@@ -617,7 +618,7 @@ class Spectrum:
 
   @staticmethod
   def load_pygamma(pygamma_dir, search_path, metabolite, pulse_sequence, omega, linewidth,
-                   npts, dt, simulate=True):
+                   npts, dt, simulate=True, force_phase_correct="acme"):
     for spath in [pygamma_dir, *search_path]:
       cache_dir = os.path.join(spath,
                                pulse_sequence + '_' + str(omega) + '_' +
@@ -649,7 +650,7 @@ class Spectrum:
                      linewidth=linewidth)
         # Conjugation due to negative frequencies
         s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
-                1/dt)
+                1/dt, force_phase_correct=force_phase_correct)
         specs.append(s)
     return specs
 
