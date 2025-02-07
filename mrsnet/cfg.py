@@ -133,7 +133,7 @@ class Cfg:
     # Dev flags
     if 'MRSNET_DEV' in os.environ:
       for f in os.environ['MRSNET_DEV'].split(":"):
-        Cfg.dev_flags.add('spectrum_set_phase_correct')
+        Cfg.dev_flags.add(f)
 
   @staticmethod
   def get_su_bases(reload=False):
