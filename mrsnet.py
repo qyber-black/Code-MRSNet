@@ -15,21 +15,23 @@ This module provides the main command-line interface for MRSNet, including
 subcommands for basis generation, simulation, training, and quantification.
 """
 
-import os
-import glob
-import sys
 import argparse
+import glob
+import os
+import sys
+
 import matplotlib.pyplot as plt
 
 import mrsnet.molecules as molecules
 from mrsnet.cfg import Cfg
+
 
 def main():
   """Main function of MRSNet: parse arguments, setup basic environment and run.
 
   Sets up the command-line interface with subcommands for various MRSNet operations
   including basis generation, simulation, training, and quantification.
-  """
+  """  # noqa: D401
   # Main function of MRSNet: parse arguments, setup basic environment and run
 
   # Process arguments
@@ -417,7 +419,7 @@ def simulate(args):
       plt.show(block=True)
     plt.close()
   if args.verbose > 3:
-    for s,c in zip(dataset.spectra,dataset.concentrations):
+    for s,c in zip(dataset.spectra,dataset.concentrations, strict=False):
       spectrum.Spectrum.plot_full_spectrum(s,c,screen_dpi=Cfg.val['screen_dpi'])
       plt.show(block=True)
       plt.close()
@@ -430,6 +432,7 @@ def generate_datasets(args):
   """
   # Generate datasets sub-command
   import subprocess
+
   import mrsnet.grid as grid
   datasets = grid.Grid.load(args.collection)
   k = [str(k) for k in datasets.values.keys()]
@@ -492,7 +495,7 @@ def generate_datasets(args):
         if args.verbose > 0:
           print('# Run '+' '.join(cmd[3:]))
         try:
-          p = subprocess.Popen(cmd)
+          p = subprocess.Popen(cmd)  # noqa: S603
         except OSError as e:
           raise RuntimeError('MRSNet simulation failed') from e
         p.wait()
@@ -569,7 +572,7 @@ def train(args):
     ds = None
     try:
       ds = dataset.Dataset.load(args.dataset)
-    except:
+    except Exception:
       ds = None
     if ds is None:
       for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
@@ -703,7 +706,7 @@ def train(args):
   else:
     raise Exception(f"Unknown model {args.model}")
   if args.verbose > 0:
-    print(f"# Model:\n  {str(model)}")
+    print(f"# Model:\n  {model!s}")
 
   if args.validate > 1.0:
     from mrsnet.train import KFold
@@ -800,7 +803,7 @@ def quantify(args):
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
       quantifier = CNN.load(folder)
-    except:
+    except Exception:
       quantifier = None
     if quantifier is None:
       try:
@@ -808,7 +811,7 @@ def quantify(args):
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = CNN.load(folder)
           break
-      except:
+      except Exception:
         quantifier = None
       if quantifier is None:
         raise Exception("Model not found")
@@ -818,23 +821,23 @@ def quantify(args):
     try:
         folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
         quantifier = Autoencoder.load(folder)
-    except:
+    except Exception:
         try:
             folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
             quantifier = Autoencoder.load(folder)
-        except:
-            raise Exception("Model not found")
+        except Exception:
+            raise Exception("Model not found") from None
   elif name[0:5] == "caeq_":
     from mrsnet.ae_quantifier import AutoencoderQuantifier
     try:
         folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
         quantifier = AutoencoderQuantifier.load(folder)
-    except:
+    except Exception:
         try:
             folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
             quantifier = AutoencoderQuantifier.load(folder)
-        except:
-            raise Exception("Model not found")
+        except Exception:
+            raise Exception("Model not found") from None
 
   else:
     raise Exception("Unknown model "+name)
@@ -866,14 +869,14 @@ def quantify(args):
       d_out = d_inp
     elif ds_type == "joblib_noisy":
       dsc = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],ds_name,ds_rest),force_clean=True)
-      d_out, _ = ds.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
-                           acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
-                           low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm,
-                           n_fft_pts=quantifier.fft_samples, verbose=args.verbose,
-                           export_concentrations=False)
+      d_out, _ = dsc.export(metabolites=quantifier.metabolites, norm=quantifier.norm,
+                            acquisitions=quantifier.acquisitions, datatype=quantifier.datatype,
+                            low_ppm=quantifier.low_ppm, high_ppm=quantifier.high_ppm,
+                            n_fft_pts=quantifier.fft_samples, verbose=args.verbose,
+                            export_concentrations=False)
     else:
-      d_out = []
-  id_ref = sorted([a for a in ds.spectra[0].keys()])[0]
+      raise Exception("Unknown dataset type "+ds_type)
+  id_ref = sorted(ds.spectra[0].keys())[0]
   # Store results in data repository
   from mrsnet.analyse import analyse_model
   if args.norm == "default":
@@ -918,7 +921,7 @@ def benchmark(args):
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
       quantifier = CNN.load(folder)
-    except:
+    except Exception:
       quantifier = None
     if quantifier is None:
       try:
@@ -926,7 +929,7 @@ def benchmark(args):
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = CNN.load(folder)
           break
-      except:
+      except Exception:
         quantifier = None
       if quantifier is None:
         raise Exception("Model not found")
@@ -936,7 +939,7 @@ def benchmark(args):
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
       quantifier = Autoencoder.load(folder)
-    except:
+    except Exception:
       quantifier = None
     if quantifier is None:
       try:
@@ -944,7 +947,7 @@ def benchmark(args):
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = Autoencoder.load(folder)
           break
-      except:
+      except Exception:
         quantifier = None
       if quantifier is None:
         raise Exception("Model not found")
@@ -954,7 +957,7 @@ def benchmark(args):
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
       quantifier = AutoencoderQuantifier.load(folder)
-    except:
+    except Exception:
       quantifier = None
     if quantifier is None:
       try:
@@ -962,7 +965,7 @@ def benchmark(args):
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = AutoencoderQuantifier.load(folder)
           break
-      except:
+      except Exception:
         quantifier = None
       if quantifier is None:
         raise Exception("Model not found")
@@ -971,7 +974,7 @@ def benchmark(args):
   else:
     raise Exception("Unknown model "+name)
   import json
-  with open(os.path.join(Cfg.val['path_benchmark'],"benchmark_sequences.json"), 'r') as f:
+  with open(os.path.join(Cfg.val['path_benchmark'],"benchmark_sequences.json")) as f:
     benchmark_seqs = json.load(f)
   import mrsnet.dataset as dataset
   for b_id in benchmark_seqs.keys():
@@ -984,7 +987,7 @@ def benchmark(args):
                                            metabolites=quantifier.metabolites,
                                            verbose=args.verbose)
       if args.verbose > 3:
-        for s,c in zip(bm.spectra,bm.concentrations):
+        for s,c in zip(bm.spectra,bm.concentrations, strict=False):
           for a in s.keys():
             s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
             plt.show(block=True)
@@ -995,7 +998,7 @@ def benchmark(args):
                                datatype=quantifier.datatype,
                                verbose=args.verbose)
       from mrsnet.analyse import analyse_model
-      id_ref = sorted([a for a in bm.spectra[0].keys()])[0]
+      id_ref = sorted(bm.spectra[0].keys())[0]
       if args.norm == "default":
         args.norm = quantifier.norm
       analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name,
@@ -1014,7 +1017,8 @@ def get_std_name(name):
   Args:
       name (str): File path to standardize
 
-  Returns:
+  Returns
+  -------
       list: List of path components in order
   """
   _, path = os.path.splitdrive(name)
@@ -1051,6 +1055,6 @@ if __name__ == '__main__':
     import tensorflow as tf
     tf.config.set_visible_devices([], 'GPU')
     for device in tf.config.get_visible_devices():
-      assert device.device_type != 'GPU'
+      assert device.device_type != 'GPU'  # noqa: S101
     print("**WARNING - GPUs disabled on request")
   main()
