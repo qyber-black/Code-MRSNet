@@ -12,14 +12,16 @@ and generating combined spectra from them. It supports various basis sources
 including LCModel, FID-A, PyGamma, and SU-* basis sets.
 """
 
-import os
 import copy
-import numpy as np
+import os
+
 import matplotlib.pyplot as plt
+import numpy as np
 
 import mrsnet.molecules as molecules
 from mrsnet.cfg import Cfg
 from mrsnet.spectrum import Spectrum
+
 
 class BasisCollection:
   """Collection of Basis objects for managing multiple basis sets.
@@ -27,9 +29,11 @@ class BasisCollection:
   This class provides a container for multiple Basis objects, allowing
   easy management and retrieval of different basis sets.
 
-  Attributes:
+  Attributes
+  ----------
       _bases (dict): Dictionary mapping basis names to Basis objects
   """
+
   def __init__(self):
     """Initialize empty basis collection."""
     self._bases = {}
@@ -37,7 +41,8 @@ class BasisCollection:
   def __iter__(self):
     """Return iterator for the basis collection.
 
-    Returns:
+    Returns
+    -------
         BasisCollectionIterator: Iterator over all basis objects
     """
     return BasisCollectionIterator(self)
@@ -45,20 +50,22 @@ class BasisCollection:
   def __str__(self):
     """Return string representation of the basis collection.
 
-    Returns:
+    Returns
+    -------
         str: String listing all basis names in the collection
     """
     strr = "BasisCollection: \n" + "\n".join(["  "+idx for idx in self._bases])
     return strr
 
   def add(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence,
-          sample_rate, samples, path_basis=os.path.join('data','basis'), search_basis=[]):
+          sample_rate, samples, path_basis=os.path.join('data','basis'), search_basis=[]):  # noqa: B008
     """Add a new basis to the collection.
 
     Creates a new Basis object with the specified parameters and adds it to
     the collection. The basis is automatically set up by loading spectra.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list): List of metabolite names
         source (str): Basis source (e.g., 'lcmodel', 'fid-a', 'pygamma')
         manufacturer (str): Scanner manufacturer (e.g., 'siemens', 'ge')
@@ -70,7 +77,8 @@ class BasisCollection:
         path_basis (str, optional): Path to basis files. Defaults to 'data/basis'
         search_basis (list, optional): Additional search paths. Defaults to []
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If a basis with the same parameters already exists
     """
     basis = Basis(metabolites=metabolites, source=source,
@@ -85,7 +93,8 @@ class BasisCollection:
   def get(self, metabolites, source, manufacturer, omega, linewidth, pulse_sequence):
     """Get a basis from the collection by parameters.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list): List of metabolite names
         source (str): Basis source
         manufacturer (str): Scanner manufacturer
@@ -93,7 +102,8 @@ class BasisCollection:
         linewidth (float): Linewidth parameter
         pulse_sequence (str): Pulse sequence type
 
-    Returns:
+    Returns
+    -------
         Basis or None: The matching basis object, or None if not found
     """
     idx = "_".join(["-".join(sorted(metabolites)), source, manufacturer,
@@ -105,7 +115,8 @@ class BasisCollection:
   def describe(self):
     """Get description of all bases in the collection.
 
-    Returns:
+    Returns
+    -------
         list: List of dictionaries describing each basis with keys:
             - metabolites: List of metabolite names
             - source: Basis source
@@ -132,23 +143,27 @@ class BasisCollectionIterator:
 
   Provides iteration over all basis spectra in a BasisCollection.
   """
+
   def __init__(self, basis_collection):
     """Initialize iterator.
 
-    Args:
+    Parameters
+    ----------
         basis_collection (BasisCollection): Collection to iterate over
     """
     self._basis_collection = basis_collection
-    self._indices = [k for k in basis_collection._bases]
+    self._indices = list(basis_collection._bases)
     self._index = 0
 
   def __next__(self):
     """Get next basis spectrum in iteration.
 
-    Returns:
+    Returns
+    -------
         Basis: Next basis spectrum
 
-    Raises:
+    Raises
+    ------
         StopIteration: When all spectra have been iterated
     """
     if self._index < len(self._indices):
@@ -164,7 +179,8 @@ class Basis:
   to generate combined spectra from them. All spectra are assumed to be
   for one basis source, manufacturer, pulse sequence, omega, and linewidth.
 
-  Attributes:
+  Attributes
+  ----------
       metabolites (list): List of metabolite names in this basis
       source (str): Basis source (e.g., 'lcmodel', 'fid-a', 'pygamma')
       manufacturer (str): Scanner manufacturer
@@ -181,7 +197,8 @@ class Basis:
                omega=None, linewidth=None, pulse_sequence=None, sample_rate=2500, samples=4096):
     """Initialize a new basis.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list, optional): List of metabolite names. Defaults to []
         source (str, optional): Basis source. Defaults to None
         manufacturer (str, optional): Scanner manufacturer. Defaults to None
@@ -216,10 +233,11 @@ class Basis:
   def __str__(self):
     """Return string representation of the basis.
 
-    Returns:
+    Returns
+    -------
         str: Formatted string with all basis parameters
     """
-    return ("Basis: \n  Metabolites: %s\n  Source: %s\n  Manufacturer: %s\n  Omega: %f\n  Linewidth: %s\n  Pulse Sequence: %s\n  Sample Rate: %f\n  Samples: %d"
+    return ("Basis: \n  Metabolites: %s\n  Source: %s\n  Manufacturer: %s\n  Omega: %f\n  Linewidth: %s\n  Pulse Sequence: %s\n  Sample Rate: %f\n  Samples: %d"  # noqa: UP031
             % ("-".join(self.metabolites), self.source, self.manufacturer,
                self.omega, str(self.linewidth), self.pulse_sequence,
                self.sample_rate, self.samples))
@@ -227,27 +245,31 @@ class Basis:
   def name(self):
     """Generate a unique name string for this basis.
 
-    Returns:
+    Returns
+    -------
         str: Unique identifier combining all basis parameters
     """
     return "_".join(["-".join(self.metabolites), self.source, self.manufacturer,
                      str(self.omega), str(self.linewidth), self.pulse_sequence,
                      str(self.sample_rate), str(self.samples)])
 
-  def setup(self, path_basis=os.path.join('data','basis'), search_basis=[]):
+  def setup(self, path_basis=os.path.join('data','basis'), search_basis=[]):  # noqa: B008
     """Set up the basis by loading and processing spectra.
 
     Loads spectra from files, adds missing MEGAPRESS spectra, performs
     consistency checks, normalizes all spectra, and applies B0 correction.
 
-    Args:
+    Parameters
+    ----------
         path_basis (str, optional): Path to basis files. Defaults to 'data/basis'
         search_basis (list, optional): Additional search paths. Defaults to []
 
-    Returns:
+    Returns
+    -------
         Basis: Self for method chaining
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If no basis is loaded, metabolites are missing, or
                      acquisitions are inconsistent
     """
@@ -284,7 +306,8 @@ class Basis:
   def _load(self,path_basis,search_basis):
     """Load basis spectra from various sources.
 
-    Args:
+    Parameters
+    ----------
         path_basis (str): Base path for basis files
         search_basis (list): List of additional search paths
     """
@@ -296,7 +319,7 @@ class Basis:
       self.metabolites.sort()
       glx = True
     if self.source == 'lcmodel':
-      if self.linewidth != None:
+      if self.linewidth is not None:
         raise RuntimeError('Cannot supply LCModel basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
       self._load_lcm(path_basis=os.path.join(path_basis,'lcmodel'),search_basis=[os.path.join(x,'lcmodel') for x in search_basis])
     elif self.source[0:5] == 'fid-a':
@@ -306,12 +329,12 @@ class Basis:
         raise RuntimeError('No FID-A simulator for ' + self.manufacturer + ' scanner.')
     elif self.source == 'su-3tskyra':
       if self.manufacturer == 'siemens':
-        if self.linewidth != None:
+        if self.linewidth is not None:
           raise RuntimeError('Cannot supply SU-3TSkyra basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
         self._load_su3t(path_basis=os.path.join(path_basis,self.source),search_basis=[os.path.join(x,self.source) for x in search_basis],source=self.source)
     elif self.source[0:3] == 'su-':
       if self.manufacturer == 'siemens':
-        if self.linewidth != None:
+        if self.linewidth is not None:
           raise RuntimeError('Cannot supply SU-* basis set with linewidths argument. It is not a simulator option; it has one fixed linewidth.')
         self._load_su3t(path_basis=os.path.join(path_basis, self.source),
                         search_basis=[os.path.join(x, self.source) for x in search_basis], source=self.source)
@@ -344,7 +367,8 @@ class Basis:
   def _load_fida(self, path_basis, search_basis, source, second_call=False):
     """Load basis spectra from FID-A simulator.
 
-    Args:
+    Parameters
+    ----------
         path_basis (str): Base path for basis files
         search_basis (list): List of additional search paths
         source (str): Source identifier
@@ -387,7 +411,7 @@ class Basis:
                 self.spectra[spec.metabolites[0]][spec.acquisition] = spec
                 if spec.metabolites[0] in to_simulate:
                   to_simulate.remove(spec.metabolites[0])
-          except:
+          except Exception:  # noqa: S110
             pass
     if len(to_simulate) > 0:
       if second_call:
@@ -405,7 +429,8 @@ class Basis:
   def _load_su3t(self, path_basis, search_basis, source):
     """Load basis spectra from SU-3T simulator.
 
-    Args:
+    Parameters
+    ----------
         path_basis (str): Base path for basis files
         search_basis (list): List of additional search paths
         source (str): Source identifier
@@ -421,9 +446,9 @@ class Basis:
             # Set sample_rate and samples from filename (but check below so
             # they are the same across files; there should only be one sample_rate
             # and one number of samples per source name for the su-* bases).
-            if self.sample_rate == None:
+            if self.sample_rate is None:
               self.sample_rate = int(vals[4])
-            if self.samples == None:
+            if self.samples is None:
               self.samples = int(vals[5])
             try:
               if vals[2].lower() == self.pulse_sequence \
@@ -442,15 +467,16 @@ class Basis:
                   self.spectra[spec.metabolites[0]][spec.acquisition] = spec
                   if spec.metabolites[0] in to_load:
                     to_load.remove(spec.metabolites[0])
-            except:
+            except Exception:  # noqa: S110
               pass
     if len(to_load) > 0:
       raise RuntimeError("Metabolites missing from basis: " + str(to_load))
 
-  def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), search_basis=[]):
+  def _load_pygamma(self, path_basis=os.path.join('data', 'basis', 'pygamma'), search_basis=[]):  # noqa: B008
     """Load basis spectra from PyGamma simulator.
 
-    Args:
+    Parameters
+    ----------
         path_basis (str, optional): Base path for basis files. Defaults to 'data/basis/pygamma'
         search_basis (list, optional): List of additional search paths. Defaults to []
     """
@@ -466,14 +492,16 @@ class Basis:
             self.spectra[s.metabolites[0]] = {}
           self.spectra[s.metabolites[0]][s.acquisition] = s
 
-  def _load_lcm(self, path_basis=os.path.join('data', 'basis', 'lcmodel'), search_basis=[]):
+  def _load_lcm(self, path_basis=os.path.join('data', 'basis', 'lcmodel'), search_basis=[]):  # noqa: B008
     """Load basis spectra from LCModel basis files.
 
-    Args:
+    Parameters
+    ----------
         path_basis (str, optional): Base path for LCModel basis files. Defaults to 'data/basis/lcmodel'
         search_basis (list, optional): List of additional search paths. Defaults to []
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If manufacturer is not supported or pulse sequence is not MEGAPRESS
     """
     if self.manufacturer == 'siemens':
@@ -570,7 +598,7 @@ class Basis:
             peak_val = val
     else:
       raise RuntimeError(f"No B0 correction for {self.pulse_sequence}")
-    if b0_shift == None:
+    if b0_shift is None:
       raise RuntimeError("B0 correction for basis failed")
     # Apply shift
     for m in self.spectra.keys():
@@ -583,18 +611,21 @@ class Basis:
     Creates combined spectra by weighting individual metabolite spectra
     according to the provided concentrations.
 
-    Args:
+    Parameters
+    ----------
         concentrations (list or dict): Metabolite concentrations. If list,
                                      order must match self.metabolites. If dict,
                                      keys must be metabolite names.
         id (str): Identifier for the combined spectra
 
-    Returns:
+    Returns
+    -------
         tuple: (spectra_dict, concentrations_dict) where:
             - spectra_dict: Dictionary mapping acquisition types to combined Spectrum objects
             - concentrations_dict: Dictionary mapping metabolite names to concentrations
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If number of concentrations doesn't match number of metabolites
                      or if MEGAPRESS difference spectrum validation fails
     """
@@ -611,7 +642,6 @@ class Basis:
         con[m] = concentrations[l]
         l += 1
     concentrations = [con[m] for m in self.metabolites]
-    shifts = []
     for a in self.acquisitions:
       spectra[a] = Spectrum.combs(concentrations,
                                   [self.spectra[m][a] for m in self.metabolites],
@@ -628,12 +658,14 @@ class Basis:
 
     Creates a subplot grid showing all metabolite spectra for all acquisitions.
 
-    Args:
+    Parameters
+    ----------
         data (str, optional): Type of data to plot ('magnitude', 'phase', 'real', 'imaginary').
                              Defaults to 'magnitude'
         type (str, optional): Domain to plot ('fft' or 'time'). Defaults to 'fft'
 
-    Returns:
+    Returns
+    -------
         matplotlib.figure.Figure: The created figure object
     """
     acqs = self.acquisitions
@@ -646,7 +678,6 @@ class Basis:
     super_title = type.upper()+' Basis: ' + self.source + " (" + self.manufacturer + ") @ " + str(self.omega) + "Hz Linewidth: " + str(self.linewidth) + " - " + self.pulse_sequence.upper()
     plt.suptitle(super_title)
 
-    from matplotlib.transforms import offset_copy
     pad = 5
     col = 0
     for a in sorted(acqs):

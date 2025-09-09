@@ -10,21 +10,21 @@ This module provides CNN implementations for concentration prediction
 from MRS spectra, including various architectures and training utilities.
 """
 
-import os
 import csv
 import json
-import matplotlib.pyplot as plt
-import numpy as np
+import os
 from time import time_ns
 
+import matplotlib.pyplot as plt
+import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.keras.layers import InputLayer, Conv2D, BatchNormalization, ReLU, Dropout, MaxPool2D, Flatten, Dense
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import BatchNormalization, Conv2D, Dense, Dropout, Flatten, InputLayer, MaxPool2D, ReLU
+from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.utils import plot_model
-from tensorflow.keras.models import load_model
 
 from mrsnet.cfg import Cfg
+
 
 class CNN:
   """Convolutional Neural Network for concentration prediction.
@@ -32,7 +32,8 @@ class CNN:
   This class implements CNN models for predicting metabolite concentrations
   from MRS spectra. It supports various architectures and training strategies.
 
-  Attributes:
+  Attributes
+  ----------
       model (str): Model architecture identifier
       metabolites (list): List of metabolite names to predict
       pulse_sequence (str): Pulse sequence type
@@ -50,7 +51,8 @@ class CNN:
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
     """Initialize a CNN model.
 
-    Args:
+    Parameters
+    ----------
         model (str): Model architecture identifier (e.g., 'cnn_small_softmax')
         metabolites (list): List of metabolite names to predict
         pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
@@ -77,7 +79,8 @@ class CNN:
   def __str__(self):
     """Get string representation of the model path.
 
-    Returns:
+    Returns
+    -------
         str: Model path string combining all parameters
     """
     n = os.path.join(self.model, "-".join(self.metabolites),
@@ -97,7 +100,8 @@ class CNN:
   def _freq_conv_layer(self, filter, c, s, dropout):
     """Add a frequency convolution layer to the CNN.
 
-    Args:
+    Parameters
+    ----------
         filter (int): Number of filters
         c (int): Convolution kernel size
         s (int): Stride size
@@ -118,7 +122,8 @@ class CNN:
   def _construct(self, input_shape, output_shape):
     """Construct the CNN architecture.
 
-    Args:
+    Parameters
+    ----------
         input_shape (tuple): Input tensor shape
         output_shape (tuple): Output tensor shape
     """
@@ -178,7 +183,7 @@ class CNN:
                             1, dropout1)
 
     for n_filters in [filter1, filter2]:
-      for ii in range(2):
+      for _l in range(2):
         self._freq_conv_layer(n_filters, (1, freq_convolution4), 1,        dropout1)
         self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
 
@@ -192,7 +197,8 @@ class CNN:
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
     """Train the CNN model on provided data.
 
-    Args:
+    Parameters
+    ----------
         d_data (list): Training data [spectra, concentrations]
         v_data (list, optional): Validation data [spectra, concentrations]. Defaults to None
         epochs (int): Number of training epochs
@@ -203,10 +209,12 @@ class CNN:
         screen_dpi (int, optional): Screen DPI setting. Defaults to 96
         train_dataset_name (str, optional): Name of training dataset. Defaults to ""
 
-    Returns:
+    Returns
+    -------
         tuple: (training_results, validation_results) dictionaries with MSE and MAE scores
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If data format is incorrect
     """
     devices = tf.config.list_logical_devices("GPU")
@@ -219,7 +227,7 @@ class CNN:
         print(f"GPU Devices: {devices}")
     if len(d_data) != 2:
       raise RuntimeError("d_data argument must be a list [spectra,conc]")
-    if v_data != None and len(v_data) != 2:
+    if v_data is not None and len(v_data) != 2:
       raise RuntimeError("v_data argument must be a list [spectra,conc]")
 
     if len(train_dataset_name) > 0:
@@ -229,14 +237,14 @@ class CNN:
       os.makedirs(folder)
 
     if verbose > 0:
-      print(f"# Train CNN {str(self)}")
+      print(f"# Train CNN {self!s}")
 
     d_inp = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
     d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
     train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
 
-    if v_data != None:
+    if v_data is not None:
       v_inp = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
       v_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
       v_inp = tf.reshape(v_inp,(v_inp.shape[0],v_inp.shape[1]*v_inp.shape[2],v_inp.shape[3],1))
@@ -300,7 +308,7 @@ class CNN:
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
-    if validation_data != None:
+    if validation_data is not None:
       validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
@@ -316,7 +324,7 @@ class CNN:
     if verbose > 0:
       print("# Evaluating")
     d_score = self.cnn_arch.evaluate(d_inp, d_out, verbose=(verbose > 0)*2)
-    if v_data != None:
+    if v_data is not None:
       v_score = self.cnn_arch.evaluate(v_inp, v_out, verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan])
@@ -333,12 +341,14 @@ class CNN:
   def predict(self, d_inp, reshape=True, verbose=0):
     """Make predictions on input data.
 
-    Args:
+    Parameters
+    ----------
         d_inp (numpy.ndarray): Input data tensor
         reshape (bool, optional): Whether to reshape input data. Defaults to True
         verbose (int, optional): Verbosity level. Defaults to 0
 
-    Returns:
+    Returns
+    -------
         numpy.ndarray: Predicted concentrations
     """
     if reshape:
@@ -346,13 +356,14 @@ class CNN:
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    data = tf.data.Dataset.from_tensor_slices((d_inp)).batch(32).with_options(options)
+    data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
     return np.array(self.cnn_arch.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 
   def save(self, folder):
     """Save the trained CNN model to disk.
 
-    Args:
+    Parameters
+    ----------
         folder (str): Directory to save the model
     """
     path=os.path.join(folder, "tf_model")
@@ -372,13 +383,15 @@ class CNN:
   def load(path):
     """Load a trained CNN model from disk.
 
-    Args:
+    Parameters
+    ----------
         path (str): Directory containing the saved model
 
-    Returns:
+    Returns
+    -------
         CNN: Loaded CNN model instance
     """
-    with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
+    with open(os.path.join(path, "tf_model", "mrsnet.json")) as f:
       data = json.load(f)
     model = CNN(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                 data['datatype'], data['norm'])
@@ -389,7 +402,8 @@ class CNN:
   def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
     """Save training results to files.
 
-    Args:
+    Parameters
+    ----------
         folder (str): Output folder for results
         history (dict): Training history
         d_score (list): Training scores
@@ -410,7 +424,7 @@ class CNN:
                         [""],
                         ["History"]])
       writer.writerow(keys)
-      writer.writerows(zip(*[history[key] for key in keys]))
+      writer.writerows(zip(*[history[key] for key in keys], strict=False))
     # Plot
     fig, axes = plt.subplots(1, 3)
     fig.suptitle(f"{self.model} Training Results")
@@ -443,34 +457,38 @@ class TimeHistory(keras.callbacks.Callback):
   def __init__(self, epochs):
     """Initialize time history callback.
 
-    Args:
+    Parameters
+    ----------
         epochs (int): Total number of epochs to track
     """
-    super(TimeHistory, self).__init__()
+    super().__init__()
     self.counter = 0
     self.times = np.zeros((epochs,2),dtype=np.int64)
 
   def on_train_begin(self, logs=None):
-    """Called at the beginning of training.
+    """Call at the beginning of training.
 
-    Args:
+    Parameters
+    ----------
         logs (dict, optional): Training logs. Defaults to None
     """
     self.counter = 0
 
   def on_epoch_begin(self, batch, logs=None):
-    """Called at the beginning of each epoch.
+    """Call at the beginning of each epoch.
 
-    Args:
+    Parameters
+    ----------
         batch (int): Batch number
         logs (dict, optional): Training logs. Defaults to None
     """
     self.times[self.counter,0] = time_ns()
 
   def on_epoch_end(self, batch, logs=None):
-    """Called at the end of each epoch.
+    """Call at the end of each epoch.
 
-    Args:
+    Parameters
+    ----------
         batch (int): Batch number
         logs (dict, optional): Training logs. Defaults to None
     """

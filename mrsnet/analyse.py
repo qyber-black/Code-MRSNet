@@ -10,17 +10,19 @@ This module provides functions for analyzing model performance,
 including error analysis, visualization, and result reporting.
 """
 
-import os
-import glob
-import warnings
-import numpy as np
-import json
 import csv
+import glob
+import json
+import os
+import warnings
+
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 from scipy.stats import linregress
 
 from mrsnet.cfg import Cfg
+
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
                   verbose=0, image_dpi=[300], screen_dpi=96):
@@ -29,7 +31,8 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   Performs comprehensive analysis of model performance including error metrics,
   visualizations, and result reporting.
 
-  Args:
+  Parameters
+  ----------
       model: Model object with predict method
       inp (numpy.ndarray): Input data
       out (numpy.ndarray): Expected output data
@@ -43,7 +46,8 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       image_dpi (list, optional): DPI for saved images. Defaults to [300]
       screen_dpi (int, optional): DPI for screen display. Defaults to 96
 
-  Returns:
+  Returns
+  -------
       tuple: Analysis results (varies by model type)
   """
   pred_op = getattr(model, "predict", None)
@@ -109,9 +113,9 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     print("Pulse Sequence: "+model.pulse_sequence)
     print('\n                       Concentrations')
     if len(out) > 0:
-      print('  %12s  %8s    %8s  %8s' % ('Metabolite', 'Predicted', 'Actual', 'Error'))
+      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:8s}    {out[l,0]:8s}  {pre[l,0]-out[l,0]:8s}')
     else:
-      print('  %12s  %8s' % ('Metabolite', 'Predicted'))
+      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:8s}')
     for l in range(0,inp.shape[0]):
       if id is None:
         print(f"Spectrum: {l}")
@@ -119,10 +123,10 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
         print(f"Spectrum: {id[l]}")
       if len(out) > 0:
         for k,m in enumerate(model.metabolites):
-          print('  %12s  %.8f    %.8f  %.8f' % (m, pre[l,k], out[l,k], pre[l,k]-out[l,k]))
+          print(f'  {m:12s}  {pre[l,k]:8f}    {out[l,k]:8f}  {pre[l,k]-out[l,k]:8f}')
       else:
         for k,m in enumerate(model.metabolites):
-          print('  %12s  %.8f' % (m, pre[l,k]))
+          print(f'  {m:12s}  {pre[l,k]:8f}')
 
   return pre, info, error
 
@@ -130,7 +134,8 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, screen_dpi):
   """Analyze model prediction errors.
 
-  Args:
+  Parameters
+  ----------
       model: Trained model
       pre: Predicted values
       out: Ground truth values
@@ -158,7 +163,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
   for l,m in enumerate(model.metabolites):
     try: # ignore regression failures
       slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
-    except:
+    except Exception:
       slope, intercept, r_value, p_value, std_err = np.NAN, np.NAN, np.NAN, np.NAN, np.NAN
       print("**ERROR**: linear regression failed")
     info[m] = {
@@ -270,7 +275,8 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
 def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi):
   """Analyze spectra reconstruction errors from autoencoder.
 
-  Args:
+  Parameters
+  ----------
       model: Trained autoencoder model
       pre: Predicted spectra
       inp: Input spectra
@@ -366,7 +372,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
       sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
       d = d[sel]
     sns.histplot(d, ax=axes[0,pre.shape[2]])
-    axes[0,pre.shape[2]].set_title(f"Total Error Dist.")
+    axes[0,pre.shape[2]].set_title("Total Error Dist.")
     axes[0,pre.shape[2]].set_xlabel("Error")
 
     with open(os.path.join(folder, prefix+"_spectra_errors.json"), 'w') as f:
@@ -408,7 +414,8 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
 def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
   """Plot predicted spectra comparison.
 
-  Args:
+  Parameters
+  ----------
       model: Trained model
       prefix (str): File prefix for output files
       s (int): Spectrum index
@@ -416,7 +423,8 @@ def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
       pre: Predicted spectra
       out: Ground truth spectra
 
-  Returns:
+  Returns
+  -------
       matplotlib.figure.Figure: Figure object
   """
   rs = pre.shape[0]*pre.shape[1]
@@ -425,7 +433,7 @@ def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
     axs = axs.reshape(1,3) # Undo subplot change of indices
   fig.suptitle(f"Spectra Signal Prediction ({prefix})")
 
-  X = np.arange(model.high_ppm,model.low_ppm,(model.low_ppm-model.high_ppm)/pre.shape[2])
+  X = np.arange(model.high_ppm,model.low_ppm,(model.low_ppm-model.high_ppm)/pre.shape[2])  # noqa: N806
 
   r = 0
   for ac in range(0,pre.shape[0]):

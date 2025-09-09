@@ -16,23 +16,27 @@ including FID, PRESS, STEAM, and MEGAPRESS for spectral simulation.
 
 import os
 import pickle
-import pygamma as pg
+
 import numpy as np
+import pygamma as pg
 
 from mrsnet.cfg import Cfg
+
 
 def fid(spin_system):
   """Simulate FID (Free Induction Decay) pulse sequence.
 
-  Args:
+  Parameters
+  ----------
       spin_system: PyGamma spin system object
 
-  Returns:
+  Returns
+  -------
       pg.TTable1D: FID spectrum table
   """
   sys_hamiltonian = pg.Hcs(spin_system) + pg.HJ(spin_system)
   read = pg.Fm(spin_system, "1H")
-  ACQ = pg.acquire1D(pg.gen_op(read), sys_hamiltonian, 0.000001)
+  ACQ = pg.acquire1D(pg.gen_op(read), sys_hamiltonian, 0.000001)  # noqa: N806
 
   sigma = pg.sigma_eq(spin_system)
   sigma0 = pg.Ixpuls(spin_system, sigma, "1H", 90.0)
@@ -42,12 +46,14 @@ def fid(spin_system):
 def steam(spin_system, te=20, tm=10):
   """Simulate STEAM (Stimulated Echo Acquisition Mode) pulse sequence.
 
-  Args:
+  Parameters
+  ----------
       spin_system: PyGamma spin system object
       te (int, optional): Echo time in ms. Defaults to 20
       tm (int, optional): Mixing time in ms. Defaults to 10
 
-  Returns:
+  Returns
+  -------
       pg.TTable1D: STEAM spectrum table
   """
   # the isotope string used to sort/select the metabolites of interest is passed
@@ -62,10 +68,10 @@ def steam(spin_system, te=20, tm=10):
   tm = tm / 1000.0
 
   # set up steady state and observation variables
-  H = pg.Hcs(spin_system) + pg.HJ(spin_system)
-  D = pg.Fm(spin_system, obs_iso)
+  H = pg.Hcs(spin_system) + pg.HJ(spin_system)  # noqa: N806
+  D = pg.Fm(spin_system, obs_iso)  # noqa: N806
   ac = pg.acquire1D(pg.gen_op(D), H, 0.000001)
-  ACQ = ac
+  ACQ = ac  # noqa: N806
 
   # excite, propagate, refocus and acquire the data
   #
@@ -76,8 +82,8 @@ def steam(spin_system, te=20, tm=10):
   # add the four back into one normalized matrix.
 
   dephase_ang = [0.0, 90.0, 180.0, 270.0]
-  Udelay1 = pg.prop(H, te * 0.5)
-  Udelay2 = pg.prop(H, tm)
+  Udelay1 = pg.prop(H, te * 0.5)  # noqa: N806
+  #Udelay2 = pg.prop(H, tm)
 
   sigma0 = pg.sigma_eq(spin_system)
   # first 90 pulse, excite spins
@@ -89,7 +95,7 @@ def steam(spin_system, te=20, tm=10):
   # 90 pulses. This is done by creating 4 copies of spin state and repeating
   # the rest of the sequence for four different rotations around z-axis
   sigma_mult = []
-  for i in dephase_ang:
+  for _i in dephase_ang:
     sigma_mult.append(pg.gen_op(sigma0))
 
   for i, angle in enumerate(dephase_ang):
@@ -128,14 +134,16 @@ def steam(spin_system, te=20, tm=10):
 def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
   """Simulate MEGAPRESS pulse sequence.
 
-  Args:
+  Parameters
+  ----------
       spin_system: PyGamma spin system object
       omega (float): B0 field strength in Hz
       te (int, optional): Echo time in ms. Defaults to 68
       high_ppm (float, optional): High PPM limit. Defaults to -7.5
       low_ppm (float, optional): Low PPM limit. Defaults to 1
 
-  Returns:
+  Returns
+  -------
       list: List of spectrum tables for edit_off and edit_on acquisitions
   """
   # order of pulse objects from VeSPA
@@ -147,39 +155,39 @@ def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
   for ps_name in pulse_names:
     with open(os.path.join(Cfg.val['path_root'], 'mrsnet', 'simulators',
                            'pygamma', 'pulses', ps_name + '.vps'), 'rb') as ps_filename:
-      rf_pulses.append(pickle.load(ps_filename, encoding="latin1"))
+      rf_pulses.append(pickle.load(ps_filename, encoding="latin1"))  # noqa: S301
 
   # spectrometer frequency in MHz
   specfreq = omega
 
   # initial evolution time after 90,before 1st 180
-  tinitial = float(6.6) / 1000.0  # 6600 for svs_edit
+  tinitial = 6.6 / 1000.0  # 6600 for svs_edit
 
   # echo time
   te = float(te) / 1000.0
 
   # Pulse centers in ppm for editing pulses
-  PulseCenterPPM_local = float(3)  # 3.0
-  PulseCenterPPM_edit_on = float(1.9)  # 1.9
-  PulseCenterPPM_edit_off = float(7.4)  # 7.5
+  PulseCenterPPM_local = float(3)  # 3.0  # noqa: N806
+  PulseCenterPPM_edit_on = 1.9  # 1.9  # noqa: N806
+  PulseCenterPPM_edit_off = 7.4  # 7.5  # noqa: N806
 
   bw_pulse_bottom = float(2000)  # 2600.0 - Bandwidth of the pulse at the bottom
 
   min_peak_hz = (-low_ppm) * specfreq  # 224 Hz at 3T the lowest spin ~1.8 ppm
   max_peak_hz = (-high_ppm) * specfreq  # 570 Hz at 3T the highest frequency spin (~4.6 ppm*spefreq)
-  freqoff1 = min_peak_hz  # this is the start of the sweep
+  #freqoff1 = min_peak_hz  # this is the start of the sweep
   freqoff2 = -(bw_pulse_bottom / 2.0) + min_peak_hz
   freqoff3 = freqoff2
   freqfinal = (bw_pulse_bottom / 2.0) + max_peak_hz
 
   # number of spatial points (for both x,y)
-  numxy_points = int(5)
+  numxy_points = 5
 
   # Number of Points in the z,x,y directions for spatial simulation
-  Points1 = 5
-  Points2 = numxy_points
-  Points3 = numxy_points
-  Step = (Points2 * specfreq) / (
+  Points1 = 5  # noqa: N806
+  Points2 = numxy_points  # noqa: N806
+  Points3 = numxy_points  # noqa: N806
+  Step = (Points2 * specfreq) / (  # noqa: N806
           freqfinal - freqoff2)  # may make is (freqfinal-freqoff2)/Points2 and remove specfreq from eqn.
 
   #  Read Pulse Files, Initialize Waveforms --------------------------
@@ -205,9 +213,9 @@ def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
   # - get propagator for all steps of the shaped pulse
 
   # Pulse offsets in  HZ (should be negative or 0)
-  B1_offset_local = (0 - PulseCenterPPM_local) * specfreq
-  B1_offset_edit_on = (0 - PulseCenterPPM_edit_on) * specfreq
-  B1_offset_edit_off = (0 - PulseCenterPPM_edit_off) * specfreq
+  B1_offset_local = (0 - PulseCenterPPM_local) * specfreq  # noqa: N806
+  B1_offset_edit_on = (0 - PulseCenterPPM_edit_on) * specfreq  # noqa: N806
+  B1_offset_edit_off = (0 - PulseCenterPPM_edit_off) * specfreq  # noqa: N806
 
   # # ------ Excite Pulse
   # vol1, excite_length = pulse2op(rf_pulses[0],
@@ -283,18 +291,18 @@ def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
   print('     t5: ' + str(t5))
 
   # set up steady state and observation variables
-  H = pg.Hcs(spin_system) + pg.HJ(spin_system)
-  D = pg.Fm(spin_system, obs_iso)
+  H = pg.Hcs(spin_system) + pg.HJ(spin_system)  # noqa: N806
+  D = pg.Fm(spin_system, obs_iso)  # noqa: N806
   # Set up acquisition
   ac = pg.acquire1D(pg.gen_op(D), H, 0.000001)
-  ACQ = ac
+  ACQ = ac  # noqa: N806
 
   # Calculate delays here (before spatial loop)
-  Udelay1 = pg.prop(H, t1)  # First evolution time
-  Udelay2 = pg.prop(H, t2)  # Second evolution time
-  Udelay3 = pg.prop(H, t3)  # Third evolution time
-  Udelay4 = pg.prop(H, t4)  # Fourth evolution time
-  Udelay5 = pg.prop(H, t5)  # Fifth evolution time
+  Udelay1 = pg.prop(H, t1)  # First evolution time  # noqa: N806
+  Udelay2 = pg.prop(H, t2)  # Second evolution time  # noqa: N806
+  Udelay3 = pg.prop(H, t3)  # Third evolution time  # noqa: N806
+  Udelay4 = pg.prop(H, t4)  # Fourth evolution time  # noqa: N806
+  Udelay5 = pg.prop(H, t5)  # Fifth evolution time  # noqa: N806
 
   # -- Do common first steps outside of spatial loop
 
@@ -374,7 +382,8 @@ def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
   return mx_tables
 
 def pulse2op(pulse_obj, gyratio, pname, spin_system, obs_iso, offset=0.0):
-  """
+  """pulse2op function.
+
   A Vespa-Simulation pulse object is passed in via pulse_obj input. The
   gyratio input is a float gyromagnetic ratio, pname is a string name for
   the pulse waveform creates, obs_iso is a string indicating the isotope
@@ -390,7 +399,6 @@ def pulse2op(pulse_obj, gyratio, pname, spin_system, obs_iso, offset=0.0):
   conversion. This depends on our observe_isotope, since the pulse
   is not isotope specific, but the spins we expect it to affect,
   is. (e.g. we use 42576.0 for 1H to covert mT and RAD2DEG for phase)
-
   """
   step = float(pulse_obj['dwell_time']) * 1e-6  # in usec
   wave = pulse_obj['waveform']
@@ -400,7 +408,7 @@ def pulse2op(pulse_obj, gyratio, pname, spin_system, obs_iso, offset=0.0):
 
   pulse = pg.row_vector(len(wave))
   ptime = pg.row_vector(len(wave))
-  for j, val in enumerate(zip(ampl, phas)):
+  for j, val in enumerate(zip(ampl, phas, strict=False)):
     pulse.put(pg.complex(val[0], val[1]), j)
     ptime.put(pg.complex(step, 0), j)
   plength = pulse.size() * step  # total pulse duration
@@ -419,17 +427,19 @@ def pulse2op(pulse_obj, gyratio, pname, spin_system, obs_iso, offset=0.0):
 def apply_crushed_180_rf(sys, sigma, dephase_ang=[0.0, 90.0, 180.0, 270.0], type='crusher'):
   """Apply crushed 180° RF pulse.
 
-  Args:
+  Parameters
+  ----------
       sys: Spin system object
       sigma: Density matrix
       dephase_ang (list, optional): Dephasing angles. Defaults to [0.0, 90.0, 180.0, 270.0]
       type (str, optional): Pulse type. Defaults to 'crusher'
 
-  Returns:
+  Returns
+  -------
       Density matrix after crushed 180° RF pulse
   """
   sigma_mult = []
-  for i in dephase_ang:
+  for _i in dephase_ang:
     sigma_mult.append(pg.gen_op(sigma))
 
   for i, angle in enumerate(dephase_ang):
@@ -460,13 +470,15 @@ def apply_crushed_rf(sys, sigma, pulse_op, type='crusher'):
   angles in dephase_ang if type='bipolar'. The four matrices are summed
   into one density matrix and divided by 4. A single density matrix is returned.
 
-  Args:
+  Parameters
+  ----------
       sys: Spin system object
       sigma: Density matrix
       pulse_op: RF pulse operator
       type (str, optional): Pulse type ('crusher' or 'bipolar'). Defaults to 'crusher'
 
-  Returns:
+  Returns
+  -------
       Density matrix after crushed RF pulse
 
   after the RF pulse, any spins that did not experience at least a 90 deg RF
@@ -477,7 +489,7 @@ def apply_crushed_rf(sys, sigma, pulse_op, type='crusher'):
   dephase_ang = [0.0, 90.0, 180.0, 270.0]
 
   sigma_mult = []
-  for i in dephase_ang:
+  for _i in dephase_ang:
     sigma_mult.append(pg.gen_op(sigma))
 
   for i, angle in enumerate(dephase_ang):
@@ -500,12 +512,14 @@ def apply_crushed_rf(sys, sigma, pulse_op, type='crusher'):
 def press(spin_system, te1=34, te2=34):
   """Simulate PRESS (Point Resolved Spectroscopy) pulse sequence.
 
-  Args:
+  Parameters
+  ----------
       spin_system: PyGamma spin system object
       te1 (int, optional): First echo time in ms. Defaults to 34
       te2 (int, optional): Second echo time in ms. Defaults to 34
 
-  Returns:
+  Returns
+  -------
       pg.TTable1D: PRESS spectrum table
   """
   #----------------------------------------------------------------------
@@ -529,21 +543,21 @@ def press(spin_system, te1=34, te2=34):
   te2 = te2 / 1000.0
 
   # set up steady state and observation variables
-  H   = pg.Hcs(spin_system) + pg.HJ(spin_system)
-  D   = pg.Fm(spin_system, obs_iso)
+  H   = pg.Hcs(spin_system) + pg.HJ(spin_system)  # noqa: N806
+  D   = pg.Fm(spin_system, obs_iso)  # noqa: N806
   ac  = pg.acquire1D(pg.gen_op(D), H, 0.000001)
-  ACQ = ac
+  ACQ = ac  # noqa: N806
   sigma0 = pg.sigma_eq(spin_system)
 
   # excite, propagate, refocus and acquire the data
   sigma1 = pg.Iypuls(spin_system, sigma0, obs_iso, 90.0)
-  Udelay = pg.prop(H, te1*0.5)
+  Udelay = pg.prop(H, te1*0.5)  # noqa: N806
   sigma0 = pg.evolve(sigma1, Udelay)
   sigma1 = pg.Iypuls(spin_system, sigma0, obs_iso, 180.0)
-  Udelay = pg.prop(H, (te1+te2)*0.5)
+  Udelay = pg.prop(H, (te1+te2)*0.5)  # noqa: N806
   sigma0 = pg.evolve(sigma1, Udelay)
   sigma1 = pg.Iypuls(spin_system, sigma0, obs_iso, 180.0)
-  Udelay = pg.prop(H, te2*0.5)
+  Udelay = pg.prop(H, te2*0.5)  # noqa: N806
   sigma0 = pg.evolve(sigma1, Udelay)
 
   # instantiate and save transition table of simulation results

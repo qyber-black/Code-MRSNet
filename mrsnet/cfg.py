@@ -4,9 +4,32 @@
 # SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import os
-import matplotlib.pyplot as plt
+"""Configuration management module for MRSNet.
+
+This module provides centralized configuration management for the MRSNet package.
+It handles loading configuration values from multiple sources with a clear precedence
+order, manages data directories, and provides development flags for testing.
+
+The configuration system supports:
+- Default values defined in the code
+- Root configuration file (cfg.json) that overrides defaults
+- User configuration file (~/.config/mrsnet.json) that overrides both
+- Environment variables for development flags
+- Automatic creation of required data directories
+
+Key features:
+- Static configuration class with no instances needed
+- Hierarchical configuration loading with clear precedence
+- Development flags for testing and debugging
+- Automatic data directory management
+- Matplotlib integration for plotting defaults
+"""
+
 import json
+import os
+
+import matplotlib.pyplot as plt
+
 
 class Cfg:
   """Configuration management for MRSNet.
@@ -18,11 +41,13 @@ class Cfg:
   1. ROOT_PATH/cfg.json (generated after first run; overwrites defaults)
   2. ~/.config/mrsnet.json (user config; overwrites cfg.json and defaults)
 
-  Attributes:
+  Attributes
+  ----------
       val (dict): Dictionary containing all configuration values
       dev_flags (set): Set of development flags from MRSNET_DEV environment variable
       file (str): Path to user configuration file
   """
+
   # Default configuration - do not overwrite here but set alternatives in file
   # These are static variables for the class, accessed via the class. No object
   # of this class should be used; all methods are static.
@@ -30,7 +55,7 @@ class Cfg:
   # Change these values in ROOT_PATH/cfg.json (generated after first run; overwrites
   # defaults here) or ~/config/mrsnet.json (not generated; overwrites cfg.json and
   # defaults here).
-  val = {
+  val = {  # noqa: RUF012
     'path_root': None,        # MRSNet root path
     'path_basis': None,       # Save path for basis, searched first
     'path_simulation': None,  # Save path for simulation, searched first
@@ -78,7 +103,7 @@ class Cfg:
   # * selectgpo_optimse_noload - do not load existing results for SelectGPO
   # * selectgpo_no_search - only use existing results; do not execute GPO search
   # * spectrum_set_phase_correct: show phase correction effect
-  dev_flags = set()
+  dev_flags = set()  # noqa: RUF012
   file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod
@@ -92,7 +117,8 @@ class Cfg:
     4. Setting up matplotlib defaults
     5. Loading development flags from environment
 
-    Args:
+    Parameters
+    ----------
         bin_path (str): Path to the MRSNet binary/script
     """
     # Root path of mrsnet
@@ -103,7 +129,7 @@ class Cfg:
     root_cfg_vals = {}
     for fc in [root_cfg_file, Cfg.file]:
       if os.path.isfile(fc):
-        with open(fc, "r") as fp:
+        with open(fc) as fp:
           js = json.load(fp)
           if fc == root_cfg_file:
             root_cfg_vals = js
@@ -122,7 +148,7 @@ class Cfg:
       "path_benchmark": "benchmark"
     }
     for p in paths:
-      if Cfg.val[p] == None:
+      if Cfg.val[p] is None:
         Cfg.val[p] = os.path.join(data_dir,paths[p])
       if not os.path.isdir(Cfg.val[p]):
         os.makedirs(Cfg.val[p])
@@ -138,7 +164,7 @@ class Cfg:
         Cfg.val[s].append(sp)
         changed = True
     # Setup plot defaults
-    if Cfg.val["screen_dpi"] == None:
+    if Cfg.val["screen_dpi"] is None:
       Cfg.val["screen_dpi"] = Cfg._screen_dpi()
     plt.rcParams["figure.figsize"] = Cfg.val['figsize']
     # Store configs in ROOT/mrsnet.json if it does not exist
@@ -168,10 +194,12 @@ class Cfg:
     Searches for directories starting with 'su-' in the basis search paths
     and returns a list of available SU basis sets.
 
-    Args:
+    Parameters
+    ----------
         reload (bool, optional): Force reload of SU bases. Defaults to False.
 
-    Returns:
+    Returns
+    -------
         list: List of SU basis set names (e.g., ['su-3tskyra', 'su-7t'])
     """
     if reload or not hasattr(Cfg,'_su_bases'):
@@ -187,10 +215,12 @@ class Cfg:
   def dev(flag):
     """Check if a development flag is set.
 
-    Args:
+    Parameters
+    ----------
         flag (str): Development flag to check
 
-    Returns:
+    Returns
+    -------
         bool: True if the flag is set, False otherwise
     """
     return flag in Cfg.dev_flags
@@ -202,7 +232,8 @@ class Cfg:
     Attempts to detect the screen DPI using the screeninfo library.
     Falls back to default DPI if detection fails.
 
-    Returns:
+    Returns
+    -------
         float: Screen DPI value
     """
     # DPI for plots on screen
@@ -212,11 +243,11 @@ class Cfg:
       return Cfg.val['default_screen_dpi']
     try:
       m = get_monitors()[0]
-    except:
+    except Exception:
       return Cfg.val['default_screen_dpi']
     from math import hypot
     try:
       dpi = hypot(m.width, m.height) / hypot(m.width_mm, m.height_mm) * 25.4
       return dpi # set in cfg.json if this is not working
-    except:
+    except Exception:
       return Cfg.val['default_screen_dpi']

@@ -11,11 +11,12 @@ This module provides interfaces to the FID-A MATLAB toolbox for
 simulating MRS basis spectra using various pulse sequences.
 """
 
-import os
 import errno
+import os
 import subprocess
 
 from mrsnet.cfg import Cfg
+
 
 def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, save_dir):
   """Generate FID-A spectra using MATLAB.
@@ -29,7 +30,8 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
       source (str): FID-A source type ("fid-a" or "fid-a-2d")
       save_dir (str): Directory to save generated spectra
 
-  Raises:
+  Raises
+  ------
       RuntimeError: If source type is unknown or MATLAB is not installed
   """
   if source == "fid-a":
@@ -56,7 +58,7 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
   matlab_command += script+";exit;exit;"
 
   try:
-    p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])
+    p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])  # noqa: S603, S607
   except OSError as e:
     if e.errno == errno.ENOENT:
       raise RuntimeError('Matlab is not installed on this system! Can\'t simulate FID-A spectra.\n'
@@ -92,7 +94,8 @@ def fida_metabolite_name(name):
   Args:
       name (str): Metabolite name to convert
 
-  Returns:
+  Returns
+  -------
       str: FID-A compatible metabolite name
   """
   # Converts to the expected value for FID-A.

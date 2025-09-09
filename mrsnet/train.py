@@ -11,18 +11,19 @@ This module provides various training strategies including cross-validation,
 data splitting, and model training utilities.
 """
 
-import os
 import glob
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import json
-from tqdm import tqdm
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 from scipy.stats import wasserstein_distance
 
 from mrsnet.analyse import analyse_model
-from mrsnet.getfolder import get_folder
 from mrsnet.cfg import Cfg
+from mrsnet.getfolder import get_folder
+
 
 class Train:
   """Base class for training strategies.
@@ -30,7 +31,8 @@ class Train:
   This class provides the foundation for various training strategies
   including cross-validation and data splitting.
 
-  Attributes:
+  Attributes
+  ----------
       k (int): Number of folds or buckets
       _bucket_idx (list): Bucket indices for data splitting
   """
@@ -38,7 +40,8 @@ class Train:
   def __init__(self,k):
     """Initialize training strategy.
 
-    Args:
+    Parameters
+    ----------
         k (int): Number of folds or buckets
     """
     self.k=k
@@ -50,7 +53,8 @@ class Train:
     Creates histograms showing the distribution of output values
     across different data buckets for visualization.
 
-    Args:
+    Parameters
+    ----------
         d_out (numpy.ndarray): Output data tensor
         folder (str): Folder to save plots
         image_dpi (int): DPI for saved images
@@ -96,7 +100,8 @@ class Train:
                       train_dataset_name, verbose, image_dpi, screen_dpi):
     """Perform k-fold cross-validation.
 
-    Args:
+    Paramters
+    ---------
         model: Model to train
         epochs (int): Number of training epochs
         batch_size (int): Batch size for training
@@ -107,7 +112,8 @@ class Train:
         image_dpi (list): Image DPI settings
         screen_dpi (int): Screen DPI setting
 
-    Returns:
+    Returns
+    -------
         tuple: (train_results, validation_results, has_error)
     """
     # Cross validation
@@ -204,7 +210,8 @@ class Train:
   def _plot_cross_validate(self, model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi):
     """Plot cross-validation results.
 
-    Args:
+    Parameters
+    ----------
         model: Trained model
         train_res (dict): Training results
         val_res (dict): Validation results
@@ -249,7 +256,7 @@ class Train:
       ax21 = fig.add_subplot(gs[0,2:3])
 
     if has_error:
-      ax00.set_title(f"Train Error Distributions")
+      ax00.set_title("Train Error Distributions")
       if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
         # Sample distributions for large number of values, depending on cfg.
         sns.boxplot(data=[train_res['error'][k][np.random.randint(0,len(train_res['error'][k]),
@@ -262,7 +269,7 @@ class Train:
       ax00.set_xlabel("Fold")
       ax00.set_ylabel("Error")
 
-      ax01.set_title(f"Validation Error Distributions")
+      ax01.set_title("Validation Error Distributions")
       if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
         # Sample distributions for large number of values, depending on cfg.
         sns.boxplot(data=[val_res['error'][k][np.random.randint(0,len(val_res['error'][k]),
@@ -304,7 +311,7 @@ class Train:
       ax11.set_xlabel("Fold")
 
     ax20.set_title("Train Metrics")
-    keys = [k for k in sorted(train_res.keys())]
+    keys = sorted(train_res.keys())
     ymin2x = []
     keys.remove("error")
     ymax2x = []
@@ -369,7 +376,8 @@ class NoValidation(Train):
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     """Train model without validation split.
 
-    Args:
+    Parameters
+    ----------
         model: Model to train
         data: Training data
         epochs (int): Number of training epochs
@@ -403,14 +411,16 @@ class Split(Train):
   This class implements a simple train/validation split based on
   a specified percentage of data for validation.
 
-  Attributes:
+  Attributes
+  ----------
       p (float): Percentage of data to use for validation
   """
 
   def __init__(self,p):
     """Initialize split trainer.
 
-    Args:
+    Parameters
+    ----------
         p (float): Percentage of data to use for validation (0-1)
     """
     Train.__init__(self,2)
@@ -420,7 +430,8 @@ class Split(Train):
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     """Train model with percentage-based split.
 
-    Args:
+    Parameters
+    ----------
         model: Model to train
         data: Training data
         epochs (int): Number of training epochs
@@ -481,14 +492,16 @@ class DuplexSplit(Train):
   This class implements duplex splitting, which uses distance-based
   selection to create representative train/validation splits.
 
-  Attributes:
+  Attributes
+  ----------
       p (float): Percentage of data to use for validation
   """
 
   def __init__(self,p):
     """Initialize duplex split trainer.
 
-    Args:
+    Paramters
+    ---------
         p (float): Percentage of data to use for validation (0-1)
     """
     Train.__init__(self,2)
@@ -498,7 +511,8 @@ class DuplexSplit(Train):
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     """Train model with duplex split.
 
-    Args:
+    Parameters
+    ----------
         model: Model to train
         data: Training data
         epochs (int): Number of training epochs
@@ -605,7 +619,8 @@ class KFold(Train):
   def __init__(self,k):
     """Initialize K-fold trainer.
 
-    Args:
+    Parameters
+    ----------
         k (int): Number of folds for cross-validation
     """
     Train.__init__(self,k)
@@ -614,7 +629,8 @@ class KFold(Train):
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     """Train model with K-fold cross-validation.
 
-    Args:
+    Parameters
+    ----------
         model: Model to train
         data: Training data
         epochs (int): Number of training epochs
@@ -663,7 +679,8 @@ class DuplexKFold(Train):
   def __init__(self,k):
     """Initialize duplex K-fold trainer.
 
-    Args:
+    Parameters
+    ----------
         k (int): Number of folds for cross-validation
     """
     Train.__init__(self,k)
@@ -672,7 +689,8 @@ class DuplexKFold(Train):
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
     """Train model with duplex K-fold cross-validation.
 
-    Args:
+    Parameters
+    ----------
         model: Model to train
         data: Training data
         epochs (int): Number of training epochs

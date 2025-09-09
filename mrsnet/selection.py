@@ -11,19 +11,19 @@ Quasi-Monte Carlo (QMC), Gaussian Process Optimization (GPO), and Genetic
 Algorithms (GA) for finding optimal hyperparameters.
 """
 
+import csv
+import json
 import os
+import random
 import subprocess
 import time
-import json
-import csv
+
+import matplotlib.pyplot as plt
 import numpy as np
 import sobol_seq
-import random
-import matplotlib.pyplot as plt
 
-from mrsnet.grid import Grid
-from mrsnet.dataset import Dataset
 from mrsnet.cfg import Cfg
+
 
 class Select:
   """Main model selection class for hyperparameter optimization.
@@ -31,7 +31,8 @@ class Select:
   This class provides a unified interface for various model selection strategies
   including grid search, QMC, GPO, and GA optimization methods.
 
-  Attributes:
+  Attributes
+  ----------
       metabolites (list): List of metabolite names
       dataset (str): Path to dataset
       epochs (int): Number of training epochs
@@ -51,7 +52,8 @@ class Select:
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
     """Initialize model selection.
 
-    Args:
+    Parameters
+    ----------
         remote (str): Remote execution configuration (format: "host:user:tasks:wait")
         metabolites (list): List of metabolite names
         dataset (str): Path to dataset
@@ -91,7 +93,7 @@ class Select:
       if self.verbose > 0:
         print("# Remote Sync")
       cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "sync", self.dataset]
-      p = subprocess.run(cmd, capture_output=True)
+      p = subprocess.run(cmd, capture_output=True)  # noqa: S603
       output = p.stdout.decode("utf-8").split("\n")
       if self.verbose > 0:
         for l in output:
@@ -109,7 +111,8 @@ class Select:
   def _add_task(self,key_vals,path_model):
     """Add a new optimization task.
 
-    Args:
+    Parameters
+    ----------
         key_vals (dict): Dictionary of parameter values for the task
         path_model (str): Base path for model storage
     """
@@ -166,8 +169,8 @@ class Select:
         model_str += str(args['model_' + marg])
         del args['model_' + marg]
       args['model'] = model_str
-      from mrsnet.ae_quantifier import Autoencoder_quantifier
-      model_name = str(Autoencoder_quantifier(model_str,self.metabolites, self.pulse_sequence,
+      from mrsnet.ae_quantifier import AutoencoderQuantifier
+      model_name = str(AutoencoderQuantifier(model_str,self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
 
     else:
@@ -219,7 +222,7 @@ class Select:
           if len(file_s) > 1:
             try:
               repeat_id = int(file_s[-1])
-            except:
+            except Exception:  # noqa: S110
               pass
           if (repeat_id > 0 and
               fn == trainer+"-"+str(repeat_id) and
@@ -250,7 +253,8 @@ class Select:
   def _run_tasks(self, load_only=False):
     """Run all tasks in the selection process.
 
-    Args:
+    Parameters
+    ----------
         load_only (bool, optional): If True, only load existing results without running new tasks. Defaults to False.
     """
     counter = 1
@@ -320,11 +324,12 @@ class Select:
   def _run(self,args):
     """Run a single training task.
 
-    Args:
+    Parameters
+    ----------
         args: Task arguments containing model parameters
     """
     cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'train',
-           '--metabolites', *[m for m in self.metabolites],
+           '--metabolites', *list(self.metabolites),
            '--dataset', self.dataset,
            '--epochs', str(self.epochs),
            '--validate', str(self.validate)]
@@ -344,7 +349,7 @@ class Select:
       cmd += ['-v']*self.verbose
       print('# Run '+' '.join(cmd[3:]))
     try:
-      p = subprocess.Popen(cmd)
+      p = subprocess.Popen(cmd)  # noqa: S603
     except OSError as e:
       raise RuntimeError('MRSNet training failed') from e
     p.wait()
@@ -352,7 +357,8 @@ class Select:
   def _run_remote(self,id,all):
     """Run a task remotely via SSH.
 
-    Args:
+    Parameters
+    ----------
         id: Task identifier
         all: List of all tasks with their status and commands
     """
@@ -360,7 +366,7 @@ class Select:
 
     if all[id][0] == 'run':
       cmd[4] = "check"
-      p = subprocess.run(cmd, capture_output=True)
+      p = subprocess.run(cmd, capture_output=True)  # noqa: S603
       output = p.stdout.decode("utf-8").split("\n")
       if self.verbose > 0:
         for l in output[:-2]:
@@ -373,7 +379,7 @@ class Select:
     elif all[id][0] == 'wait':
       if len([l for l in all if l[0] == 'run']) < self.remote_tasks:
         cmd[4] = "run"
-        cmd += ['--metabolites', *[m for m in self.metabolites],
+        cmd += ['--metabolites', *list(self.metabolites),
                 '--dataset', self.dataset,
                 '--epochs', str(self.epochs),
                 '--validate', str(self.validate)]
@@ -389,7 +395,7 @@ class Select:
             cmd.append(all[id][1][a])
           else:
             cmd.append(str(all[id][1][a]))
-        p = subprocess.run(cmd, capture_output=True)
+        p = subprocess.run(cmd, capture_output=True)  # noqa: S603
         output = p.stdout.decode("utf-8").split("\n")
         if self.verbose > 0:
           for l in output[:-2]:
@@ -400,27 +406,29 @@ class Select:
   def _load_performance(self, model_path, fold):
     """Load performance metrics from a trained model.
 
-    Args:
+    Parameters
+    ----------
         model_path (str): Path to the trained model
         fold (str): Fold identifier for cross-validation
 
-    Returns:
+    Returns
+    -------
         dict: Performance metrics including loss and MAE
     """
     try:
       if len(fold) == 0:
         if self.model_str == "ae_fc":                       # FIXME: I insert a self.model_str in __init__() to make here recognize the mddel string, training autoencoder produces the spectra_errors
-          with open(os.path.join(model_path, "train_spectra_errors.json"), 'r') as f:
+          with open(os.path.join(model_path, "train_spectra_errors.json")) as f:
             data = json.load(f)
           train_p = [data['total']['abserror']['mean']]  # total MAE
-          with open(os.path.join(model_path, "validation_spectra_errors.json"), 'r') as f:
+          with open(os.path.join(model_path, "validation_spectra_errors.json")) as f:
             data = json.load(f)
           val_p = [data['total']['abserror']['mean']]  # total MAE
         else:
-          with open(os.path.join(model_path,"train_concentration_errors.json"), 'r') as f:
+          with open(os.path.join(model_path,"train_concentration_errors.json")) as f:
             data = json.load(f)
           train_p = [data['total']['abserror']['mean']] # total MAE
-          with open(os.path.join(model_path,"validation_concentration_errors.json"), 'r') as f:
+          with open(os.path.join(model_path,"validation_concentration_errors.json")) as f:
             data = json.load(f)
           val_p = [data['total']['abserror']['mean']] # total MAE
       else:
@@ -429,17 +437,17 @@ class Select:
         f_cnt = 0
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
           if self.model_str == "ae_fc":
-            with open(os.path.join(model_path, "fold-" + str(f_cnt), "train_spectra_errors.json"), 'r') as f:
+            with open(os.path.join(model_path, "fold-" + str(f_cnt), "train_spectra_errors.json")) as f:
               data = json.load(f)
             train_p.append(data['total']['abserror']['mean'])  # total MAE
-            with open(os.path.join(model_path, "fold-" + str(f_cnt), "validation_spectra_errors.json"), 'r') as f:
+            with open(os.path.join(model_path, "fold-" + str(f_cnt), "validation_spectra_errors.json")) as f:
               data = json.load(f)
             val_p.append(data['total']['abserror']['mean'])  # total MAE
           else:
-            with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json"), 'r') as f:
+            with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json")) as f:
               data = json.load(f)
             train_p.append(data['total']['abserror']['mean']) # total MAE
-            with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json"), 'r') as f:
+            with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json")) as f:
               data = json.load(f)
             val_p.append(data['total']['abserror']['mean']) # total MAE
           f_cnt += 1
@@ -453,7 +461,8 @@ class Select:
   def _save_performance(self, collection_name, var_keys, fix_keys):
     """Save performance results to CSV files.
 
-    Args:
+    Parameters
+    ----------
         collection_name (str): Name of the collection being optimized
         var_keys (list): List of variable parameter keys
         fix_keys (list): List of fixed parameter keys
@@ -504,7 +513,7 @@ class Select:
     train_error = [np.mean(self.train_performance[idx[p]]) for p in range(0,len(self.val_performance))]
     top_n = np.min([len(self.val_performance),50])
     top_n = np.max(np.argwhere(np.array(val_error[:top_n]) < 999999.0)) # Don't plot failed
-    Y = np.arange(2*len(val_error),1,-2)
+    Y = np.arange(2*len(val_error),1,-2)  # noqa: N806
     ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
             label="Val. Error", color="#4878D0", zorder=1)
     ax.barh(y=Y[:top_n]-0.75, width=train_error[:top_n], height=0.6, left=0, align='center',
@@ -532,16 +541,16 @@ class Select:
     # Plot distributions across single-parameter groups
     x_max=1
     for group_id in var_keys:
-      m = np.max(len(set([str(self.key_vals[p][group_id]) for p in range(0,len(self.val_performance))])))
+      m = np.max(len(set([str(self.key_vals[p][group_id]) for p in range(0,len(self.val_performance))])))  # noqa: C403
       if m > x_max:
         x_max = m
-    X = np.arange(1,x_max+1)
+    X = np.arange(1,x_max+1)  # noqa: N806
     fig, ax = plt.subplots(len(var_keys),1)
     if len(var_keys) == 1:
       ax = [ax]
     for k in range(0,len(var_keys)):
       group_id = var_keys[k]
-      key_vals = sorted(list(set([str(self.key_vals[p][group_id])
+      key_vals = sorted(list(set([str(self.key_vals[p][group_id])  # noqa: C403, C414
                                   for p in range(0,len(self.val_performance))])))
       key_vals = [str(v) for v in key_vals]
       for ki in range(0,len(key_vals)):
@@ -581,7 +590,8 @@ class SelectGrid(Select):
   def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
     """Initialize grid search selector.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list): List of metabolite names
         dataset (str): Path to dataset
         epochs (int): Number of training epochs
@@ -591,22 +601,24 @@ class SelectGrid(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super(SelectGrid, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
 
   def optimise(self, collection_name, models, path_model):
     """Perform grid search optimization.
 
-    Args:
+    Parameters
+    ----------
         collection_name (str): Name of the collection
         models (Grid): Grid of model parameters to search
         path_model (str): Path to save model results
 
-    Returns:
+    Returns
+    -------
         str: Path to results folder
     """
     if self.verbose > 0:
       print("# Grid Model Selection")
-    keys = [k for k in models.values.keys()]
+    keys = list(models.values.keys())
     var_keys = [k for k in keys if len(models.values[k]) > 1]
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
     total = np.prod([len(models.values[k]) for k in keys])
@@ -633,7 +645,8 @@ class SelectQMC(Select):
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
     """Initialize QMC selector.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list): List of metabolite names
         dataset (str): Path to dataset
         epochs (int): Number of training epochs
@@ -644,23 +657,25 @@ class SelectQMC(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super(SelectQMC, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
     """Perform QMC optimization.
 
-    Args:
+    Parameters
+    ----------
         collection_name (str): Name of the collection
         models (Grid): Grid of model parameters to search
         path_model (str): Path to save model results
 
-    Returns:
+    Returns
+    -------
         str: Path to results folder
     """
     if self.verbose > 0:
       print("# QMC Model Selection")
-    keys = [k for k in models.values.keys()]
+    keys = list(models.values.keys())
     var_keys = [k for k in keys if len(models.values[k]) > 1]
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
     total = np.prod([len(models.values[k]) for k in keys])
@@ -698,7 +713,8 @@ class SelectGPO(Select):
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
     """Initialize GPO selector.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list): List of metabolite names
         dataset (str): Path to dataset
         epochs (int): Number of training epochs
@@ -709,29 +725,31 @@ class SelectGPO(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super(SelectGPO, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
     """Perform GPO optimization.
 
-    Args:
+    Parameters
+    ----------
         collection_name (str): Name of the collection
         models (Grid): Grid of model parameters to search
         path_model (str): Path to save model results
 
-    Returns:
+    Returns
+    -------
         str: Path to results folder
     """
     if self.verbose > 0:
       print("# GPO Model Selection")
-    keys = [k for k in models.values.keys()]
+    keys = list(models.values.keys())
     var_keys = [k for k in keys if len(models.values[k]) > 1]
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
     total = np.prod([len(models.values[k]) for k in keys])
     if self.verbose > 0:
       print(f"Search space size: {total}")
-    import GPyOpt as gpo
+    import GPyOpt as gpo  # noqa: N813
     domain = []
     self.values = {}
     for k in var_keys:
@@ -771,17 +789,17 @@ class SelectGPO(Select):
           print("  Models loaded: None")
     # Evaluate first, if none available so far
     if len(self.key_vals) < 1:
-      for ki,k in enumerate(keys):
+      for _ki,k in enumerate(keys):
         if k in var_keys:
-          key_vals[k] = models.values[k][random.randrange(len(models.values[k]))]
+          key_vals[k] = models.values[k][random.randrange(len(models.values[k]))]  # noqa: S311
       self._add_task(key_vals, path_model)
       self._run_tasks()
     # Convert eval. data to GPO format
-    Xdata = np.ndarray((0,len(var_keys)))
-    Ydata = np.ndarray((0,1))
+    Xdata = np.ndarray((0,len(var_keys)))  # noqa: N806
+    Ydata = np.ndarray((0,1))  # noqa: N806
     res_n = len(self.val_performance[0])
-    Xnext = np.ndarray((len(self.val_performance)*res_n,len(var_keys)))
-    Ynext = np.ndarray((Xnext.shape[0],1))
+    Xnext = np.ndarray((len(self.val_performance)*res_n,len(var_keys)))  # noqa: N806
+    Ynext = np.ndarray((Xnext.shape[0],1))  # noqa: N806
     ll = 0
     for l in range(0,len(self.key_vals)):
       # Add results; multiple times if multiple evluations due to KFold validation, etc.
@@ -802,17 +820,17 @@ class SelectGPO(Select):
             Xnext[ll,ki] = models.values[k].index(self.key_vals[l][k])
         Ynext[ll,0] = self.val_performance[l][ri]
         ll += 1
-    Xdata = np.vstack((Xdata,Xnext))
-    Ydata = np.vstack((Ydata,Ynext))
-    Perf_data_pos = len(self.val_performance)
+    Xdata = np.vstack((Xdata,Xnext))  # noqa: N806
+    Ydata = np.vstack((Ydata,Ynext))  # noqa: N806
+    Perf_data_pos = len(self.val_performance)  # noqa: N806
     # Init GPO performance data
     remaining_samples = total - Xdata.shape[0] // res_n
     idx_best = np.argmin(Ydata,axis=0)[0]
-    Ybest = [Ydata[idx_best,0]]
-    XDiff = [0]
-    XLast = Xdata[-1,:]
+    Ybest = [Ydata[idx_best,0]]  # noqa: N806
+    XDiff = [0]  # noqa: N806
+    XLast = Xdata[-1,:]  # noqa: N806
     if self.verbose > 0:
-      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
+      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {Xdata[idx_best,:]!s}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
 
     # Optimisation iterations
     current_iter = len(self.key_vals)
@@ -841,7 +859,7 @@ class SelectGPO(Select):
                                              acquisition_optimizer_type='lbfgs',
                                              exact_feval=False,
                                              de_duplication=True)
-      Xnext = bop.suggest_next_locations()
+      Xnext = bop.suggest_next_locations()  # noqa: N806
 
       # Evaluate next data points
       for x in Xnext:
@@ -856,20 +874,20 @@ class SelectGPO(Select):
 
       # Add results; multiple times if multiple evluations due to KFold validation, etc.
       for ri in range(0,len(self.val_performance[0])):
-        Ynext = np.ndarray((Xnext.shape[0],1))
+        Ynext = np.ndarray((Xnext.shape[0],1))  # noqa: N806
         for l in range(0,Ynext.shape[0]):
           Ynext[l,0] = self.val_performance[Perf_data_pos+l][ri]
-        Xdata = np.vstack((Xdata,Xnext))
-        Ydata = np.vstack((Ydata,Ynext))
-      Perf_data_pos = len(self.val_performance)
+        Xdata = np.vstack((Xdata,Xnext))  # noqa: N806
+        Ydata = np.vstack((Ydata,Ynext))  # noqa: N806
+      Perf_data_pos = len(self.val_performance)  # noqa: N806
 
       # Update results
       idx_best = np.argmin(Ydata,axis=0)[0]
       Ybest.append(Ydata[idx_best,0])
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
-      XLast = Xdata[-1,:]
+      XLast = Xdata[-1,:]  # noqa: N806
       if self.verbose > 0:
-        print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {str(Xdata[idx_best,:])}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
+        print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {Xdata[idx_best,:]!s}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
         for l in range(0,len(var_keys)):
           key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[idx_best,l])]
         print("   "+str([str(key_vals[k]) for k in var_keys]))
@@ -909,7 +927,8 @@ class SelectGA(Select):
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
     """Initialize GA selector.
 
-    Args:
+    Parameters
+    ----------
         metabolites (list): List of metabolite names
         dataset (str): Path to dataset
         epochs (int): Number of training epochs
@@ -920,25 +939,27 @@ class SelectGA(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super(SelectGA, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
     self.last_fitness = 0
 
   def optimise(self, collection_name, models, path_model):
     """Perform GA optimization.
 
-    Args:
+    Parameters
+    ----------
         collection_name (str): Name of the collection
         models (Grid): Grid of model parameters to search
         path_model (str): Path to save model results
 
-    Returns:
+    Returns
+    -------
         str: Path to results folder
     """
     import pygad
     if self.verbose > 0:
       print("# GA Model Selection")
-    keys = [k for k in models.values.keys()]
+    keys = list(models.values.keys())
     var_keys = [k for k in keys if len(models.values[k]) > 1]
     fix_keys = [k for k in keys if len(models.values[k]) == 1]
     total = np.prod([len(models.values[k]) for k in keys])
@@ -1001,11 +1022,13 @@ class SelectGA(Select):
 def _ga_fitness_func(solution, solution_idx):
   """Fitness function for Genetic Algorithm.
 
-  Args:
+  Parameters
+  ----------
       solution (numpy.ndarray): GA solution (parameter indices)
       solution_idx (int): Index of the solution
 
-  Returns:
+  Returns
+  -------
       float: Fitness value (lower is better)
   """
   global ga_aux
@@ -1055,7 +1078,7 @@ def _ga_fitness_func(solution, solution_idx):
     if match:
       val = ga_aux['select'].val_performance[k][0]
       break
-  if val == None:
+  if val is None:
     raise RuntimeError("Could not find result")
   if ga_aux['select'].verbose > 0:
     print(f" = {val}")
@@ -1064,9 +1087,10 @@ def _ga_fitness_func(solution, solution_idx):
 def _ga_on_generation(ga_instance):
   """Callback function for GA generation completion.
 
-  Args:
+  Parameters
+  ----------
       ga_instance: PyGAD GA instance
-  """
+  """  # noqa: D401
   global ga_aux
   if ga_aux['select'].verbose > 0:
     print(f"# Generation: {ga_instance.generations_completed}")
@@ -1078,10 +1102,12 @@ def _get_std_name(name):
 
   Converts a file path to a standardized list of path components.
 
-  Args:
+  Parameters
+  ----------
       name (str): File path to standardize
 
-  Returns:
+  Returns
+  -------
       list: List of path components in order
   """
   _, path = os.path.splitdrive(name)

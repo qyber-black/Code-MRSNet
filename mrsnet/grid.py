@@ -9,8 +9,10 @@ This module provides classes for managing parameter grids and iterating
 over all combinations of parameter values for model selection.
 """
 
-import numpy as np
 import json
+
+import numpy as np
+
 
 class Grid:
   """Key-value grid for parameter search.
@@ -18,14 +20,16 @@ class Grid:
   This class represents a grid of parameter values where each key
   maps to a list of possible values for that parameter.
 
-  Attributes:
+  Attributes
+  ----------
       values (dict): Dictionary mapping parameter names to lists of values
   """
 
   def __init__(self, values):
     """Initialize a parameter grid.
 
-    Args:
+    Parameters
+    ----------
         values (dict): Dictionary mapping parameter names to lists of values
     """
     self.values = values
@@ -33,7 +37,8 @@ class Grid:
   def __iter__(self):
     """Return iterator for the grid.
 
-    Returns:
+    Returns
+    -------
         GridIterator: Iterator over all parameter combinations
     """
     return GridIterator(self)
@@ -41,7 +46,8 @@ class Grid:
   def __str__(self):
     """Return string representation of the grid.
 
-    Returns:
+    Returns
+    -------
         str: Formatted string showing all parameter values
     """
     return "Grid:\n" + "\n".join(["  "+k+": "+str(self.values[k]) for k in self.values])
@@ -50,10 +56,12 @@ class Grid:
   def load (filename):
     """Load a grid from a JSON file.
 
-    Args:
+    Parameters
+    ----------
         filename (str): Path to JSON file containing grid values
 
-    Returns:
+    Returns
+    -------
         Grid: Loaded grid object
     """
     with open(filename, 'rb') as load_file:
@@ -68,16 +76,18 @@ class Grid:
   def all_combinations_sort(lst):
     """Generate all sorted combinations of elements in a list.
 
-    Args:
+    Parameters
+    ----------
         lst (list): List of elements to combine
 
-    Returns:
+    Returns
+    -------
         list: List of all sorted combinations
     """
     from itertools import combinations
     res = []
     for l in range(1,len(lst)+1):
-      res += [sorted(list(k)) for k in  combinations(lst,l)]
+      res += [sorted(k) for k in  combinations(lst,l)]
     return res
 
 class GridIterator:
@@ -86,7 +96,8 @@ class GridIterator:
   This class provides iteration over all combinations of parameter values
   in a grid, returning one combination at a time.
 
-  Attributes:
+  Attributes
+  ----------
       _grid (Grid): The grid to iterate over
       _keys (list): List of parameter names
       _max_index (list): Maximum index for each parameter
@@ -97,11 +108,12 @@ class GridIterator:
   def __init__(self, grid):
     """Initialize grid iterator.
 
-    Args:
+    Parameters
+    ----------
         grid (Grid): Grid object to iterate over
     """
     self._grid = grid
-    self._keys = [k for k in self._grid.values.keys()]
+    self._keys = list(self._grid.values.keys())
     self._max_index = [len(self._grid.values[k]) for k in self._keys]
     self._index = np.zeros(len(self._keys),dtype=np.int64)
     self._max_level = len(self._keys)-1
@@ -109,10 +121,12 @@ class GridIterator:
   def __next__(self):
     """Get next parameter combination in the grid.
 
-    Returns:
+    Returns
+    -------
         list: Next combination of parameter values
 
-    Raises:
+    Raises
+    ------
         StopIteration: When all combinations have been exhausted
     """
     if self._max_level < 0:

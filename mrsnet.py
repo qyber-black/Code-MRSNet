@@ -660,7 +660,7 @@ def train(args):
       data = [d_noise, d_conc] # output last
       data_name = ds_noisy.name+"_"+ds_rest
   elif args.model[0:4] == 'caeq':
-      from mrsnet.ae_quantifier import Autoencoder_quantifier
+      from mrsnet.ae_quantifier import AutoencoderQuantifier
       if args.verbose > 0:
           print(f"# Loading dataset {name} : {ds_rest}")
       # Load noisy dataset first
@@ -679,8 +679,8 @@ def train(args):
           else:
               if args.verbose > 0:
                   print("Training on clean dataset")
-          model = Autoencoder_quantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
-                                         args.acquisitions, args.datatype, args.norm)
+          model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
+                                        args.acquisitions, args.datatype, args.norm)
           d_noise, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                        acquisitions=args.acquisitions, datatype=args.datatype,
                                        high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
@@ -825,14 +825,14 @@ def quantify(args):
         except:
             raise Exception("Model not found")
   elif name[0:5] == "caeq_":
-    from mrsnet.ae_quantifier import Autoencoder_quantifier
+    from mrsnet.ae_quantifier import AutoencoderQuantifier
     try:
         folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
-        quantifier = Autoencoder_quantifier.load(folder)
+        quantifier = AutoencoderQuantifier.load(folder)
     except:
         try:
             folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
-            quantifier = Autoencoder_quantifier.load(folder)
+            quantifier = AutoencoderQuantifier.load(folder)
         except:
             raise Exception("Model not found")
 
@@ -949,18 +949,18 @@ def benchmark(args):
       if quantifier is None:
         raise Exception("Model not found")
   elif name[0:4] == "caeq":
-    from mrsnet.ae_quantifier import Autoencoder_quantifier
+    from mrsnet.ae_quantifier import AutoencoderQuantifier
     quantifier = None
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
-      quantifier = Autoencoder_quantifier.load(folder)
+      quantifier = AutoencoderQuantifier.load(folder)
     except:
       quantifier = None
     if quantifier is None:
       try:
         for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
-          quantifier = Autoencoder_quantifier.load(folder)
+          quantifier = AutoencoderQuantifier.load(folder)
           break
       except:
         quantifier = None

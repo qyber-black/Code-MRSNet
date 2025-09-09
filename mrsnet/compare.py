@@ -10,14 +10,14 @@ This module provides functions for comparing datasets with basis spectra
 and analyzing differences between experimental and simulated data.
 """
 
-import os
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
+import numpy as np
 import seaborn as sns
+from matplotlib.ticker import FuncFormatter
 
 import mrsnet.molecules as molecules
 from mrsnet.dataset import Dataset
+
 
 def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, screen_dpi=96):
   """Compare dataset spectra to spectra generated from basis.
@@ -25,7 +25,8 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
   Generates reference spectra from a basis set using the dataset's concentrations
   and compares them with the actual dataset spectra.
 
-  Args:
+  Parameters
+  ----------
       ds (Dataset): Dataset to compare
       basis (Basis): Basis set for generating reference spectra
       high_ppm (float, optional): Upper PPM bound. Defaults to -4.5
@@ -72,11 +73,11 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
   for l in range(len(ds.spectra)):
     diff = r_inp[l,:,:,:] - d_inp[l,:,:,:]
     all_diff[:,:,l*r_inp.shape[3]:(l+1)*r_inp.shape[3]] = diff
-    print(f"## Spectra differences {l}: {ds.spectra[l][list(ds.spectra[l].keys())[0]].id}")
+    print(f"## Spectra differences {l}: {ds.spectra[l][next(iter(ds.spectra[l].keys()))].id}")
     dd = np.sum(np.abs(diff),axis=2) / diff.shape[2]
     m = np.mean(diff, axis=2)
     s = np.std(diff, axis=2)
-    print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))
+    print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))  # noqa: UP031
     print(f"Diff     Magnitude: {dd[0,0]:12f} {m[0,0]:12f} {s[0,0]:12f}")
     print(f"             Phase: {dd[0,1]:12f} {m[0,1]:12f} {s[0,1]:12f}")
     print(f"              Real: {dd[0,2]:12f} {m[0,2]:12f} {s[0,2]:12f}")
@@ -99,7 +100,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
   dd = np.sum(np.abs(all_diff),axis=2) / all_diff.shape[2]
   m = np.mean(all_diff, axis=2)
   s = np.std(all_diff, axis=2)
-  print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))
+  print("                    %12s %12s %12s" % ("MAE", "Mean", "Std"))  # noqa: UP031
   print(f"Diff     Magnitude: {dd[0,0]:12f} {m[0,0]:12f} {s[0,0]:12f}")
   print(f"             Phase: {dd[0,1]:12f} {m[0,1]:12f} {s[0,1]:12f}")
   print(f"              Real: {dd[0,2]:12f} {m[0,2]:12f} {s[0,2]:12f}")
@@ -128,7 +129,8 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
 def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     """Plot difference between dataset and basis reference spectrum.
 
-    Args:
+    Parameters
+    ----------
         r: Reference spectrum data
         d: Dataset spectrum data
         c: Concentration data
@@ -160,7 +162,7 @@ def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     axes[3,0].plot(nu,r[0,3,:],linewidth=.75)
     axes[3,0].set_ylabel("Imaginary")
     axes[3,0].set_xlabel("Frequency (ppm)")
-    axes[3,0].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
+    axes[3,0].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: f"{np.abs(x_val):.8g}"))
 
     axes[0,1].set_title("Edit Off")
     axes[0,1].plot(nu,d[1,0,:])
@@ -176,7 +178,7 @@ def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     axes[3,1].plot(nu,r[1,3,:],linewidth=.75)
     axes[3,0].get_shared_y_axes().join(axes[3,0], axes[3,1])
     axes[3,1].set_xlabel("Frequency (ppm)")
-    axes[3,1].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
+    axes[3,1].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: f"{np.abs(x_val):.8g}"))
 
     axes[0,2].set_title("Edit On")
     axes[0,2].plot(nu,d[2,0,:])
@@ -192,7 +194,7 @@ def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
     axes[3,2].plot(nu,r[2,3,:],linewidth=.75)
     axes[3,0].get_shared_y_axes().join(axes[3,0], axes[3,2])
     axes[3,2].set_xlabel("Frequency (ppm)")
-    axes[3,2].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
+    axes[3,2].xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: f"{np.abs(x_val):.8g}"))
 
     ax = plt.subplot(1, 4, 4)
     plt.title('Concentrations')

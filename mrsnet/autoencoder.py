@@ -11,24 +11,34 @@ including convolutional and fully connected autoencoders, as well as
 encoder-quantifier models for concentration prediction.
 """
 
-import os
 import csv
 import json
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
-from time import time_ns
-
 import tensorflow as tf
-from tensorflow import keras
-from keras.layers import *
-from keras.models import Model, Sequential
-
-from keras.layers import Input, Dense
+from keras.layers import (
+  Activation,
+  BatchNormalization,
+  Conv1D,
+  Conv1DTranspose,
+  Dense,
+  Dropout,
+  Flatten,
+  LeakyReLU,
+  MaxPool1D,
+  Reshape,
+  UpSampling1D,
+)
+from keras.models import Model, load_model
 from keras.utils import plot_model
-from keras.models import load_model
+from tensorflow import keras
 
 from mrsnet.cfg import Cfg
+
 from .cnn import TimeHistory
+
 
 # Helper to construct convolutional encoder layer
 def _enc_conv_layer(m, filter, c, s, pooling, dropout):
@@ -37,7 +47,8 @@ def _enc_conv_layer(m, filter, c, s, pooling, dropout):
   Adds a Conv1D layer over the last index (frequency bins) with specified
   convolution kernel size and ReLU activation.
 
-  Args:
+  Parameters
+  ----------
       m (keras.Sequential): Sequential model to add layers to
       filter (int): Number of filters for the convolution
       c (int): Convolution kernel size
@@ -70,7 +81,8 @@ def _dec_convt_layer(m, filter, c, s, pooling, dropout):
   Adds a Conv1DTranspose layer over the last index (frequency filter bins) with
   specified convolution kernel size and ReLU activation.
 
-  Args:
+  Parameters
+  ----------
       m (keras.Sequential): Sequential model to add layers to
       filter (int): Number of filters for the convolution
       c (int): Convolution kernel size
@@ -103,7 +115,8 @@ class ConvAutoEnc(Model):
   This class implements a convolutional autoencoder using 1D convolutions
   over the frequency dimension of MRS spectra.
 
-  Attributes:
+  Attributes
+  ----------
       encoder (keras.Sequential): Encoder network
       decoder (keras.Sequential): Decoder network
   """
@@ -111,8 +124,9 @@ class ConvAutoEnc(Model):
   def __init__(self, n_specs, n_freqs, filter, latent, pooling, dropout, name='ConvAutoEnc'):
     """Initialize a convolutional autoencoder.
 
-    Args:
-        n_specs (int): Number of spectra (acquisitions × datatype)
+    Parameters
+    ----------
+        n_specs (int): Number of spectra (acquisitions x datatype)
         n_freqs (int): Number of frequency bins in spectra
         filter (int): Number of filters on input conv layer (others computed from this)
         latent (int): Size of latent representation
@@ -127,7 +141,7 @@ class ConvAutoEnc(Model):
     # pooling: Pooling or strides for up/downsampling?
     # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
     # FIXME: could parameterise kernel size(s) and strides and also depth of network
-    super(ConvAutoEnc, self).__init__(name=name)
+    super().__init__(name=name)
 
     # Encoder
     self.encoder = tf.keras.Sequential(name='Encoder')
@@ -162,10 +176,12 @@ class ConvAutoEnc(Model):
   def call(self,x):
     """Forward pass through the autoencoder.
 
-    Args:
+    Parameters
+    ----------
         x (tensor): Input spectra tensor
 
-    Returns:
+    Returns
+    -------
         tensor: Reconstructed spectra tensor
     """
     x = self.encoder(x)
@@ -176,7 +192,8 @@ class ConvAutoEnc(Model):
 def _dense_layer(m, units, activation, dropout):
   """Construct a dense layer with optional batch normalization and dropout.
 
-  Args:
+  Parameters
+  ----------
       m (keras.Sequential): Sequential model to add layers to
       units (int): Number of units in the dense layer
       activation (str): Activation function name
@@ -191,10 +208,9 @@ def _dense_layer(m, units, activation, dropout):
     m.add(BatchNormalization())
   if activation[0:9] == "leakyrelu":
     m.add(LeakyReLU(alpha=activation[9:]))
-  elif activation == "None": # Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
-    m
-  else:
+  elif activation != "None":
     m.add(Activation(activation))
+  # If None: Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
   if dropout > 0.0:
     m.add(Dropout(dropout))
 
@@ -205,7 +221,8 @@ class FCAutoEnc(Model):
   This class implements a fully connected autoencoder using dense layers
   for MRS spectra reconstruction.
 
-  Attributes:
+  Attributes
+  ----------
       encoder (keras.Sequential): Encoder network
       decoder (keras.Sequential): Decoder network
   """
@@ -213,8 +230,9 @@ class FCAutoEnc(Model):
   def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last ,dropout, name='FCAutoEnc'):
     """Initialize a fully connected autoencoder.
 
-    Args:
-        n_specs (int): Number of spectra (acquisitions × datatype)
+    Parameters
+    ----------
+        n_specs (int): Number of spectra (acquisitions x datatype)
         n_freqs (int): Number of frequency bins in spectra
         layers_enc (list): List of encoder layer sizes
         layers_dec (list): List of decoder layer sizes
@@ -230,12 +248,12 @@ class FCAutoEnc(Model):
     # activation: activation function (relu, sigmoid, tanh)
     # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
     self.n_specs = n_specs
-    super(FCAutoEnc, self).__init__(name=name)
+    super().__init__(name=name)
 
     # Encoder
     self.encoder = tf.keras.Sequential(name='Encoder')
     units = n_freqs
-    for l in range(0,layers_enc-1):
+    for _l in range(0,layers_enc-1):
       _dense_layer(self.encoder, units, activation, dropout)
       units //= 2
     self.units = units
@@ -244,7 +262,7 @@ class FCAutoEnc(Model):
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
     units = n_freqs//(2**(layers_dec-1))
-    for l in range(0,layers_dec-1):
+    for _l in range(0,layers_dec-1):
       _dense_layer(self.decoder, units, activation, -1) # no regularisers in decoder
       units *= 2
     _dense_layer(self.decoder, units, activation_last, -1)
@@ -253,10 +271,12 @@ class FCAutoEnc(Model):
   def call(self,x):
     """Forward pass through the autoencoder.
 
-    Args:
+    Parameters
+    ----------
         x (tensor): Input spectra tensor
 
-    Returns:
+    Returns
+    -------
         tensor: Reconstructed spectra tensor
     """
     x = self.encoder(x)
@@ -274,9 +294,10 @@ class EncQuant(Model):
   def __init__(self, encoder, n_specs, n_freqs, output_conc, units, layers, act, act_last, dp, name='EncQuant'):
     """Initialize encoder-quantifier model.
 
-    Args:
+    Parameters
+    ----------
         encoder: Pre-trained encoder model
-        n_specs (int): Number of spectra (acquisitions × datatype)
+        n_specs (int): Number of spectra (acquisitions x datatype)
         n_freqs (int): Number of frequency bins in spectra
         output_conc (int): Number of output concentrations
         units (int): Number of units in first dense quantifier layer
@@ -295,7 +316,7 @@ class EncQuant(Model):
     # act: activation of internal dense layers
     # act_last: activation of output layer
     self.n_specs = n_specs
-    super(EncQuant, self).__init__(name=name)
+    super().__init__(name=name)
 
     # Encoder
     self.encoder = encoder
@@ -304,7 +325,7 @@ class EncQuant(Model):
     # Quantifier
     self.quantifier = tf.keras.Sequential(name='Quantifier')
     self.quantifier.add(Flatten())
-    for l in range(0, layers-1):
+    for _l in range(0, layers-1):
       _dense_layer(self.quantifier, units, act, dp)
       units //= 2
     # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
@@ -315,10 +336,12 @@ class EncQuant(Model):
   def call(self,x):
     """Forward pass through the encoder-quantifier.
 
-    Args:
+    Parameters
+    ----------
         x (tensor): Input spectra tensor
 
-    Returns:
+    Returns
+    -------
         tensor: Predicted concentrations tensor
     """
     x = self.encoder(x)
@@ -332,7 +355,8 @@ class Autoencoder:
   This class provides a unified interface for both autoencoder and encoder-quantifier
   models, handling model construction, training, and prediction.
 
-  Attributes:
+  Attributes
+  ----------
       model (str): Model architecture identifier
       metabolites (list): List of metabolite names
       pulse_sequence (str): Pulse sequence type
@@ -354,7 +378,8 @@ class Autoencoder:
                encoder=None, encoder_model=None, encoder_train_dataset_name=None):
     """Initialize an autoencoder model.
 
-    Args:
+    Parameters
+    ----------
         model (str): Model architecture identifier
         metabolites (list): List of metabolite names
         pulse_sequence (str): Pulse sequence type
@@ -393,7 +418,8 @@ class Autoencoder:
   def __str__(self):
     """Return the model architecture string.
 
-    Returns:
+    Returns
+    -------
         str: Model architecture string
     """
     return os.path.join(self.model, "-".join(self.metabolites),
@@ -409,7 +435,8 @@ class Autoencoder:
   def _construct(self, ae_shape, output_conc=None):
     """Construct the autoencoder model architecture.
 
-    Args:
+    Parameters
+    ----------
         ae_shape (tuple): Shape of input data (n_specs, n_freqs)
         output_conc (int, optional): Number of output concentrations. Defaults to None
     """
@@ -469,7 +496,8 @@ class Autoencoder:
             image_dpi=[300], screen_dpi=96, train_dataset_name=""):
     """Train the autoencoder model.
 
-    Args:
+    Parameters
+    ----------
         d_data (list): Training data [spectra_in, spectra_out]
         v_data (list, optional): Validation data [spectra_in, spectra_out]
         epochs (int): Number of training epochs
@@ -480,7 +508,8 @@ class Autoencoder:
         screen_dpi (int, optional): Screen DPI setting. Defaults to 96
         train_dataset_name (str, optional): Name of training dataset. Defaults to ""
 
-    Returns:
+    Returns
+    -------
         tuple: (train_results, validation_results)
     """
     devices = tf.config.list_logical_devices("GPU")
@@ -493,7 +522,7 @@ class Autoencoder:
         print(f"GPU Devices: {devices}")
     if len(d_data) != 2:
       raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out|conc]")
-    if v_data != None and len(v_data) != 2:
+    if v_data is not None and len(v_data) != 2:
       raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out|conc]")
 
     if len(train_dataset_name) > 0:
@@ -514,7 +543,8 @@ class Autoencoder:
                 image_dpi, screen_dpi, train_dataset_name, devices):
     """Train the autoencoder model.
 
-    Args:
+    Parameters
+    ----------
         d_data (list): Training data [spectra_in, spectra_out]
         v_data (list, optional): Validation data [spectra_in, spectra_out]
         epochs (int): Number of training epochs
@@ -526,7 +556,8 @@ class Autoencoder:
         train_dataset_name (str): Name of training dataset
         devices (list): List of GPU devices
 
-    Returns:
+    Returns
+    -------
         tuple: (train_results, validation_results)
     """
     # Setup training data
@@ -551,7 +582,7 @@ class Autoencoder:
     d_spectra_in = tf.reshape(d_spectra_in,
                               (d_spectra_in.shape[0],
                                d_spectra_in.shape[1]*d_spectra_in.shape[2],d_spectra_in.shape[3]))
-    if v_data != None:
+    if v_data is not None:
       v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
       v_spectra_in = tf.reshape(v_spectra_in,
                                 (v_spectra_in.shape[0],
@@ -563,7 +594,7 @@ class Autoencoder:
                                (d_spectra_out.shape[0],
                                 d_spectra_out.shape[1]*d_spectra_out.shape[2],d_spectra_out.shape[3]))
     train_data = tf.data.Dataset.from_tensor_slices((d_spectra_in, d_spectra_out))
-    if v_data != None:
+    if v_data is not None:
       v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
       v_spectra_out = tf.reshape(v_spectra_out,
                                  (v_spectra_out.shape[0],
@@ -577,7 +608,7 @@ class Autoencoder:
 
     # Autoencoder training
     if verbose > 0:
-      print("# Train Autoencoder %s" % str(self))
+      print(f"# Train Autoencoder {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
     loss = "huber_loss"
@@ -660,12 +691,12 @@ class Autoencoder:
     if verbose > 0:
       print("# Evaluating Autoencoder")
     d_score = self.ae.evaluate(d_spectra_in, d_spectra_out, verbose=(verbose > 0)*2)
-    if v_data != None:
+    if v_data is not None:
        v_score = self.ae.evaluate(v_spectra_in, v_spectra_out, verbose=(verbose > 0)*2)
     else:
        v_score = np.array([np.nan,np.nan])
     if verbose > 0:
-       print(f"             Train          Validation")
+       print( "             Train          Validation")
        print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
        print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
     self._save_results(folder, "ae", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
@@ -678,7 +709,8 @@ class Autoencoder:
                 image_dpi, screen_dpi, train_dataset_name, devices):
     """Train the encoder-quantifier model.
 
-    Args:
+    Parameters
+    ----------
         d_data (list): Training data [spectra_in, concentrations]
         v_data (list, optional): Validation data [spectra_in, concentrations]
         epochs (int): Number of training epochs
@@ -690,7 +722,8 @@ class Autoencoder:
         train_dataset_name (str): Name of training dataset
         devices (list): List of GPU devices
 
-    Returns:
+    Returns
+    -------
         tuple: (train_results, validation_results)
     """
     # Setup training data
@@ -718,7 +751,7 @@ class Autoencoder:
     # Output concentrations for quantifier
     d_conc = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
     train_data = tf.data.Dataset.from_tensor_slices((d_spectra_in, d_conc))
-    if v_data != None:
+    if v_data is not None:
       # Validation data
       v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
       v_spectra_in = tf.reshape(v_spectra_in,
@@ -734,7 +767,7 @@ class Autoencoder:
 
     # Quantifier training
     if verbose > 0:
-      print("# Train Quantifier %s" % str(self))
+      print(f"# Train Quantifier {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
     loss = "huber_loss"
@@ -816,12 +849,12 @@ class Autoencoder:
     if verbose > 0:
       print("# Evaluating Quantifier")
     d_score = self.ae.evaluate(d_spectra_in, d_conc, verbose=(verbose > 0)*2)
-    if v_data != None:
+    if v_data is not None:
       v_score = self.ae.evaluate(v_spectra_in, v_conc, verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
-      print(f"             Train          Validation")
+      print( "             Train          Validation")
       print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
       print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
     self._save_results(folder, "ae_quantifier", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
@@ -834,12 +867,14 @@ class Autoencoder:
   def predict(self, spec_in, reshape=True, verbose=0):
     """Predict spectra or concentrations from input spectra.
 
-    Args:
+    Parameters
+    ----------
         spec_in (array-like): Input spectra data
         reshape (bool, optional): Whether to reshape input data. Defaults to True
         verbose (int, optional): Verbosity level. Defaults to 0
 
-    Returns:
+    Returns
+    -------
         numpy.ndarray: Predicted spectra or concentrations
     """
     out_shape = spec_in.shape # Preserve shape of input spectra to reshape output (spectra only) accordingly
@@ -848,7 +883,7 @@ class Autoencoder:
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    data = tf.data.Dataset.from_tensor_slices((spec_in)).batch(32).with_options(options)
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
     if self.output == "spectra":
       return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
     if self.output == "concentrations":
@@ -858,7 +893,8 @@ class Autoencoder:
   def save(self, folder):
     """Save the trained model to disk.
 
-    Args:
+    Parameters
+    ----------
         folder (str): Directory to save the model
     """
     path=os.path.join(folder, "tf_model")
@@ -882,13 +918,15 @@ class Autoencoder:
   def load(path):
     """Load a saved model from disk.
 
-    Args:
+    Parameters
+    ----------
         path (str): Directory containing the saved model
 
-    Returns:
+    Returns
+    -------
         Autoencoder: Loaded model instance
     """
-    with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
+    with open(os.path.join(path, "tf_model", "mrsnet.json")) as f:
       data = json.load(f)
     model = Autoencoder(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                         data['datatype'], data['norm'])
@@ -900,7 +938,8 @@ class Autoencoder:
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
     """Save training results to files.
 
-    Args:
+    Parameters
+    ----------
         folder (str): Output directory
         prefix (str): File prefix for saved files
         history (dict): Training history
@@ -933,7 +972,7 @@ class Autoencoder:
                [""],
                ["History"]])
       writer.writerow(keys)
-      writer.writerows(zip(*[history[key] for key in keys]))
+      writer.writerows(zip(*[history[key] for key in keys], strict=False))
     # Plot
     fig, axes = plt.subplots(1, 3)
     fig.suptitle(f"{self.model} {prefix.upper()} Training Results")

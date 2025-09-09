@@ -259,7 +259,7 @@ Fully connected autoencoder-quantifier model.
 - `__init__(n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last, dropout, output_conc, unit, layers, act, act_last, dp, name)` - Initialize model
 - `call(x)` - Forward pass
 
-#### `Autoencoder_quantifier` Class
+#### `AutoencoderQuantifier` Class
 Main autoencoder-quantifier interface.
 
 **Methods:**
