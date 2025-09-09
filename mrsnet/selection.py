@@ -264,7 +264,7 @@ class Select:
       if not load_only and self.verbose > 0:
         print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
-      if os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")):
+      if os.path.exists(os.path.join(t['model_path'],t['fold'],"model.keras")):
         if self.verbose > 0:
           print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])

@@ -11,8 +11,10 @@ reconstruct spectra and predict metabolite concentrations simultaneously.
 """
 
 import csv
+import io
 import json
 import os
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,6 +26,7 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
+from mrsnet.train import calculate_flops
 
 from .cnn import TimeHistory
 
@@ -407,6 +410,9 @@ class AutoencoderQuantifier:
                       optimizer=optimiser,
                       metrics=['mae'])
 
+    # Calculate FLOPs
+    self.flops = calculate_flops(self.aeq, d_spectra_in.shape[1:])
+
     for dpi in image_dpi:
         plot_model(self.aeq,
                   to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
@@ -437,11 +443,13 @@ class AutoencoderQuantifier:
     else:
         val_data=None
 
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    ## FIXME: AutoShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    ##train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    train_data = train_data.batch(batch_size * dev_multiplier)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+        val_data = val_data.batch(batch_size * dev_multiplier) ## .with_options(options)
 
     # Train
     history = self.aeq.fit(train_data,
@@ -491,15 +499,16 @@ class AutoencoderQuantifier:
     if reshape:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
+    ## FIXME: AutoShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    ##data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32)
     if self.output == "concentrations":
         return np.array(self.aeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
     if self.output == "spectra":
         return np.array(tf.reshape(self.aeq.predict(data, verbose=(verbose > 0) * 2)[0], out_shape), dtype=np.float64)
     raise RuntimeError(f"Unknown output {self.output}")
-
 
   def save(self, folder):
     """Save the trained model to disk.
@@ -508,9 +517,44 @@ class AutoencoderQuantifier:
     ----------
         folder (str): Directory to save the model
     """
-    path=os.path.join(folder, "tf_model")
-    self.aeq.save(path)
-    with open(os.path.join(path, "mrsnet.json"), 'w') as f:
+    os.makedirs(folder, exist_ok=True)
+    self.aeq.save(os.path.join(folder, "model.keras"))
+
+    # Calculate model metrics from summary
+    # Capture model summary output
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    self.aeq.summary()
+    sys.stdout = old_stdout
+    summary_output = buffer.getvalue()
+    # Parse parameter counts from summary
+    trainable_params = 0
+    non_trainable_params = 0
+    for line in summary_output.split('\n'):
+      if 'Total params:' in line:
+        # Extract total params
+        total_match = line.split('Total params:')[1].split()[0].replace(',', '')
+        total_params = int(total_match)
+      elif 'Trainable params:' in line:
+        # Extract trainable params
+        trainable_match = line.split('Trainable params:')[1].split()[0].replace(',', '')
+        trainable_params = int(trainable_match)
+      elif 'Non-trainable params:' in line:
+        # Extract non-trainable params
+        non_trainable_match = line.split('Non-trainable params:')[1].split()[0].replace(',', '')
+        non_trainable_params = int(non_trainable_match)
+    # If we couldn't parse trainable/non-trainable separately, use total
+    if trainable_params == 0 and non_trainable_params == 0:
+      trainable_params = total_params
+      non_trainable_params = 0
+
+    # Calculate FLOPs if possible
+    if hasattr(self, 'flops'):
+      flops = self.flops
+    else:
+      flops = 0
+
+    with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
           'model': self.model,
           'metabolites': self.metabolites,
@@ -519,7 +563,11 @@ class AutoencoderQuantifier:
           'datatype': self.datatype,
           'norm': self.norm,
           'train_dataset_name': self.train_dataset_name,
-          'output': self.output
+          'output': self.output,
+          'trainable_params': trainable_params,
+          'non_trainable_params': non_trainable_params,
+          'total_params': trainable_params + non_trainable_params,
+          'flops': flops
         }, indent=2, sort_keys=True), file=f)
 
   @staticmethod
@@ -534,13 +582,13 @@ class AutoencoderQuantifier:
       -------
           AutoencoderQuantifier: Loaded model instance
       """
-      with open(os.path.join(path, "tf_model", "mrsnet.json")) as f:
+      with open(os.path.join(path, "mrsnet.json")) as f:
           data = json.load(f)
       model = AutoencoderQuantifier(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                           data['datatype'], data['norm'])
       model.output = data['output']
       model.train_dataset_name = data['train_dataset_name']
-      model.aeq = load_model(os.path.join(path, "tf_model"))
+      model.aeq = load_model(os.path.join(path, "model.keras"))
       return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):

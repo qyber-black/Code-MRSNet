@@ -11,8 +11,10 @@ from MRS spectra, including various architectures and training utilities.
 """
 
 import csv
+import io
 import json
 import os
+import sys
 from time import time_ns
 
 import matplotlib.pyplot as plt
@@ -24,6 +26,7 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
+from mrsnet.train import calculate_flops
 
 
 class CNN:
@@ -173,7 +176,7 @@ class CNN:
       dense = int(vals[11])
       output_act = vals[12]
 
-    self.cnn_arch.add(InputLayer(input_shape=input_shape))
+    self.cnn_arch.add(InputLayer(shape=input_shape))
     self._freq_conv_layer(filter1, (1,freq_convolution1), strides1, dropout1)
     self._freq_conv_layer(filter1, (1,freq_convolution2), strides1, dropout1)
 
@@ -242,6 +245,7 @@ class CNN:
     d_inp = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
     d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
+
     train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
 
     if v_data is not None:
@@ -281,7 +285,10 @@ class CNN:
                                         epsilon=Cfg.val['epsilon'])
       self.cnn_arch.compile(loss='mse',
                             optimizer=optimiser,
-                            metrics=['mae'])
+                              metrics=['mae'])
+
+    # Calculate FLOPs
+    self.flops = calculate_flops(self.cnn_arch, d_inp.shape[1:])
 
     for dpi in image_dpi:
       plot_model(self.cnn_arch,
@@ -305,11 +312,13 @@ class CNN:
                  timer]
 
     # Dataset options
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    ## FIXME: AuthShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    ##train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    train_data = train_data.batch(batch_size * dev_multiplier)
     if validation_data is not None:
-      validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
+      validation_data = validation_data.batch(batch_size * dev_multiplier) ##.with_options(options)
 
     # Train
     history = self.cnn_arch.fit(train_data,
@@ -354,9 +363,11 @@ class CNN:
     if reshape:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
+    ## FIXME: AutoShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    ##data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
+    data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32)
     return np.array(self.cnn_arch.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 
   def save(self, folder):
@@ -366,9 +377,45 @@ class CNN:
     ----------
         folder (str): Directory to save the model
     """
-    path=os.path.join(folder, "tf_model")
-    self.cnn_arch.save(path)
-    with open(os.path.join(path, "mrsnet.json"), 'w') as f:
+    os.makedirs(folder, exist_ok=True)
+    self.cnn_arch.save(os.path.join(folder, "model.keras"))
+
+    # Calculate model metrics from summary
+    # Capture model summary output
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    self.cnn_arch.summary()
+    sys.stdout = old_stdout
+    summary_output = buffer.getvalue()
+
+    # Parse parameter counts from summary
+    trainable_params = 0
+    non_trainable_params = 0
+    for line in summary_output.split('\n'):
+      if 'Total params:' in line:
+        # Extract total params
+        total_match = line.split('Total params:')[1].split()[0].replace(',', '')
+        total_params = int(total_match)
+      elif 'Trainable params:' in line:
+        # Extract trainable params
+        trainable_match = line.split('Trainable params:')[1].split()[0].replace(',', '')
+        trainable_params = int(trainable_match)
+      elif 'Non-trainable params:' in line:
+        # Extract non-trainable params
+        non_trainable_match = line.split('Non-trainable params:')[1].split()[0].replace(',', '')
+        non_trainable_params = int(non_trainable_match)
+    # If we couldn't parse trainable/non-trainable separately, use total
+    if trainable_params == 0 and non_trainable_params == 0:
+      trainable_params = total_params
+      non_trainable_params = 0
+
+    # Calculate FLOPs if possible
+    if hasattr(self, 'flops'):
+      flops = self.flops
+    else:
+      flops = 0
+
+    with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
           'model': self.model,
           'metabolites': self.metabolites,
@@ -376,7 +423,11 @@ class CNN:
           'acquisitions': self.acquisitions,
           'datatype': self.datatype,
           'norm': self.norm,
-          'train_dataset_name': self.train_dataset_name
+          'train_dataset_name': self.train_dataset_name,
+          'trainable_params': trainable_params,
+          'non_trainable_params': non_trainable_params,
+          'total_params': trainable_params + non_trainable_params,
+          'flops': flops
         }, indent=2, sort_keys=True), file=f)
 
   @staticmethod
@@ -391,12 +442,12 @@ class CNN:
     -------
         CNN: Loaded CNN model instance
     """
-    with open(os.path.join(path, "tf_model", "mrsnet.json")) as f:
+    with open(os.path.join(path, "mrsnet.json")) as f:
       data = json.load(f)
     model = CNN(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                 data['datatype'], data['norm'])
     model.train_dataset_name = data['train_dataset_name']
-    model.cnn_arch = load_model(os.path.join(path,"tf_model"))
+    model.cnn_arch = load_model(os.path.join(path, "model.keras"))
     return model
 
   def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):

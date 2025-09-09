@@ -141,14 +141,14 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
-      _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder,
-                                   verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
+      _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder, 'train',
+                                   norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
       if err is not None:
         train_res['error'][val_fold] = err
       else:
         has_error = False # Should be the same across all calls, but set it each time anyway
-      _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder,
-                                   verbose=verbose, prefix='validation', image_dpi=image_dpi, screen_dpi=screen_dpi)
+      _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder, 'validation',
+                                   norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
           if val_fold == 0:
@@ -402,8 +402,8 @@ class NoValidation(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, data[0], data[-1], folder,
-                  verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
+    analyse_model(model, data[0], data[-1], folder, 'train',
+                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
 
 class Split(Train):
   """Train/validation split strategy.
@@ -480,11 +480,10 @@ class Split(Train):
     model.save(folder)
     # Analyse model with training/test datasets
     # data = [d_noise, d_conc, d_clean]
-    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
-                  verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
-                  verbose=verbose, prefix='validation',
-                  image_dpi=image_dpi,screen_dpi=screen_dpi)
+    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder, 'train',
+                 norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
+    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder, 'validation',
+                  norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class DuplexSplit(Train):
   """Duplex split strategy for train/validation splitting.
@@ -604,10 +603,10 @@ class DuplexSplit(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder,
-                  verbose=verbose, prefix='train', image_dpi=image_dpi,screen_dpi=screen_dpi)
-    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder,
-                  verbose=verbose, prefix='validation', image_dpi=image_dpi,screen_dpi=screen_dpi)
+    analyse_model(model, data[0][train_sel], data[-1][train_sel], folder, 'train',
+                  norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
+    analyse_model(model, data[0][val_sel], data[-1][val_sel], folder, 'validation',
+                  norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class KFold(Train):
   """K-fold cross-validation strategy.
@@ -772,3 +771,83 @@ class DuplexKFold(Train):
     # Run cross validation
     self._cross_validate(model, epochs, batch_size, data, folder,
                          train_dataset_name, verbose, image_dpi, screen_dpi)
+
+
+def calculate_flops(model, input_shape):
+  """Calculate FLOPs (Floating Point Operations) for the model.
+
+  Parameters
+  ----------
+      model: Model to calculate FLOPs for
+      input_shape (tuple): Input tensor shape (excluding batch dimension)
+
+  Returns
+  -------
+      int: Total number of FLOPs, or 0 if calculation fails
+  """
+  if model is None:
+    return 0
+
+  import traceback
+
+  import tensorflow as tf
+
+  try:
+    # Trace the model to obtain a concrete graph function
+    @tf.function(jit_compile=False)
+    def model_fn(x):
+      return model(x, training=False)
+
+    concrete_fn = model_fn.get_concrete_function(
+      tf.TensorSpec(shape=(1, *input_shape), dtype=tf.float32)
+    )
+
+    # FIXME: tensorflow/python/ops/nn_ops.py:5261: tensor_shape_from_node_def_name (from tensorflow.python.framework.graph_util_impl) is deprecated and will be removed in a future version. Instructions for updating: This API was designed for TensorFlow v1. See https://www.tensorflow.org/guide/migrate for instructi ons on how to migrate your code to TensorFlow v2.
+
+    # Primary: use TF compat v1 profiler directly on the traced graph
+    try:
+      opts = tf.compat.v1.profiler.ProfileOptionBuilder.float_operation()
+      prof = tf.compat.v1.profiler.profile(
+        graph=concrete_fn.graph,
+        options=opts
+      )
+      if prof is not None and hasattr(prof, 'total_float_ops') and prof.total_float_ops is not None:
+        return int(prof.total_float_ops)
+    except Exception as e:
+      print("FLOPs primary profiler failed:", e)
+
+    # Fallback: freeze variables to constants and profile the imported graph
+    try:
+      from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
+      frozen = convert_variables_to_constants_v2(concrete_fn)
+      graph_def = frozen.graph.as_graph_def()
+      with tf.Graph().as_default() as graph:
+        tf.compat.v1.graph_util.import_graph_def(graph_def, name="")
+        opts = tf.compat.v1.profiler.ProfileOptionBuilder.float_operation()
+        prof = tf.compat.v1.profiler.profile(
+          graph=graph,
+          options=opts
+        )
+        if prof is not None and hasattr(prof, 'total_float_ops') and prof.total_float_ops is not None:
+          return int(prof.total_float_ops)
+    except Exception as e:
+      print("FLOPs frozen-graph profiler failed:", e)
+
+    # Optional: try TensorFlow Model Garden utility if available
+    try:
+      import importlib
+      if importlib.util.find_spec('tfm') is not None:
+        from tfm.core.train_utils import try_count_flops
+        dummy_input = tf.random.normal((1, *input_shape))
+        counted = try_count_flops(model_fn, dummy_input)
+        if counted is not None:
+          return int(counted)
+    except Exception as e:
+      print("FLOPs Model Garden fallback failed:", e)
+
+  except Exception as e:
+    print("Error calculating FLOPs:", e)
+    traceback.print_exc()
+
+  # If all methods fail, return 0
+  return 0

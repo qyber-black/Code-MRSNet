@@ -12,8 +12,10 @@ encoder-quantifier models for concentration prediction.
 """
 
 import csv
+import io
 import json
 import os
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,6 +38,7 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
+from mrsnet.train import calculate_flops
 
 from .cnn import TimeHistory
 
@@ -631,6 +634,8 @@ class Autoencoder:
       # Single GPU / CPU training
       dev_multiplier = 1
       self._construct(d_spectra_in.shape[1:])
+      # Store input shape for FLOPs calculation during save
+      self._last_input_shape = d_spectra_in.shape[1:]
       print("Set the self.output to spectra")
       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
@@ -639,6 +644,9 @@ class Autoencoder:
       self.ae.compile(loss=loss,
                       optimizer=optimiser,
                       metrics=['mae'])
+
+    # Calculate FLOPs
+    self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
 
     for dpi in image_dpi:
       plot_model(self.ae.encoder,
@@ -672,11 +680,13 @@ class Autoencoder:
                  timer]
 
     # Dataset options
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    ## FIXME: AutoShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    ##train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    train_data = train_data.batch(batch_size * dev_multiplier)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+        val_data = val_data.batch(batch_size * dev_multiplier) ##.with_options(options)
 
     # Train
     history = self.ae.fit(train_data,
@@ -798,43 +808,48 @@ class Autoencoder:
                       optimizer=optimiser,
                       metrics=['mae'])
 
-      for dpi in image_dpi:
-        plot_model(self.ae.encoder,
-                  to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
-                  show_shapes=True,
-                  show_dtype=True,
-                  show_layer_names=True,
-                  rankdir='TB',
-                  expand_nested=True,
-                  dpi=dpi)
-        plot_model(self.ae.quantifier,
-                  to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
-                  show_shapes=True,
-                  show_dtype=True,
-                  show_layer_names=True,
-                  rankdir='TB',
-                  expand_nested=True,
-                  dpi=dpi)
-      if verbose > 0:
-        self.ae.summary()
-        self.ae.encoder.summary()
-        self.ae.quantifier.summary()
+    # Calculate FLOPs
+    self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
 
-      timer = TimeHistory(epochs)
-      callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                                 min_delta=1e-8,
-                                                 patience=25,
-                                                 mode='min',
-                                                 verbose=(verbose > 0),
-                                                 restore_best_weights=True),
-                   timer]
+    for dpi in image_dpi:
+      plot_model(self.ae.encoder,
+                to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
+                show_shapes=True,
+                show_dtype=True,
+                show_layer_names=True,
+                rankdir='TB',
+                expand_nested=True,
+                dpi=dpi)
+      plot_model(self.ae.quantifier,
+                to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
+                show_shapes=True,
+                show_dtype=True,
+                show_layer_names=True,
+                rankdir='TB',
+                expand_nested=True,
+                dpi=dpi)
+    if verbose > 0:
+      self.ae.summary()
+      self.ae.encoder.summary()
+      self.ae.quantifier.summary()
+
+    timer = TimeHistory(epochs)
+    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
+                                                min_delta=1e-8,
+                                                patience=25,
+                                                mode='min',
+                                                verbose=(verbose > 0),
+                                                restore_best_weights=True),
+                  timer]
 
     # Dataset options
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    ## FIXME: AutoShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    ##train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    train_data = train_data.batch(batch_size * dev_multiplier)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+        val_data = val_data.batch(batch_size * dev_multiplier) ## .with_options(options)
 
     # Train
     history = self.ae.fit(train_data,
@@ -881,9 +896,11 @@ class Autoencoder:
     if reshape:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
-    options = tf.data.Options()
-    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
+    ## FIXME: AutoShard?
+    ##options = tf.data.Options()
+    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    ##data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32)
     if self.output == "spectra":
       return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
     if self.output == "concentrations":
@@ -897,9 +914,44 @@ class Autoencoder:
     ----------
         folder (str): Directory to save the model
     """
-    path=os.path.join(folder, "tf_model")
-    self.ae.save(path)
-    with open(os.path.join(path, "mrsnet.json"), 'w') as f:
+    os.makedirs(folder, exist_ok=True)
+    self.ae.save(os.path.join(folder, "model.keras"))
+
+    # Calculate model metrics from summary
+    # Capture model summary output
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    self.ae.summary()
+    sys.stdout = old_stdout
+    summary_output = buffer.getvalue()
+    # Parse parameter counts from summary
+    trainable_params = 0
+    non_trainable_params = 0
+    for line in summary_output.split('\n'):
+      if 'Total params:' in line:
+        # Extract total params
+        total_match = line.split('Total params:')[1].split()[0].replace(',', '')
+        total_params = int(total_match)
+      elif 'Trainable params:' in line:
+        # Extract trainable params
+        trainable_match = line.split('Trainable params:')[1].split()[0].replace(',', '')
+        trainable_params = int(trainable_match)
+      elif 'Non-trainable params:' in line:
+        # Extract non-trainable params
+        non_trainable_match = line.split('Non-trainable params:')[1].split()[0].replace(',', '')
+        non_trainable_params = int(non_trainable_match)
+    # If we couldn't parse trainable/non-trainable separately, use total
+    if trainable_params == 0 and non_trainable_params == 0:
+      trainable_params = total_params
+      non_trainable_params = 0
+
+    # Calculate FLOPs if possible
+    if hasattr(self, 'flops'):
+      flops = self.flops
+    else:
+      flops = 0
+
+    with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
           'model': self.model,
           'autoencoder_model': self.autoencoder_model if hasattr(self,'autoencoder_model') else None,
@@ -911,7 +963,11 @@ class Autoencoder:
           'datatype': self.datatype,
           'norm': self.norm,
           'train_dataset_name': self.train_dataset_name,
-          'output': self.output
+          'output': self.output,
+          'trainable_params': trainable_params,
+          'non_trainable_params': non_trainable_params,
+          'total_params': trainable_params + non_trainable_params,
+          'flops': flops
         }, indent=2, sort_keys=True), file=f)
 
   @staticmethod
@@ -926,13 +982,13 @@ class Autoencoder:
     -------
         Autoencoder: Loaded model instance
     """
-    with open(os.path.join(path, "tf_model", "mrsnet.json")) as f:
+    with open(os.path.join(path, "mrsnet.json")) as f:
       data = json.load(f)
     model = Autoencoder(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                         data['datatype'], data['norm'])
     model.output = data['output']
     model.train_dataset_name = data['train_dataset_name']
-    model.ae = load_model(os.path.join(path,"tf_model"))
+    model.ae = load_model(os.path.join(path, "model.keras"))
     return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
