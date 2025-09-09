@@ -1,9 +1,15 @@
 # mrsnet/train.py - MRSNet - training
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Training utilities and validation strategies for MRSNet.
+
+This module provides various training strategies including cross-validation,
+data splitting, and model training utilities.
+"""
 
 import os
 import glob
@@ -19,12 +25,38 @@ from mrsnet.getfolder import get_folder
 from mrsnet.cfg import Cfg
 
 class Train:
+  """Base class for training strategies.
+
+  This class provides the foundation for various training strategies
+  including cross-validation and data splitting.
+
+  Attributes:
+      k (int): Number of folds or buckets
+      _bucket_idx (list): Bucket indices for data splitting
+  """
 
   def __init__(self,k):
+    """Initialize training strategy.
+
+    Args:
+        k (int): Number of folds or buckets
+    """
     self.k=k
     self._bucket_idx = []
 
   def _plot_distributions(self,d_out,folder,image_dpi,screen_dpi,verbose):
+    """Plot output value distributions across buckets.
+
+    Creates histograms showing the distribution of output values
+    across different data buckets for visualization.
+
+    Args:
+        d_out (numpy.ndarray): Output data tensor
+        folder (str): Folder to save plots
+        image_dpi (int): DPI for saved images
+        screen_dpi (int): DPI for screen display
+        verbose (int): Verbosity level
+    """
     # Plot distributions
     if len(d_out.shape) != 2:
       return # Nothing to plot, d_out is not a concentration tensor
@@ -62,6 +94,22 @@ class Train:
 
   def _cross_validate(self, model, epochs, batch_size, data, folder,
                       train_dataset_name, verbose, image_dpi, screen_dpi):
+    """Perform k-fold cross-validation.
+
+    Args:
+        model: Model to train
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        data: Training data
+        folder (str): Output folder for results
+        train_dataset_name (str): Name of training dataset
+        verbose (int): Verbosity level
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+
+    Returns:
+        tuple: (train_results, validation_results, has_error)
+    """
     # Cross validation
     train_res = { 'error': [None]*self.k }
     val_res = { 'error': [None]*self.k }
@@ -154,6 +202,18 @@ class Train:
         }, indent=2, sort_keys=True), file=f)
 
   def _plot_cross_validate(self, model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi):
+    """Plot cross-validation results.
+
+    Args:
+        model: Trained model
+        train_res (dict): Training results
+        val_res (dict): Validation results
+        has_error (bool): Whether error distributions are available
+        folder (str): Output folder for plots
+        verbose (int): Verbosity level
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+    """
     # Plot cross validation results
 
     # Error distributions
@@ -295,11 +355,32 @@ class Train:
     plt.close()
 
 class NoValidation(Train):
+  """Training without validation split.
+
+  This class implements training without any validation split,
+  using all available data for training.
+  """
+
   def __init__(self):
+    """Initialize no-validation trainer."""
     Train.__init__(self,1)
 
   def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
+    """Train model without validation split.
+
+    Args:
+        model: Model to train
+        data: Training data
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        path_model (str): Path for saving model
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        shuffle (bool, optional): Whether to shuffle data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+    """
     if verbose > 0:
       print("# No Validation")
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
@@ -317,12 +398,40 @@ class NoValidation(Train):
                   verbose=verbose, prefix='train', image_dpi=image_dpi, screen_dpi=screen_dpi)
 
 class Split(Train):
+  """Train/validation split strategy.
+
+  This class implements a simple train/validation split based on
+  a specified percentage of data for validation.
+
+  Attributes:
+      p (float): Percentage of data to use for validation
+  """
+
   def __init__(self,p):
+    """Initialize split trainer.
+
+    Args:
+        p (float): Percentage of data to use for validation (0-1)
+    """
     Train.__init__(self,2)
     self.p = p
 
   def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
+    """Train model with percentage-based split.
+
+    Args:
+        model: Model to train
+        data: Training data
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        path_model (str): Path for saving model
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        shuffle (bool, optional): Whether to shuffle data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+    """
     # Split train/validation by percentage
     data_dim = data[0].shape[0]
     out_dim = data[-1].shape[-1]
@@ -367,12 +476,40 @@ class Split(Train):
                   image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class DuplexSplit(Train):
+  """Duplex split strategy for train/validation splitting.
+
+  This class implements duplex splitting, which uses distance-based
+  selection to create representative train/validation splits.
+
+  Attributes:
+      p (float): Percentage of data to use for validation
+  """
+
   def __init__(self,p):
+    """Initialize duplex split trainer.
+
+    Args:
+        p (float): Percentage of data to use for validation (0-1)
+    """
     Train.__init__(self,2)
     self.p = p
 
   def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
+    """Train model with duplex split.
+
+    Args:
+        model: Model to train
+        data: Training data
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        path_model (str): Path for saving model
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        shuffle (bool, optional): Whether to shuffle data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+    """
     # Duplex split
     data_dim = data[0].shape[0]
     out_dim = data[-1].shape[-1]
@@ -459,11 +596,36 @@ class DuplexSplit(Train):
                   verbose=verbose, prefix='validation', image_dpi=image_dpi,screen_dpi=screen_dpi)
 
 class KFold(Train):
+  """K-fold cross-validation strategy.
+
+  This class implements k-fold cross-validation using a "Venetian blinds"
+  approach for data splitting.
+  """
+
   def __init__(self,k):
+    """Initialize K-fold trainer.
+
+    Args:
+        k (int): Number of folds for cross-validation
+    """
     Train.__init__(self,k)
 
   def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
+    """Train model with K-fold cross-validation.
+
+    Args:
+        model: Model to train
+        data: Training data
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        path_model (str): Path for saving model
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        shuffle (bool, optional): Whether to shuffle data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+    """
     # Stratify data into k folds
     data_dim = data[0].shape[0]
     out_dim = data[1].shape[-1]
@@ -492,11 +654,36 @@ class KFold(Train):
                          train_dataset_name, verbose, image_dpi, screen_dpi)
 
 class DuplexKFold(Train):
+  """Duplex K-fold cross-validation strategy.
+
+  This class implements duplex K-fold cross-validation, which uses
+  distance-based selection to create representative folds.
+  """
+
   def __init__(self,k):
+    """Initialize duplex K-fold trainer.
+
+    Args:
+        k (int): Number of folds for cross-validation
+    """
     Train.__init__(self,k)
 
   def train(self, model, data, epochs, batch_size, path_model, train_dataset_name="",
             image_dpi=[300], screen_dpi=96, shuffle=True, verbose=0):
+    """Train model with duplex K-fold cross-validation.
+
+    Args:
+        model: Model to train
+        data: Training data
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        path_model (str): Path for saving model
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        shuffle (bool, optional): Whether to shuffle data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+    """
     # Stratify data into k folds
     data_dim = data[0].shape[0]
     out_dim = data[-1].shape[-1]

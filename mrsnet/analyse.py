@@ -1,8 +1,14 @@
 # mrsnet/analyse.py - MRSNet - analyse model performance
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Model analysis and evaluation utilities for MRSNet.
+
+This module provides functions for analyzing model performance,
+including error analysis, visualization, and result reporting.
+"""
 
 import os
 import glob
@@ -18,6 +24,28 @@ from mrsnet.cfg import Cfg
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
                   verbose=0, image_dpi=[300], screen_dpi=96):
+  """Analyze model performance and generate reports.
+
+  Performs comprehensive analysis of model performance including error metrics,
+  visualizations, and result reporting.
+
+  Args:
+      model: Model object with predict method
+      inp (numpy.ndarray): Input data
+      out (numpy.ndarray): Expected output data
+      folder (str): Folder to save analysis results
+      prefix (str): Prefix for saved files
+      id (list, optional): List of sample IDs. Defaults to None
+      save_conc (bool, optional): Whether to save concentrations. Defaults to False
+      show_conc (bool, optional): Whether to show concentrations. Defaults to False
+      norm (str, optional): Normalization method. Defaults to None
+      verbose (int, optional): Verbosity level. Defaults to 0
+      image_dpi (list, optional): DPI for saved images. Defaults to [300]
+      screen_dpi (int, optional): DPI for screen display. Defaults to 96
+
+  Returns:
+      tuple: Analysis results (varies by model type)
+  """
   pred_op = getattr(model, "predict", None)
   if not callable(pred_op):
     if verbose > 0:
@@ -100,6 +128,18 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
 
 def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, screen_dpi):
+  """Analyze model prediction errors.
+
+  Args:
+      model: Trained model
+      pre: Predicted values
+      out: Ground truth values
+      folder (str): Output folder for results
+      prefix (str): File prefix for output files
+      verbose (int): Verbosity level
+      image_dpi (list): Image DPI settings
+      screen_dpi (int): Screen DPI setting
+  """
   error = pre - out
   error_mean = np.mean(error,axis=0)
   error_std = np.std(error,axis=0)
@@ -228,6 +268,20 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
   return info, error
 
 def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi):
+  """Analyze spectra reconstruction errors from autoencoder.
+
+  Args:
+      model: Trained autoencoder model
+      pre: Predicted spectra
+      inp: Input spectra
+      out: Ground truth spectra
+      folder (str): Output folder for results
+      prefix (str): File prefix for output files
+      id (list): List of spectrum identifiers
+      verbose (int): Verbosity level
+      image_dpi (list): Image DPI settings
+      screen_dpi (int): Screen DPI setting
+  """
   # Analyse spectra output from autoencoder
   if len(out) > 0:
     # Difference between predicted and actual spectra
@@ -352,6 +406,19 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
 
 # Plot difference
 def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
+  """Plot predicted spectra comparison.
+
+  Args:
+      model: Trained model
+      prefix (str): File prefix for output files
+      s (int): Spectrum index
+      inp: Input spectra
+      pre: Predicted spectra
+      out: Ground truth spectra
+
+  Returns:
+      matplotlib.figure.Figure: Figure object
+  """
   rs = pre.shape[0]*pre.shape[1]
   fig, axs = plt.subplots(rs,3)
   if rs == 1:

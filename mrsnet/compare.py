@@ -1,8 +1,14 @@
 # mrsnet/comapre.py - MRSNet - compare and analyse spectra
 #
 # SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Spectrum comparison utilities for MRSNet.
+
+This module provides functions for comparing datasets with basis spectra
+and analyzing differences between experimental and simulated data.
+"""
 
 import os
 import numpy as np
@@ -14,6 +20,20 @@ import mrsnet.molecules as molecules
 from mrsnet.dataset import Dataset
 
 def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, screen_dpi=96):
+  """Compare dataset spectra to spectra generated from basis.
+
+  Generates reference spectra from a basis set using the dataset's concentrations
+  and compares them with the actual dataset spectra.
+
+  Args:
+      ds (Dataset): Dataset to compare
+      basis (Basis): Basis set for generating reference spectra
+      high_ppm (float, optional): Upper PPM bound. Defaults to -4.5
+      low_ppm (float, optional): Lower PPM bound. Defaults to -1
+      n_fft_pts (int, optional): Number of FFT points. Defaults to 2048
+      verbose (int, optional): Verbosity level. Defaults to 0
+      screen_dpi (int, optional): DPI for screen display. Defaults to 96
+  """
   # Compare dataset to spectra generated from basis
   # Setup basis
   if verbose > 0:
@@ -103,10 +123,20 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     axs[2,0].set_ylabel("Real - Count")
     axs[3,0].set_ylabel("Imaginary - Count")
     axs[3,0].set_xlabel("Difference - Error")
-    axs[3,1].set_xlabel("Edit Off - Error")        both added:      mrsnet/selection.py
-
+    axs[3,1].set_xlabel("Edit Off - Error")
 
 def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):
+    """Plot difference between dataset and basis reference spectrum.
+
+    Args:
+        r: Reference spectrum data
+        d: Dataset spectrum data
+        c: Concentration data
+        nu: Frequency data
+        metabolites (list): List of metabolite names
+        source (str): Data source identifier
+        screen_dpi (int): Screen DPI for plotting
+    """
     # Plot difference between dataset and basis reference spectrum
     figure, axes = plt.subplots(4, 4, sharex=True, dpi=screen_dpi)
     axes[0,3].remove()

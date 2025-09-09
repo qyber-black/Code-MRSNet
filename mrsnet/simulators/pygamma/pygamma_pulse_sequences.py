@@ -8,6 +8,12 @@
 # Pulse sequence simulation code has been taken from VeSPA and implemented here with minor modifications.
 # https://github.com/vespa-mrs/vespa/
 
+"""PyGamma pulse sequence implementations for MRSNet.
+
+This module provides PyGamma implementations of various MRS pulse sequences
+including FID, PRESS, STEAM, and MEGAPRESS for spectral simulation.
+"""
+
 import os
 import pickle
 import pygamma as pg
@@ -16,6 +22,14 @@ import numpy as np
 from mrsnet.cfg import Cfg
 
 def fid(spin_system):
+  """Simulate FID (Free Induction Decay) pulse sequence.
+
+  Args:
+      spin_system: PyGamma spin system object
+
+  Returns:
+      pg.TTable1D: FID spectrum table
+  """
   sys_hamiltonian = pg.Hcs(spin_system) + pg.HJ(spin_system)
   read = pg.Fm(spin_system, "1H")
   ACQ = pg.acquire1D(pg.gen_op(read), sys_hamiltonian, 0.000001)
@@ -26,6 +40,16 @@ def fid(spin_system):
   return pg.TTable1D(ACQ.table(sigma0))
 
 def steam(spin_system, te=20, tm=10):
+  """Simulate STEAM (Stimulated Echo Acquisition Mode) pulse sequence.
+
+  Args:
+      spin_system: PyGamma spin system object
+      te (int, optional): Echo time in ms. Defaults to 20
+      tm (int, optional): Mixing time in ms. Defaults to 10
+
+  Returns:
+      pg.TTable1D: STEAM spectrum table
+  """
   # the isotope string used to sort/select the metabolites of interest is passed
   # in the sim_desc object so the user can tailor other object within their
   # code to be nuclei specific, such as the observe operator or pulses
@@ -102,6 +126,18 @@ def steam(spin_system, te=20, tm=10):
   return pg.TTable1D(ACQ.table(sigma0))
 
 def megapress(spin_system, omega, te=68, high_ppm=-7.5, low_ppm=1):
+  """Simulate MEGAPRESS pulse sequence.
+
+  Args:
+      spin_system: PyGamma spin system object
+      omega (float): B0 field strength in Hz
+      te (int, optional): Echo time in ms. Defaults to 68
+      high_ppm (float, optional): High PPM limit. Defaults to -7.5
+      low_ppm (float, optional): Low PPM limit. Defaults to 1
+
+  Returns:
+      list: List of spectrum tables for edit_off and edit_on acquisitions
+  """
   # order of pulse objects from VeSPA
   # so lets load the pulses, and import them as pulse object
   #       - these were exported directly from vespa as pickled objects
@@ -381,6 +417,17 @@ def pulse2op(pulse_obj, gyratio, pname, spin_system, obs_iso, offset=0.0):
   return pulse_op, plength
 
 def apply_crushed_180_rf(sys, sigma, dephase_ang=[0.0, 90.0, 180.0, 270.0], type='crusher'):
+  """Apply crushed 180° RF pulse.
+
+  Args:
+      sys: Spin system object
+      sigma: Density matrix
+      dephase_ang (list, optional): Dephasing angles. Defaults to [0.0, 90.0, 180.0, 270.0]
+      type (str, optional): Pulse type. Defaults to 'crusher'
+
+  Returns:
+      Density matrix after crushed 180° RF pulse
+  """
   sigma_mult = []
   for i in dephase_ang:
     sigma_mult.append(pg.gen_op(sigma))
@@ -403,14 +450,24 @@ def apply_crushed_180_rf(sys, sigma, dephase_ang=[0.0, 90.0, 180.0, 270.0], type
 
 
 def apply_crushed_rf(sys, sigma, pulse_op, type='crusher'):
-  """
-  The sigma input is a single density matrix object.  This object
+  """Apply crushed RF pulse.
+
+  The sigma input is a single density matrix object. This object
   is copied into 4 matrices that are rotated about Z axis by the symmetric
   angles in dephase_ang. The pulse_op RF pulse operator is applied to all
   4 density matrices. These are further rotated about the Z axis by the
   symmetric angles in dephase_ang, if type='crusher', or by the negative
   angles in dephase_ang if type='bipolar'. The four matrices are summed
   into one density matrix and divided by 4. A single density matrix is returned.
+
+  Args:
+      sys: Spin system object
+      sigma: Density matrix
+      pulse_op: RF pulse operator
+      type (str, optional): Pulse type ('crusher' or 'bipolar'). Defaults to 'crusher'
+
+  Returns:
+      Density matrix after crushed RF pulse
 
   after the RF pulse, any spins that did not experience at least a 90 deg RF
   pulse then there will be some signal loss due to lack of refocusing of
@@ -441,6 +498,16 @@ def apply_crushed_rf(sys, sigma, pulse_op, type='crusher'):
   return sigma_res
 
 def press(spin_system, te1=34, te2=34):
+  """Simulate PRESS (Point Resolved Spectroscopy) pulse sequence.
+
+  Args:
+      spin_system: PyGamma spin system object
+      te1 (int, optional): First echo time in ms. Defaults to 34
+      te2 (int, optional): Second echo time in ms. Defaults to 34
+
+  Returns:
+      pg.TTable1D: PRESS spectrum table
+  """
   #----------------------------------------------------------------------
   # This is an example PyGAMMA pulse sequence for use in Vespa-Simulation
   #

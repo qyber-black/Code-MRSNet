@@ -1,8 +1,15 @@
 # mrsnet/autoencoder.py - MRSNet - autoencoder model
 #
-# SPDX-FileCopyrightText: Copyright (C) 2022 Zien Ma, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Autoencoder models for MRSNet.
+
+This module provides various autoencoder architectures for MRS spectra,
+including convolutional and fully connected autoencoders, as well as
+encoder-quantifier models for concentration prediction.
+"""
 
 import os
 import csv
@@ -25,6 +32,19 @@ from .cnn import TimeHistory
 
 # Helper to construct convolutional encoder layer
 def _enc_conv_layer(m, filter, c, s, pooling, dropout):
+  """Construct a convolutional encoder layer.
+
+  Adds a Conv1D layer over the last index (frequency bins) with specified
+  convolution kernel size and ReLU activation.
+
+  Args:
+      m (keras.Sequential): Sequential model to add layers to
+      filter (int): Number of filters for the convolution
+      c (int): Convolution kernel size
+      s (int): Strides or pooling size
+      pooling (bool): If True, use max pooling; if False, use strides
+      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+  """
   # Conv1D layer over last index (freq. bins) with convolution kernel size c and relu activation
   # if pooling == True:  use s max pooling;
   #            == False: use s strides
@@ -45,6 +65,19 @@ def _enc_conv_layer(m, filter, c, s, pooling, dropout):
 
 # Helper to construct convolutional decoder layer
 def _dec_convt_layer(m, filter, c, s, pooling, dropout):
+  """Construct a convolutional decoder layer.
+
+  Adds a Conv1DTranspose layer over the last index (frequency filter bins) with
+  specified convolution kernel size and ReLU activation.
+
+  Args:
+      m (keras.Sequential): Sequential model to add layers to
+      filter (int): Number of filters for the convolution
+      c (int): Convolution kernel size
+      s (int): Strides or upsampling size
+      pooling (bool): If True, use upsampling; if False, use strides
+      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+  """
   # Conv1DT layer over last index (freq. filter bins) with convolution kernel size c and relu activation
   # if pooling == True:  use s max pooling;
   #            == False: use s strides
@@ -65,8 +98,28 @@ def _dec_convt_layer(m, filter, c, s, pooling, dropout):
 
 # Convolutional autoencoder via Model interface (using Sequential interface internally)
 class ConvAutoEnc(Model):
+  """Convolutional autoencoder model for MRS spectra.
+
+  This class implements a convolutional autoencoder using 1D convolutions
+  over the frequency dimension of MRS spectra.
+
+  Attributes:
+      encoder (keras.Sequential): Encoder network
+      decoder (keras.Sequential): Decoder network
+  """
 
   def __init__(self, n_specs, n_freqs, filter, latent, pooling, dropout, name='ConvAutoEnc'):
+    """Initialize a convolutional autoencoder.
+
+    Args:
+        n_specs (int): Number of spectra (acquisitions × datatype)
+        n_freqs (int): Number of frequency bins in spectra
+        filter (int): Number of filters on input conv layer (others computed from this)
+        latent (int): Size of latent representation
+        pooling (bool): Use pooling or strides for up/downsampling
+        dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+        name (str, optional): Model name. Defaults to 'ConvAutoEnc'
+    """
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
     # filter: numbner of filters on input conv layer (others computed from this)
@@ -107,12 +160,28 @@ class ConvAutoEnc(Model):
     self.build((None,n_specs,n_freqs))
 
   def call(self,x):
+    """Forward pass through the autoencoder.
+
+    Args:
+        x (tensor): Input spectra tensor
+
+    Returns:
+        tensor: Reconstructed spectra tensor
+    """
     x = self.encoder(x)
     x = self.decoder(x)
     return x
 
 # Helper to construct dense layer
 def _dense_layer(m, units, activation, dropout):
+  """Construct a dense layer with optional batch normalization and dropout.
+
+  Args:
+      m (keras.Sequential): Sequential model to add layers to
+      units (int): Number of units in the dense layer
+      activation (str): Activation function name
+      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+  """
   # Dense layer over last index (freq. bins) using given activation
   # if dropout > 0: dropout rate after activation;
   #            ==0: batch normalisation before activation;
@@ -131,8 +200,29 @@ def _dense_layer(m, units, activation, dropout):
 
 #  Fully connected autoencoder via Model interface (using Sequential interface internally)
 class FCAutoEnc(Model):
+  """Fully connected autoencoder model for MRS spectra.
+
+  This class implements a fully connected autoencoder using dense layers
+  for MRS spectra reconstruction.
+
+  Attributes:
+      encoder (keras.Sequential): Encoder network
+      decoder (keras.Sequential): Decoder network
+  """
 
   def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last ,dropout, name='FCAutoEnc'):
+    """Initialize a fully connected autoencoder.
+
+    Args:
+        n_specs (int): Number of spectra (acquisitions × datatype)
+        n_freqs (int): Number of frequency bins in spectra
+        layers_enc (list): List of encoder layer sizes
+        layers_dec (list): List of decoder layer sizes
+        activation (str): Activation function for hidden layers
+        activation_last (str): Activation function for output layer
+        dropout (float): Dropout rate
+        name (str, optional): Model name. Defaults to 'FCAutoEnc'
+    """
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
     # layers_enc: number of layers in encoder
@@ -161,14 +251,41 @@ class FCAutoEnc(Model):
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
 
   def call(self,x):
+    """Forward pass through the autoencoder.
+
+    Args:
+        x (tensor): Input spectra tensor
+
+    Returns:
+        tensor: Reconstructed spectra tensor
+    """
     x = self.encoder(x)
     x = self.decoder(x)
     return x
 
 #  Encoder-quantifier where the encoder comes from an autoencoder
 class EncQuant(Model):
+  """Encoder-quantifier model for concentration prediction.
+
+  This class combines a pre-trained encoder with a quantifier network
+  for predicting metabolite concentrations from MRS spectra.
+  """
 
   def __init__(self, encoder, n_specs, n_freqs, output_conc, units, layers, act, act_last, dp, name='EncQuant'):
+    """Initialize encoder-quantifier model.
+
+    Args:
+        encoder: Pre-trained encoder model
+        n_specs (int): Number of spectra (acquisitions × datatype)
+        n_freqs (int): Number of frequency bins in spectra
+        output_conc (int): Number of output concentrations
+        units (int): Number of units in first dense quantifier layer
+        layers (int): Number of dense layers in quantifier
+        act (str): Activation function for internal layers
+        act_last (str): Activation function for output layer
+        dp (float): Dropout rate
+        name (str, optional): Model name. Defaults to 'EncQuant'
+    """
     # encoder: pre-trained encoder model
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
@@ -196,15 +313,58 @@ class EncQuant(Model):
     self.build((None, n_specs, n_freqs)) # Build encoder - quantifier
 
   def call(self,x):
+    """Forward pass through the encoder-quantifier.
+
+    Args:
+        x (tensor): Input spectra tensor
+
+    Returns:
+        tensor: Predicted concentrations tensor
+    """
     x = self.encoder(x)
     x = self.quantifier(x)
     return x
 
 # Autoencoder model
 class Autoencoder:
+  """Main autoencoder interface for MRSNet.
+
+  This class provides a unified interface for both autoencoder and encoder-quantifier
+  models, handling model construction, training, and prediction.
+
+  Attributes:
+      model (str): Model architecture identifier
+      metabolites (list): List of metabolite names
+      pulse_sequence (str): Pulse sequence type
+      acquisitions (list): List of acquisition types
+      datatype (list): List of data types
+      norm (str): Normalization method
+      output (str): Output type ("spectra" or "concentrations")
+      encoder (keras.Model, optional): Pre-trained encoder for quantifier mode
+      autoencoder_model (str, optional): Autoencoder model name for quantifier mode
+      autoencoder_train_dataset_name (str, optional): Training dataset name for encoder
+      low_ppm (float): Lower PPM bound for input data
+      high_ppm (float): Upper PPM bound for input data
+      fft_samples (int): Number of FFT samples
+      train_dataset_name (str): Name of training dataset
+      autoencoder_arch (keras.Model): The actual autoencoder model
+  """
 
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm,
                encoder=None, encoder_model=None, encoder_train_dataset_name=None):
+    """Initialize an autoencoder model.
+
+    Args:
+        model (str): Model architecture identifier
+        metabolites (list): List of metabolite names
+        pulse_sequence (str): Pulse sequence type
+        acquisitions (list): List of acquisition types
+        datatype (list): List of data types
+        norm (str): Normalization method
+        encoder (keras.Model, optional): Pre-trained encoder for quantifier mode
+        encoder_model (str, optional): Autoencoder model name for quantifier mode
+        encoder_train_dataset_name (str, optional): Training dataset name for encoder
+    """
     self.model = model
     self.metabolites = metabolites
     self.pulse_sequence = pulse_sequence
@@ -231,16 +391,28 @@ class Autoencoder:
     self.ae_path = None
 
   def __str__(self):
+    """Return the model architecture string.
+
+    Returns:
+        str: Model architecture string
+    """
     return os.path.join(self.model, "-".join(self.metabolites),
                         self.pulse_sequence, "-".join(self.acquisitions),
                         "-".join(self.datatype), self.norm)
 
   def reset(self):
+    """Reset the model to initial state."""
     del self.ae
     self.ae = None
     self.train_dataset_name = None
 
   def _construct(self, ae_shape, output_conc=None):
+    """Construct the autoencoder model architecture.
+
+    Args:
+        ae_shape (tuple): Shape of input data (n_specs, n_freqs)
+        output_conc (int, optional): Number of output concentrations. Defaults to None
+    """
     # Autoencoder only; for quantifier use convert_to_quantifier
     n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
     n_freqs = ae_shape[1] # number of frequency bins in spectras
@@ -295,6 +467,22 @@ class Autoencoder:
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
             image_dpi=[300], screen_dpi=96, train_dataset_name=""):
+    """Train the autoencoder model.
+
+    Args:
+        d_data (list): Training data [spectra_in, spectra_out]
+        v_data (list, optional): Validation data [spectra_in, spectra_out]
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        folder (str): Output folder for results
+        verbose (int, optional): Verbosity level. Defaults to 0
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+
+    Returns:
+        tuple: (train_results, validation_results)
+    """
     devices = tf.config.list_logical_devices("GPU")
     if len(devices) < 1:
       print("**WARNING, we do not have a GPU for Tensorflow!**")
@@ -324,6 +512,23 @@ class Autoencoder:
 
   def _train_ae(self, d_data, v_data, epochs, batch_size, folder, verbose,
                 image_dpi, screen_dpi, train_dataset_name, devices):
+    """Train the autoencoder model.
+
+    Args:
+        d_data (list): Training data [spectra_in, spectra_out]
+        v_data (list, optional): Validation data [spectra_in, spectra_out]
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        folder (str): Output folder for results
+        verbose (int): Verbosity level
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        train_dataset_name (str): Name of training dataset
+        devices (list): List of GPU devices
+
+    Returns:
+        tuple: (train_results, validation_results)
+    """
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -471,6 +676,23 @@ class Autoencoder:
 
   def _train_aeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
                 image_dpi, screen_dpi, train_dataset_name, devices):
+    """Train the encoder-quantifier model.
+
+    Args:
+        d_data (list): Training data [spectra_in, concentrations]
+        v_data (list, optional): Validation data [spectra_in, concentrations]
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        folder (str): Output folder for results
+        verbose (int): Verbosity level
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        train_dataset_name (str): Name of training dataset
+        devices (list): List of GPU devices
+
+    Returns:
+        tuple: (train_results, validation_results)
+    """
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -610,6 +832,16 @@ class Autoencoder:
     return d_res, v_res
 
   def predict(self, spec_in, reshape=True, verbose=0):
+    """Predict spectra or concentrations from input spectra.
+
+    Args:
+        spec_in (array-like): Input spectra data
+        reshape (bool, optional): Whether to reshape input data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        numpy.ndarray: Predicted spectra or concentrations
+    """
     out_shape = spec_in.shape # Preserve shape of input spectra to reshape output (spectra only) accordingly
     if reshape:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
@@ -624,6 +856,11 @@ class Autoencoder:
     raise RuntimeError(f"Unknown output {self.output}")
 
   def save(self, folder):
+    """Save the trained model to disk.
+
+    Args:
+        folder (str): Directory to save the model
+    """
     path=os.path.join(folder, "tf_model")
     self.ae.save(path)
     with open(os.path.join(path, "mrsnet.json"), 'w') as f:
@@ -643,6 +880,14 @@ class Autoencoder:
 
   @staticmethod
   def load(path):
+    """Load a saved model from disk.
+
+    Args:
+        path (str): Directory containing the saved model
+
+    Returns:
+        Autoencoder: Loaded model instance
+    """
     with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
       data = json.load(f)
     model = Autoencoder(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
@@ -653,6 +898,19 @@ class Autoencoder:
     return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
+    """Save training results to files.
+
+    Args:
+        folder (str): Output directory
+        prefix (str): File prefix for saved files
+        history (dict): Training history
+        d_score (list): Training scores
+        v_score (list): Validation scores
+        loss (str): Loss function name
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        verbose (int): Verbosity level
+    """
     keys = sorted(history.keys())
     # History data
     with open(os.path.join(folder, prefix+'_history.csv'), "w") as out_file:

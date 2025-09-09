@@ -1,7 +1,7 @@
 # mrsnet/cfg.py - MRSNet - config
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
@@ -9,6 +9,20 @@ import matplotlib.pyplot as plt
 import json
 
 class Cfg:
+  """Configuration management for MRSNet.
+
+  This class provides static configuration management for the MRSNet package.
+  All methods are static and no instances of this class should be created.
+
+  Configuration values can be overridden by:
+  1. ROOT_PATH/cfg.json (generated after first run; overwrites defaults)
+  2. ~/.config/mrsnet.json (user config; overwrites cfg.json and defaults)
+
+  Attributes:
+      val (dict): Dictionary containing all configuration values
+      dev_flags (set): Set of development flags from MRSNET_DEV environment variable
+      file (str): Path to user configuration file
+  """
   # Default configuration - do not overwrite here but set alternatives in file
   # These are static variables for the class, accessed via the class. No object
   # of this class should be used; all methods are static.
@@ -69,6 +83,18 @@ class Cfg:
 
   @staticmethod
   def init(bin_path):
+    """Initialize MRSNet configuration.
+
+    Sets up the configuration system by:
+    1. Setting the root path from the binary path
+    2. Loading configuration from cfg.json and user config files
+    3. Creating necessary data directories
+    4. Setting up matplotlib defaults
+    5. Loading development flags from environment
+
+    Args:
+        bin_path (str): Path to the MRSNet binary/script
+    """
     # Root path of mrsnet
     Cfg.val["path_root"] = os.path.dirname(bin_path)
     # Load cfg file - data folders and other Cfg values can be overwritten by config file
@@ -137,6 +163,17 @@ class Cfg:
 
   @staticmethod
   def get_su_bases(reload=False):
+    """Get list of SU-* basis sets.
+
+    Searches for directories starting with 'su-' in the basis search paths
+    and returns a list of available SU basis sets.
+
+    Args:
+        reload (bool, optional): Force reload of SU bases. Defaults to False.
+
+    Returns:
+        list: List of SU basis set names (e.g., ['su-3tskyra', 'su-7t'])
+    """
     if reload or not hasattr(Cfg,'_su_bases'):
       Cfg._su_bases = []
     if len(Cfg._su_bases) == 0:
@@ -148,10 +185,26 @@ class Cfg:
 
   @staticmethod
   def dev(flag):
+    """Check if a development flag is set.
+
+    Args:
+        flag (str): Development flag to check
+
+    Returns:
+        bool: True if the flag is set, False otherwise
+    """
     return flag in Cfg.dev_flags
 
   @staticmethod
   def _screen_dpi():
+    """Calculate screen DPI for plotting.
+
+    Attempts to detect the screen DPI using the screeninfo library.
+    Falls back to default DPI if detection fails.
+
+    Returns:
+        float: Screen DPI value
+    """
     # DPI for plots on screen
     try:
       from screeninfo import get_monitors

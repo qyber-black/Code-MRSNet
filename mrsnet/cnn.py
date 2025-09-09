@@ -1,8 +1,14 @@
 # mrsnet/cnn.py - MRSNet - CNN models
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Convolutional Neural Network models for MRSNet.
+
+This module provides CNN implementations for concentration prediction
+from MRS spectra, including various architectures and training utilities.
+"""
 
 import os
 import csv
@@ -21,7 +27,37 @@ from tensorflow.keras.models import load_model
 from mrsnet.cfg import Cfg
 
 class CNN:
+  """Convolutional Neural Network for concentration prediction.
+
+  This class implements CNN models for predicting metabolite concentrations
+  from MRS spectra. It supports various architectures and training strategies.
+
+  Attributes:
+      model (str): Model architecture identifier
+      metabolites (list): List of metabolite names to predict
+      pulse_sequence (str): Pulse sequence type
+      acquisitions (list): List of acquisition types
+      datatype (list): List of data types (e.g., ['magnitude', 'phase'])
+      norm (str): Normalization method
+      output (str): Output type (always "concentrations")
+      low_ppm (float): Lower PPM bound for input data
+      high_ppm (float): Upper PPM bound for input data
+      fft_samples (int): Number of FFT samples
+      train_dataset_name (str): Name of training dataset
+      cnn_arch (keras.Model): The actual CNN model
+  """
+
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
+    """Initialize a CNN model.
+
+    Args:
+        model (str): Model architecture identifier (e.g., 'cnn_small_softmax')
+        metabolites (list): List of metabolite names to predict
+        pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
+        acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
+        datatype (list): List of data types (e.g., ['magnitude', 'phase'])
+        norm (str): Normalization method (e.g., 'sum', 'max')
+    """
     self.model = model
     self.metabolites = metabolites
     self.pulse_sequence = pulse_sequence
@@ -39,17 +75,34 @@ class CNN:
     self.cnn_arch = None
 
   def __str__(self):
+    """Get string representation of the model path.
+
+    Returns:
+        str: Model path string combining all parameters
+    """
     n = os.path.join(self.model, "-".join(self.metabolites),
                      self.pulse_sequence, "-".join(self.acquisitions),
                      "-".join(self.datatype), self.norm)
     return n
 
   def reset(self):
+    """Reset the CNN architecture and training dataset name.
+
+    Clears the current model architecture and training dataset information.
+    """
     del self.cnn_arch
     self.cnn_arch = None
     self.train_dataset_name = None
 
   def _freq_conv_layer(self, filter, c, s, dropout):
+    """Add a frequency convolution layer to the CNN.
+
+    Args:
+        filter (int): Number of filters
+        c (int): Convolution kernel size
+        s (int): Stride size
+        dropout (float): Dropout rate
+    """
     if s <= 0:
       self.cnn_arch.add(Conv2D(filter, c))
     else:
@@ -63,6 +116,12 @@ class CNN:
       self.cnn_arch.add(MaxPool2D((1,-s)))
 
   def _construct(self, input_shape, output_shape):
+    """Construct the CNN architecture.
+
+    Args:
+        input_shape (tuple): Input tensor shape
+        output_shape (tuple): Output tensor shape
+    """
     self.cnn_arch = Sequential(name=self.model)
     vals = self.model.split("_")
     if vals[0] != 'cnn':
@@ -131,6 +190,25 @@ class CNN:
 
   def train(self, d_data, v_data, epochs, batch_size,
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
+    """Train the CNN model on provided data.
+
+    Args:
+        d_data (list): Training data [spectra, concentrations]
+        v_data (list, optional): Validation data [spectra, concentrations]. Defaults to None
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        folder (str): Output folder for saving results
+        verbose (int, optional): Verbosity level. Defaults to 0
+        image_dpi (list, optional): Image DPI settings. Defaults to [300]
+        screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+        train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+
+    Returns:
+        tuple: (training_results, validation_results) dictionaries with MSE and MAE scores
+
+    Raises:
+        RuntimeError: If data format is incorrect
+    """
     devices = tf.config.list_logical_devices("GPU")
     if len(devices) < 1:
       print("**WARNING, we do not have a GPU for Tensorflow!**")
@@ -253,6 +331,16 @@ class CNN:
     return d_res, v_res
 
   def predict(self, d_inp, reshape=True, verbose=0):
+    """Make predictions on input data.
+
+    Args:
+        d_inp (numpy.ndarray): Input data tensor
+        reshape (bool, optional): Whether to reshape input data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        numpy.ndarray: Predicted concentrations
+    """
     if reshape:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
@@ -262,6 +350,11 @@ class CNN:
     return np.array(self.cnn_arch.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 
   def save(self, folder):
+    """Save the trained CNN model to disk.
+
+    Args:
+        folder (str): Directory to save the model
+    """
     path=os.path.join(folder, "tf_model")
     self.cnn_arch.save(path)
     with open(os.path.join(path, "mrsnet.json"), 'w') as f:
@@ -277,6 +370,14 @@ class CNN:
 
   @staticmethod
   def load(path):
+    """Load a trained CNN model from disk.
+
+    Args:
+        path (str): Directory containing the saved model
+
+    Returns:
+        CNN: Loaded CNN model instance
+    """
     with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
       data = json.load(f)
     model = CNN(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
@@ -286,6 +387,17 @@ class CNN:
     return model
 
   def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
+    """Save training results to files.
+
+    Args:
+        folder (str): Output folder for results
+        history (dict): Training history
+        d_score (list): Training scores
+        v_score (list): Validation scores
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        verbose (int): Verbosity level
+    """
     keys = sorted(history.keys())
     # History data
     with open(os.path.join(folder, 'history.csv'), "w") as out_file:
@@ -323,14 +435,44 @@ class CNN:
     plt.close()
 
 class TimeHistory(keras.callbacks.Callback):
+  """Callback to track training time per epoch.
+
+  Records the start and end time of each epoch for performance monitoring.
+  """
+
   def __init__(self, epochs):
+    """Initialize time history callback.
+
+    Args:
+        epochs (int): Total number of epochs to track
+    """
     super(TimeHistory, self).__init__()
     self.counter = 0
     self.times = np.zeros((epochs,2),dtype=np.int64)
+
   def on_train_begin(self, logs=None):
+    """Called at the beginning of training.
+
+    Args:
+        logs (dict, optional): Training logs. Defaults to None
+    """
     self.counter = 0
+
   def on_epoch_begin(self, batch, logs=None):
+    """Called at the beginning of each epoch.
+
+    Args:
+        batch (int): Batch number
+        logs (dict, optional): Training logs. Defaults to None
+    """
     self.times[self.counter,0] = time_ns()
+
   def on_epoch_end(self, batch, logs=None):
+    """Called at the end of each epoch.
+
+    Args:
+        batch (int): Batch number
+        logs (dict, optional): Training logs. Defaults to None
+    """
     self.times[self.counter,1] = time_ns()
     self.counter += 1

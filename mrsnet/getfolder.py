@@ -1,13 +1,37 @@
 # mrsnet/getfolder.py - MRSNet - get unique sub-folder for data storage
 #
-# SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2021-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""File system utilities for MRSNet.
+
+This module provides utilities for creating unique subfolders for data storage
+with file locking to prevent race conditions.
+"""
 
 import os
 import time
 import errno
 
 def get_folder(folder, subfolder_pattern, timeout=30, delay=.1):
+  """Get a unique subfolder for data storage.
+
+  Creates a unique subfolder within the specified folder using a file lock
+  to prevent race conditions when multiple processes try to create folders
+  simultaneously.
+
+  Args:
+      folder (str): Base folder path
+      subfolder_pattern (str): Pattern for subfolder names (e.g., "run-%s")
+      timeout (int, optional): Timeout in seconds for acquiring lock. Defaults to 30
+      delay (float, optional): Delay between lock attempts in seconds. Defaults to 0.1
+
+  Returns:
+      str: Path to the created unique subfolder
+
+  Raises:
+      RuntimeError: If lock acquisition times out or fails
+  """
   # Lock
   os.makedirs(folder,exist_ok=True)
   lockfile = os.path.join(folder, "mrsnet.lock")

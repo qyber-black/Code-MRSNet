@@ -1,8 +1,14 @@
 # mrsnet/metabolites.py - MRSNet - metabolites
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Metabolite definitions and name conversion utilities for MRSNet.
+
+This module provides standardized metabolite names and conversion functions
+for use throughout the MRSNet package.
+"""
 
 # Molecule names understood by MRNet; mapping long-name to range of short-names.
 # Preferred short name is the first in the array, e.g. for myo-inositol 'MyI' will be chosen over 'mi'
@@ -38,6 +44,22 @@ WATER_REFERENCE = -4.75           # Temperature dependant, avoid using if at all
 GYROMAGNETIC_RATIO = 42.577478518 # 1H (MHz/T) : https://physics.nist.gov/cgi-bin/cuu/Value?gammapbar
 
 def convert_names(molecules, shorten=False):
+  """Standardize molecule names to short or long form.
+
+  Converts a list of metabolite names to their standardized form.
+  Names are case-insensitive and can be either short or long form.
+
+  Args:
+      molecules (list): List of metabolite names to convert
+      shorten (bool, optional): If True, convert to short names.
+                               If False, convert to long names. Defaults to False.
+
+  Returns:
+      list: List of standardized metabolite names
+
+  Raises:
+      RuntimeError: If a metabolite name is not recognized
+  """
   # Standardise molecule names to short or long form
   new_names = []
   for name in molecules:
@@ -57,12 +79,32 @@ def convert_names(molecules, shorten=False):
   return new_names
 
 def short_name(names):
+  """Get standard short molecule name(s).
+
+  Convenience function to convert metabolite names to their short form.
+
+  Args:
+      names (str or list): Single metabolite name or list of names
+
+  Returns:
+      str or list: Short name(s) corresponding to input
+  """
   # Standard short molecule name
   if isinstance(names,list):
     return convert_names(names, shorten=True)
   return convert_names([names], shorten=True)[0]
 
 def long_name(names):
+  """Get standard long molecule name(s).
+
+  Convenience function to convert metabolite names to their long form.
+
+  Args:
+      names (str or list): Single metabolite name or list of names
+
+  Returns:
+      str or list: Long name(s) corresponding to input
+  """
   # Standard long molecule name
   if isinstance(names,list):
     return convert_names(names)

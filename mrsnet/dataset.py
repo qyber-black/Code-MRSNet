@@ -1,9 +1,16 @@
 # mrsnet/dataset.py - MRSNet - spectra dataset
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Dataset management for MRSNet.
+
+This module provides the Dataset class for managing collections of spectra
+and their corresponding concentrations, including loading from files,
+generating synthetic data, and exporting for model training.
+"""
 
 import os
 import math
@@ -19,9 +26,27 @@ from mrsnet.grid import Grid
 from mrsnet.cfg import Cfg
 
 class Dataset:
-  # A dataset is a collection of spectra for training, testing or predicting.
+  """Collection of spectra and concentrations for training, testing, or prediction.
+
+  This class manages datasets containing multiple spectra with their corresponding
+  metabolite concentrations. It supports loading from files, generating synthetic
+  data, and exporting for model training.
+
+  Attributes:
+      name (str): Name of the dataset
+      metabolites (list): List of metabolite names in this dataset
+      spectra (list): List of spectrum dictionaries (one per sample)
+      concentrations (list): List of concentration dictionaries (one per sample)
+      pulse_sequence (str): Pulse sequence type for all spectra
+      noise_added (bool): Whether noise has been added to the spectra
+  """
 
   def __init__(self, name):
+    """Initialize a new dataset.
+
+    Args:
+        name (str): Name of the dataset
+    """
     self.name = name
     self.metabolites = None
     self.spectra = []
@@ -30,6 +55,24 @@ class Dataset:
     self.noise_added = False
 
   def load_dicoms(self, folder, concentrations=None, metabolites=[], verbose=0):
+    """Load spectra from DICOM or CSV files in a folder.
+
+    Recursively searches a folder for .ima (DICOM) and .csv files and loads
+    them as spectra. Applies B0 correction to each set of spectra.
+
+    Args:
+        folder (str): Path to folder containing spectrum files
+        concentrations (dict, optional): Dictionary mapping spectrum IDs to concentrations.
+                                       Defaults to None
+        metabolites (list, optional): List of metabolite names to extract. Defaults to []
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        Dataset: Self for method chaining
+
+    Raises:
+        RuntimeError: If duplicate spectrum IDs are found
+    """
     from mrsnet.spectrum import Spectrum
     specs = {}
     concs = {}
@@ -65,6 +108,23 @@ class Dataset:
     return self
 
   def generate_spectra(self, basis, num, samplers, verbose):
+    """Generate synthetic spectra from a basis set.
+
+    Creates a dataset by combining basis spectra with randomly sampled
+    concentrations using various sampling strategies.
+
+    Args:
+        basis (Basis): Basis object containing metabolite spectra
+        num (int): Number of spectra to generate
+        samplers (list): List of sampling strategies ('random', 'dirichlet', 'sobol', etc.)
+        verbose (int): Verbosity level
+
+    Returns:
+        Dataset: Self for method chaining
+
+    Raises:
+        RuntimeError: If num <= 0 or metabolite mismatch between dataset and basis
+    """
     # Generate the dataset from the basis (assuming metabolites taken from those in the basis).
     if num <= 0:
       raise RuntimeError(f"n_samples must be greater than 0, not {num}!")
@@ -196,6 +256,18 @@ class Dataset:
       self.concentrations.append(c)
 
   def add_noise(self, noise_p, noise_type, noise_mu, noise_sigma, verbose):
+    """Add noise to all spectra in the dataset.
+
+    Args:
+        noise_p (float): Probability of adding noise to each spectrum (0-1)
+        noise_type (str): Type of noise to add ('adc_normal' or 'none')
+        noise_mu (float): Maximum noise mean parameter
+        noise_sigma (float): Maximum noise standard deviation parameter
+        verbose (int): Verbosity level
+
+    Raises:
+        RuntimeError: If noise is added twice or unknown noise type
+    """
     # Add noise to all spectra
     if self.noise_added:
       raise RuntimeError("Noise added twice to dataset")
@@ -235,6 +307,16 @@ class Dataset:
         print(f"  Added noise to {n_cnt} of {num} spectra")
 
   def save(self, path, folder=None, spectra_only=False):
+    """Save dataset to disk.
+
+    Args:
+        path (str): Base path for saving
+        folder (str, optional): Specific folder name. Defaults to None
+        spectra_only (bool, optional): Save only spectra, not metadata. Defaults to False
+
+    Returns:
+        str: Path to saved dataset folder
+    """
     from mrsnet.getfolder import get_folder
     if folder == None:
       folder = get_folder(os.path.join(path,self.name),str(len(self.spectra))+"-%s")
@@ -254,6 +336,16 @@ class Dataset:
 
   @staticmethod
   def load(folder, force_clean=False, info_only=False):
+    """Load dataset from disk.
+
+    Args:
+        folder (str): Path to dataset folder
+        force_clean (bool, optional): Force loading clean spectra. Defaults to False
+        info_only (bool, optional): Load only metadata, not spectra. Defaults to False
+
+    Returns:
+        Dataset: Loaded dataset object
+    """
     info = joblib.load(os.path.join(folder, "info.joblib"))
     spectra = None
     if not force_clean and os.path.isfile(os.path.join(folder, "spectra_noisy.joblib")):
@@ -273,6 +365,14 @@ class Dataset:
     return ds
 
   def plot_concentrations(self, norm='none'):
+    """Plot concentration histograms for all metabolites.
+
+    Args:
+        norm (str, optional): Normalization method ('none', 'sum', 'max'). Defaults to 'none'
+
+    Returns:
+        matplotlib.figure.Figure or None: Figure object if concentrations exist, None otherwise
+    """
     if len(self.concentrations) > 0:
       n_spec = len(self.spectra)
       n_hst = len(self.metabolites)
@@ -307,6 +407,26 @@ class Dataset:
 
   def export(self, metabolites=None, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, norm='sum',
              acquisitions=['edit_off','difference'],datatype='magnitude', normalise=True, export_concentrations=True, verbose=0):
+    """Export dataset to tensor format for model training.
+
+    Args:
+        metabolites (list, optional): List of metabolites to export. Defaults to None
+        high_ppm (float, optional): Upper PPM bound. Defaults to -4.5
+        low_ppm (float, optional): Lower PPM bound. Defaults to -1
+        n_fft_pts (int, optional): Number of FFT points. Defaults to 2048
+        norm (str, optional): Concentration normalization method. Defaults to 'sum'
+        acquisitions (list, optional): List of acquisition types. Defaults to ['edit_off','difference']
+        datatype (str, optional): Data type for export. Defaults to 'magnitude'
+        normalise (bool, optional): Whether to normalize spectra. Defaults to True
+        export_concentrations (bool, optional): Whether to export concentrations. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        tuple: (input_tensor, output_tensor) for model training
+
+    Raises:
+        RuntimeError: If tensor shapes are unexpected
+    """
     if metabolites is None:
       metabolites = self.metabolites
 
@@ -352,6 +472,21 @@ class Dataset:
 
   def _check_export(self,d_inp,d_out,metabolites,high_ppm,low_ppm,n_fft_pts,norm,
                     acquisitions,datatype,normalise,verbose):
+    """Check dataset export functionality.
+
+    Args:
+        d_inp: Input data
+        d_out: Output data
+        metabolites (list): List of metabolite names
+        high_ppm (float): Upper PPM bound
+        low_ppm (float): Lower PPM bound
+        n_fft_pts (int): Number of FFT points
+        norm (str): Normalization method
+        acquisitions (list): List of acquisition types
+        datatype (list): List of data types
+        normalise (bool): Whether to normalize
+        verbose (int): Verbosity level
+    """
     # Test mrsnet.dataset.export
     from colorama import Fore, Style
     print("# Testing mrsnet.dataset.export")
@@ -452,6 +587,20 @@ class Dataset:
 
   @staticmethod
   def _export_spectra(s, acquisitions, datatypes, high_ppm, low_ppm, n_fft_pts, normalise):
+    """Export spectrum data to tensor format.
+
+    Args:
+        s: Spectrum object
+        acquisitions (list): List of acquisition types
+        datatypes (list): List of data types
+        high_ppm (float): Upper PPM bound
+        low_ppm (float): Lower PPM bound
+        n_fft_pts (int): Number of FFT points
+        normalise (bool): Whether to normalize
+
+    Returns:
+        numpy.ndarray: Exported spectrum tensor
+    """
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
@@ -489,6 +638,16 @@ class Dataset:
 
   @staticmethod
   def _export_concentrations(c, metabolites, norm):
+    """Export concentration data to tensor format.
+
+    Args:
+        c: Concentration dictionary
+        metabolites (list): List of metabolite names
+        norm (str): Normalization method
+
+    Returns:
+        numpy.ndarray: Exported concentration tensor
+    """
     m_idx = 0
     out = np.array([c[m] for m in metabolites], dtype=np.float64)
     if norm == 'max':

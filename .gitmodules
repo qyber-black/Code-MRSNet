@@ -9,7 +9,7 @@
 	shallow = true
 [submodule "mrsnet/qdicom"]
 	path = mrsnet/qdicom
-	url = https://qyber.black/pca/code-qdicom-utilities.git
+	url = https://qyber.black/ca/code-qdicom-utilities.git
 	shallow = true
 [submodule "data/benchmark"]
 	path = data/benchmark

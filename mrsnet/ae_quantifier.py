@@ -1,8 +1,14 @@
 # mrsnet/ae_quantifier.py - MRSNet - autoencoder-quantification model
 #
-# SPDX-FileCopyrightText: Copyright (C) 2022 Zien Ma, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2022-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Autoencoder-quantifier models for MRSNet.
+
+This module provides combined autoencoder-quantifier models that can both
+reconstruct spectra and predict metabolite concentrations simultaneously.
+"""
 
 import os
 import csv
@@ -26,6 +32,14 @@ from .cnn import TimeHistory
 
 # Helper to construct dense layer
 def _Dense_layer(m, units, activation, dropout):
+  """Construct a dense layer with optional batch normalization and dropout.
+
+  Args:
+      m (keras.Sequential): Sequential model to add layers to
+      units (int): Number of units in the dense layer
+      activation (str): Activation function name
+      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+  """
   # Dense layer over last index (freq. bins) using given activation
   # if dropout > 0: dropout rate after activation;
   #            ==0: batch normalisation before activation;
@@ -44,6 +58,18 @@ def _Dense_layer(m, units, activation, dropout):
 
 # Helper to construct dense layer
 def _dense_layer(m,units, activation, dropout, name=None):
+  """Construct a dense layer using functional API.
+
+  Args:
+      m (tensor): Input tensor
+      units (int): Number of units in the dense layer
+      activation (str): Activation function name
+      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+      name (str, optional): Layer name. Defaults to None
+
+  Returns:
+      tensor: Output tensor
+  """
   if activation == "None":
     x = layers.Dense(units,name=name)(m)
   else:
@@ -60,8 +86,31 @@ def _dense_layer(m,units, activation, dropout, name=None):
 
 #  Fully connected autoencoder via Model interface (using Sequential interface internally)
 class FCAutoEncQuant(Model):
+  """Fully connected autoencoder-quantifier model.
+
+  This class implements a fully connected autoencoder with an integrated
+  quantifier for both spectrum reconstruction and concentration prediction.
+  """
 
   def __init__(self, n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last, dropout, output_conc, unit, layers, act, act_last, dp, name='FCAutoEncQuant'):
+    """Initialize fully connected autoencoder-quantifier.
+
+    Args:
+        n_specs (int): Number of spectra (acquisitions × datatype)
+        n_freqs (int): Number of frequency bins in spectra
+        layers_enc (int): Number of encoder layers
+        layers_dec (int): Number of decoder layers
+        activation (str): Activation function for encoder/decoder
+        activation_last (str): Activation function for decoder output
+        dropout (float): Dropout rate for encoder/decoder
+        output_conc (int): Number of output concentrations
+        unit (int): Number of units in first quantifier layer
+        layers (int): Number of quantifier layers
+        act (str): Activation function for quantifier
+        act_last (str): Activation function for quantifier output
+        dp (float): Dropout rate for quantifier
+        name (str, optional): Model name. Defaults to 'FCAutoEncQuant'
+    """
     # n_specs: number of spectra (acquisisions x datatype)
     # n_freqs: number of frequency bins in spectra
     # layers_enc: number of layers in encoder
@@ -107,8 +156,36 @@ class FCAutoEncQuant(Model):
 
 # Autoencoder model
 class Autoencoder_quantifier:
+  """Autoencoder-quantifier model for MRSNet.
+
+  This class implements a combined autoencoder-quantifier model that can both
+  reconstruct spectra and predict metabolite concentrations simultaneously.
+
+  Attributes:
+      model (str): Model architecture identifier
+      metabolites (list): List of metabolite names
+      pulse_sequence (str): Pulse sequence type
+      acquisitions (list): List of acquisition types
+      datatype (list): List of data types
+      norm (str): Normalization method
+      low_ppm (float): Lower PPM bound for input data
+      high_ppm (float): Upper PPM bound for input data
+      fft_samples (int): Number of FFT samples
+      train_dataset_name (str): Name of training dataset
+      aeq (keras.Model): The actual autoencoder-quantifier model
+  """
 
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype,norm):
+    """Initialize an autoencoder-quantifier model.
+
+    Args:
+        model (str): Model architecture identifier
+        metabolites (list): List of metabolite names
+        pulse_sequence (str): Pulse sequence type
+        acquisitions (list): List of acquisition types
+        datatype (list): List of data types
+        norm (str): Normalization method
+    """
     self.model = model
     self.metabolites = metabolites
     self.pulse_sequence = pulse_sequence
@@ -124,16 +201,28 @@ class Autoencoder_quantifier:
     self.aeq = None
 
   def __str__(self):
+    """Return the model architecture string.
+
+    Returns:
+        str: Model architecture string
+    """
     return os.path.join(self.model, "-".join(self.metabolites),
                         self.pulse_sequence, "-".join(self.acquisitions),
                         "-".join(self.datatype), self.norm)
 
   def reset(self):
+    """Reset the model to initial state."""
     del self.aeq
     self.aeq = None
     self.train_dataset_name = None
 
   def _construct(self, ae_shape, output_conc=None):
+    """Construct the autoencoder-quantifier model architecture.
+
+    Args:
+        ae_shape (tuple): Shape of input data (n_specs, n_freqs)
+        output_conc (int, optional): Number of output concentrations. Defaults to None
+    """
     # Autoencoder only; for quantifier use convert_to_quantifier
     n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
     n_freqs = ae_shape[1] # number of frequency bins in spectras
@@ -161,6 +250,22 @@ class Autoencoder_quantifier:
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
               image_dpi=[300], screen_dpi=96, train_dataset_name=""):
+      """Train the autoencoder-quantifier model.
+
+      Args:
+          d_data (list): Training data [spectra_in, spectra_out, concentrations]
+          v_data (list, optional): Validation data [spectra_in, spectra_out, concentrations]
+          epochs (int): Number of training epochs
+          batch_size (int): Batch size for training
+          folder (str): Output folder for results
+          verbose (int, optional): Verbosity level. Defaults to 0
+          image_dpi (list, optional): Image DPI settings. Defaults to [300]
+          screen_dpi (int, optional): Screen DPI setting. Defaults to 96
+          train_dataset_name (str, optional): Name of training dataset. Defaults to ""
+
+      Returns:
+          tuple: (train_results, validation_results)
+      """
       devices = tf.config.list_logical_devices("GPU")
       if len(devices) < 1:
         print("**WARNING, we do not have a GPU for Tensorflow!**")
@@ -187,6 +292,23 @@ class Autoencoder_quantifier:
 
   def _train_aeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
                 image_dpi, screen_dpi, train_dataset_name, devices):
+    """Train the autoencoder-quantifier model.
+
+    Args:
+        d_data (list): Training data [spectra_in, spectra_out, concentrations]
+        v_data (list, optional): Validation data [spectra_in, spectra_out, concentrations]
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        folder (str): Output folder for results
+        verbose (int): Verbosity level
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        train_dataset_name (str): Name of training dataset
+        devices (list): List of GPU devices
+
+    Returns:
+        tuple: (train_results, validation_results)
+    """
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -347,6 +469,16 @@ class Autoencoder_quantifier:
     return d_res, v_res
 
   def predict(self, spec_in, reshape=True, verbose=0):
+    """Predict concentrations or spectra from input spectra.
+
+    Args:
+        spec_in (array-like): Input spectra data
+        reshape (bool, optional): Whether to reshape input data. Defaults to True
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        numpy.ndarray: Predicted concentrations or spectra
+    """
     out_shape = spec_in.shape # Preserve shape of input spectra to reshape output (spectra only) accordingly
     if reshape:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
@@ -362,6 +494,11 @@ class Autoencoder_quantifier:
 
 
   def save(self, folder):
+    """Save the trained model to disk.
+
+    Args:
+        folder (str): Directory to save the model
+    """
     path=os.path.join(folder, "tf_model")
     self.aeq.save(path)
     with open(os.path.join(path, "mrsnet.json"), 'w') as f:
@@ -378,6 +515,14 @@ class Autoencoder_quantifier:
 
   @staticmethod
   def load(path):
+      """Load a saved model from disk.
+
+      Args:
+          path (str): Directory containing the saved model
+
+      Returns:
+          Autoencoder_quantifier: Loaded model instance
+      """
       with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
           data = json.load(f)
       model = Autoencoder_quantifier(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
@@ -388,6 +533,19 @@ class Autoencoder_quantifier:
       return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
+      """Save training results to files.
+
+      Args:
+          folder (str): Output directory
+          prefix (str): File prefix for saved files
+          history (dict): Training history
+          d_score (list): Training scores
+          v_score (list): Validation scores
+          loss (str): Loss function name
+          image_dpi (list): Image DPI settings
+          screen_dpi (int): Screen DPI setting
+          verbose (int): Verbosity level
+      """
       keys = sorted(history.keys())
       # History data
       with open(os.path.join(folder, prefix + '_history.csv'), "w") as out_file:

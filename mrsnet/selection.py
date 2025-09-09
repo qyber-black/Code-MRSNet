@@ -1,8 +1,15 @@
 # mrsnet/selection.py - MRSNet - model selection
 #
-# SPDX-FileCopyrightText: Copyright (C) 2020-2022 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Model selection and hyperparameter optimization for MRSNet.
+
+This module provides various model selection strategies including grid search,
+Quasi-Monte Carlo (QMC), Gaussian Process Optimization (GPO), and Genetic
+Algorithms (GA) for finding optimal hyperparameters.
+"""
 
 import os
 import subprocess
@@ -19,8 +26,41 @@ from mrsnet.dataset import Dataset
 from mrsnet.cfg import Cfg
 
 class Select:
+  """Main model selection class for hyperparameter optimization.
+
+  This class provides a unified interface for various model selection strategies
+  including grid search, QMC, GPO, and GA optimization methods.
+
+  Attributes:
+      metabolites (list): List of metabolite names
+      dataset (str): Path to dataset
+      epochs (int): Number of training epochs
+      validate (str): Validation strategy
+      screen_dpi (int): DPI for screen display
+      image_dpi (list): DPI for saved images
+      verbose (int): Verbosity level
+      dataset_name (str): Name of the dataset
+      pulse_sequence (str): Pulse sequence type
+      model_str (str): Model architecture string
+      remote (str, optional): Remote execution configuration
+      remote_user (str, optional): Remote username
+      remote_tasks (int, optional): Number of remote tasks
+      remote_wait (int, optional): Remote wait time
+  """
 
   def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
+    """Initialize model selection.
+
+    Args:
+        remote (str): Remote execution configuration (format: "host:user:tasks:wait")
+        metabolites (list): List of metabolite names
+        dataset (str): Path to dataset
+        epochs (int): Number of training epochs
+        validate (str): Validation strategy
+        screen_dpi (int): DPI for screen display
+        image_dpi (list): DPI for saved images
+        verbose (int): Verbosity level
+    """
     from mrsnet.dataset import Dataset
     if os.path.isfile(os.path.join(dataset,"spectra_noisy.joblib")) or \
        os.path.isfile(os.path.join(dataset,"spectra_clean.joblib")):
@@ -67,6 +107,12 @@ class Select:
     self.train_performance = []
 
   def _add_task(self,key_vals,path_model):
+    """Add a new optimization task.
+
+    Args:
+        key_vals (dict): Dictionary of parameter values for the task
+        path_model (str): Base path for model storage
+    """
     # Add new task given by key_vals arguments and model storage path base path_model
 
     # Convert arguments, interpret model string
@@ -202,6 +248,11 @@ class Select:
       })
 
   def _run_tasks(self, load_only=False):
+    """Run all tasks in the selection process.
+
+    Args:
+        load_only (bool, optional): If True, only load existing results without running new tasks. Defaults to False.
+    """
     counter = 1
     remote_run = []
     for t in self.tasks:
@@ -267,6 +318,11 @@ class Select:
     self.tasks = []
 
   def _run(self,args):
+    """Run a single training task.
+
+    Args:
+        args: Task arguments containing model parameters
+    """
     cmd = ['/usr/bin/env', 'python3', 'mrsnet.py', 'train',
            '--metabolites', *[m for m in self.metabolites],
            '--dataset', self.dataset,
@@ -294,6 +350,12 @@ class Select:
     p.wait()
 
   def _run_remote(self,id,all):
+    """Run a task remotely via SSH.
+
+    Args:
+        id: Task identifier
+        all: List of all tasks with their status and commands
+    """
     cmd = ['/usr/bin/env', 'bash', self.remote, self.remote_user, "X", all[id][2]]
 
     if all[id][0] == 'run':
@@ -336,6 +398,15 @@ class Select:
     return all[id][0]
 
   def _load_performance(self, model_path, fold):
+    """Load performance metrics from a trained model.
+
+    Args:
+        model_path (str): Path to the trained model
+        fold (str): Fold identifier for cross-validation
+
+    Returns:
+        dict: Performance metrics including loss and MAE
+    """
     try:
       if len(fold) == 0:
         if self.model_str == "ae_fc":                       # FIXME: I insert a self.model_str in __init__() to make here recognize the mddel string, training autoencoder produces the spectra_errors
@@ -380,6 +451,13 @@ class Select:
     return val_p, train_p
 
   def _save_performance(self, collection_name, var_keys, fix_keys):
+    """Save performance results to CSV files.
+
+    Args:
+        collection_name (str): Name of the collection being optimized
+        var_keys (list): List of variable parameter keys
+        fix_keys (list): List of fixed parameter keys
+    """
     var_keys.sort()
     fix_keys.sort()
     # Results folder
@@ -494,10 +572,38 @@ class Select:
     return folder
 
 class SelectGrid(Select):
+  """Grid search model selection.
+
+  Performs exhaustive grid search over all parameter combinations
+  to find the optimal hyperparameters.
+  """
+
   def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
+    """Initialize grid search selector.
+
+    Args:
+        metabolites (list): List of metabolite names
+        dataset (str): Path to dataset
+        epochs (int): Number of training epochs
+        validate (str): Validation strategy
+        remote (str): Remote execution configuration
+        screen_dpi (int): DPI for screen display
+        image_dpi (list): DPI for saved images
+        verbose (int): Verbosity level
+    """
     super(SelectGrid, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
 
   def optimise(self, collection_name, models, path_model):
+    """Perform grid search optimization.
+
+    Args:
+        collection_name (str): Name of the collection
+        models (Grid): Grid of model parameters to search
+        path_model (str): Path to save model results
+
+    Returns:
+        str: Path to results folder
+    """
     if self.verbose > 0:
       print("# Grid Model Selection")
     keys = [k for k in models.values.keys()]
@@ -518,11 +624,40 @@ class SelectGrid(Select):
     self._save_performance(collection_name+"-grid", var_keys, fix_keys)
 
 class SelectQMC(Select):
+  """Quasi-Monte Carlo model selection.
+
+  Uses Sobol sequences for efficient sampling of the parameter space
+  to find optimal hyperparameters.
+  """
+
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+    """Initialize QMC selector.
+
+    Args:
+        metabolites (list): List of metabolite names
+        dataset (str): Path to dataset
+        epochs (int): Number of training epochs
+        validate (str): Validation strategy
+        repeats (int): Number of QMC samples
+        remote (str): Remote execution configuration
+        screen_dpi (int): DPI for screen display
+        image_dpi (list): DPI for saved images
+        verbose (int): Verbosity level
+    """
     super(SelectQMC, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
+    """Perform QMC optimization.
+
+    Args:
+        collection_name (str): Name of the collection
+        models (Grid): Grid of model parameters to search
+        path_model (str): Path to save model results
+
+    Returns:
+        str: Path to results folder
+    """
     if self.verbose > 0:
       print("# QMC Model Selection")
     keys = [k for k in models.values.keys()]
@@ -554,11 +689,40 @@ class SelectQMC(Select):
     self._save_performance(collection_name+"-qmc", var_keys, fix_keys)
 
 class SelectGPO(Select):
+  """Gaussian Process Optimization model selection.
+
+  Uses Gaussian Process Optimization (GPO) to efficiently search
+  the parameter space and find optimal hyperparameters.
+  """
+
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+    """Initialize GPO selector.
+
+    Args:
+        metabolites (list): List of metabolite names
+        dataset (str): Path to dataset
+        epochs (int): Number of training epochs
+        validate (str): Validation strategy
+        repeats (int): Number of optimization iterations
+        remote (str): Remote execution configuration
+        screen_dpi (int): DPI for screen display
+        image_dpi (list): DPI for saved images
+        verbose (int): Verbosity level
+    """
     super(SelectGPO, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
+    """Perform GPO optimization.
+
+    Args:
+        collection_name (str): Name of the collection
+        models (Grid): Grid of model parameters to search
+        path_model (str): Path to save model results
+
+    Returns:
+        str: Path to results folder
+    """
     if self.verbose > 0:
       print("# GPO Model Selection")
     keys = [k for k in models.values.keys()]
@@ -736,12 +900,41 @@ class SelectGPO(Select):
     plt.close()
 
 class SelectGA(Select):
+  """Genetic Algorithm model selection.
+
+  Uses Genetic Algorithm (GA) to evolve solutions and find
+  optimal hyperparameters through evolutionary optimization.
+  """
+
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+    """Initialize GA selector.
+
+    Args:
+        metabolites (list): List of metabolite names
+        dataset (str): Path to dataset
+        epochs (int): Number of training epochs
+        validate (str): Validation strategy
+        repeats (int): Number of generations
+        remote (str): Remote execution configuration
+        screen_dpi (int): DPI for screen display
+        image_dpi (list): DPI for saved images
+        verbose (int): Verbosity level
+    """
     super(SelectGA, self).__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
     self.repeats = repeats
     self.last_fitness = 0
 
   def optimise(self, collection_name, models, path_model):
+    """Perform GA optimization.
+
+    Args:
+        collection_name (str): Name of the collection
+        models (Grid): Grid of model parameters to search
+        path_model (str): Path to save model results
+
+    Returns:
+        str: Path to results folder
+    """
     import pygad
     if self.verbose > 0:
       print("# GA Model Selection")
@@ -806,6 +999,15 @@ class SelectGA(Select):
     self._save_performance(collection_name+"-ga", var_keys, fix_keys)
 
 def _ga_fitness_func(solution, solution_idx):
+  """Fitness function for Genetic Algorithm.
+
+  Args:
+      solution (numpy.ndarray): GA solution (parameter indices)
+      solution_idx (int): Index of the solution
+
+  Returns:
+      float: Fitness value (lower is better)
+  """
   global ga_aux
   # Setup arguments
   key_vals = {}
@@ -860,6 +1062,11 @@ def _ga_fitness_func(solution, solution_idx):
   return 1/(val+1e-8)
 
 def _ga_on_generation(ga_instance):
+  """Callback function for GA generation completion.
+
+  Args:
+      ga_instance: PyGAD GA instance
+  """
   global ga_aux
   if ga_aux['select'].verbose > 0:
     print(f"# Generation: {ga_instance.generations_completed}")
@@ -867,6 +1074,16 @@ def _ga_on_generation(ga_instance):
   ga_aux['last_fitness'] = ga_instance.best_solution(pop_fitness=ga_instance.last_generation_fitness)[1]
 
 def _get_std_name(name):
+  """Get standard name from path.
+
+  Converts a file path to a standardized list of path components.
+
+  Args:
+      name (str): File path to standardize
+
+  Returns:
+      list: List of path components in order
+  """
   _, path = os.path.splitdrive(name)
   idl = []
   while True:

@@ -4,10 +4,16 @@
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # See --help for arguments, uses sub-commands
+
+"""MRSNet command-line interface.
+
+This module provides the main command-line interface for MRSNet, including
+subcommands for basis generation, simulation, training, and quantification.
+"""
 
 import os
 import glob
@@ -19,6 +25,11 @@ import mrsnet.molecules as molecules
 from mrsnet.cfg import Cfg
 
 def main():
+  """Main function of MRSNet: parse arguments, setup basic environment and run.
+
+  Sets up the command-line interface with subcommands for various MRSNet operations
+  including basis generation, simulation, training, and quantification.
+  """
   # Main function of MRSNet: parse arguments, setup basic environment and run
 
   # Process arguments
@@ -114,16 +125,31 @@ def main():
     print(f"{sys.argv[0]}: illegal sub-command or sub-command not specified, see help [-h]", file=sys.stderr)
 
 def add_arguments_default(p):
+  """Add default command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add arguments for all sub-commands
   p.add_argument('-v', '--verbose', action='count', help='Increase output verbosity (0: none; 1: main text; 2: +main plots; 3: detailed text; 4: +detailed plots; 5: +tests and debug; 6: +extra plots).', default=0)
 
 def add_arguments_metabolites(p):
+  """Add metabolites command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add metabolites argument
   p.add_argument('--metabolites', type=lambda s : molecules.short_name(s), nargs='+',
                  default=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']),
                  help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
 
 def add_arguments_basis(p):
+  """Add basis source command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add basis source arguments
   su_b = Cfg.get_su_bases()
   p.add_argument('--source', type=lambda s : s.lower(),
@@ -143,6 +169,11 @@ def add_arguments_basis(p):
                  help='Pulse sequence (placeholder).')
 
 def add_arguments_fft(p):
+  """Add FFT command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add fft arguments
   p.add_argument('--sample_rate', type=lambda v : (abs(int(v))//2)*2, default=2000,
                  help='FFT sample rate for basis/simulation in Hz (even, positive integer; ignored for lcmodel, su*).')
@@ -150,6 +181,11 @@ def add_arguments_fft(p):
                  help='FFT time samples for basis/simulation (even, positive integer; ignored for lcmodel, su-*).')
 
 def add_arguments_simulate(p):
+  """Add simulation command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add dataset simulation arguments
   p.add_argument('-n', '--num', type=int, default=10000, help='Dataset size.')
   p.add_argument('--sample', nargs='+', choices=['random', 'dirichlet', 'sobol', 'dirichlet-zeros', 'random-zeros', 'sobol-zeros', 'random-one', 'dirichlet-one', 'sobol-one'],
@@ -164,6 +200,11 @@ def add_arguments_simulate(p):
                  help='Maximum mu for simulated ADC noise (uniform distribution).')
 
 def add_arguments_compare(p):
+  """Add comparison command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add compare arguments
   p.add_argument('-d', '--dataset', type=str, help='Dataset comparison (path ending SOURCE/MANUFACTURER/OMEGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID or dicom folder)')
   p.add_argument('--metabolites', type=lambda s : molecules.short_name(s), nargs='+',
@@ -185,6 +226,11 @@ def add_arguments_compare(p):
                  help='Pulse sequence (placeholder).')
 
 def add_arguments_train_select(p):
+  """Add model selection command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add training/selection arguments
   p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OMEGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
@@ -193,6 +239,11 @@ def add_arguments_train_select(p):
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
 
 def add_arguments_train(p):
+  """Add training command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add training arguments
   p.add_argument('--norm', choices=['sum', 'max'], default='sum',
                  help='Concentration normalisation: sum or max equal to 1')
@@ -209,6 +260,11 @@ def add_arguments_train(p):
                  help='Batch size (per GPU if multi-GPU).')
 
 def add_arguments_quantify(p):
+  """Add quantification command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add quantification arguments
   p.add_argument('-d', '--dataset', type=str, help='Dataset for quantification (path ending SOURCE/MANUFACTURER/OMEGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA-SIZE-ID or dicom folder)')
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
@@ -216,12 +272,22 @@ def add_arguments_quantify(p):
                  help='Concentration normalisation: sum or max equal to 1; default means to use quantifier norm; none uses raw output)')
 
 def add_arguments_benchmark(p):
+  """Add benchmark command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
   # Add benchmark arguments
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='default',
                  help='Concentration normalisation: sum or max equal to 1; default means to use quantifier norm; none uses raw output)')
 
 def gen_basis(args):
+  """Generate basis set for MRS spectra.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Basis sub-command
   import mrsnet.basis as basis
   if args.verbose > 0:
@@ -262,6 +328,11 @@ def gen_basis(args):
       plt.close()
 
 def simulate(args):
+  """Generate simulated MRS spectra dataset.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Simulate sub-command
   import mrsnet.basis as basis
   import mrsnet.dataset as dataset
@@ -352,6 +423,11 @@ def simulate(args):
       plt.close()
 
 def generate_datasets(args):
+  """Generate standard datasets from collection configuration.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Generate datasets sub-command
   import subprocess
   import mrsnet.grid as grid
@@ -362,7 +438,7 @@ def generate_datasets(args):
     # Note, if we have a basis without linewidth, and we iterate over
     # linewidth options, then this will iterate also over this basis.
     # It detects that the dataset already exists and does not generate
-    # another one, but as we generated over a grid we cannot avoid it 
+    # another one, but as we generated over a grid we cannot avoid it
     # checks for each linewidth.
     na = {}
     for ki in range(0,len(k)):
@@ -425,6 +501,11 @@ def generate_datasets(args):
           print("Skipping linewidth for lcmodel")
 
 def compare(args):
+  """Compare MRS spectra datasets.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Compare sub-command
   import mrsnet.dataset as dataset
   if (os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")) or
@@ -466,6 +547,11 @@ def compare(args):
       print("Nothing to compare, as no concentrations available/found")
 
 def train(args):
+  """Train MRS spectra quantification model.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Train sub-command
   import mrsnet.dataset as dataset
   # Standardise name, but could be path anyway
@@ -642,6 +728,11 @@ def train(args):
                 verbose=args.verbose)
 
 def model_selection(args):
+  """Perform model selection and hyperparameter optimization.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Select sub-command
   import mrsnet.grid as grid
   args.metabolites.sort()
@@ -667,6 +758,11 @@ def model_selection(args):
   selector.optimise(args.collection, models, Cfg.val['path_model'])
 
 def quantify(args):
+  """Quantify metabolite concentrations from MRS spectra.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Quantify sub-command
   import mrsnet.dataset as dataset
   if os.path.isfile(os.path.join(args.dataset,"spectra_noisy.joblib")) or \
@@ -789,6 +885,11 @@ def quantify(args):
                 image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'], norm=args.norm)
 
 def benchmark(args):
+  """Benchmark MRS spectra quantification model.
+
+  Args:
+      args: Parsed command-line arguments
+  """
   # Benchmark sub-command
   if args.verbose > 0:
     print(f"# Loading model {args.model}")
@@ -906,6 +1007,16 @@ def benchmark(args):
                     screen_dpi=Cfg.val['screen_dpi'],norm=args.norm)
 
 def get_std_name(name):
+  """Get standard name from path.
+
+  Converts a file path to a standardized list of path components.
+
+  Args:
+      name (str): File path to standardize
+
+  Returns:
+      list: List of path components in order
+  """
   _, path = os.path.splitdrive(name)
   idl = []
   while True:
@@ -932,7 +1043,7 @@ if __name__ == '__main__':
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
   # Headless mode
-  if not "DISPLAY" in os.environ:
+  if "DISPLAY" not in os.environ:
     from matplotlib import use
     use("Agg")
   # Disable GPUs, mainly for testing / if in use elsewhere

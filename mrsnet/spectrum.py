@@ -1,9 +1,16 @@
 # mrsnet/spectrum.py - MRSNet - individual spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Individual spectrum handling for MRSNet.
+
+This module provides the Spectrum class for representing and manipulating
+individual MRS spectra, including loading from various formats, signal
+processing operations, and visualization.
+"""
 
 import os
 import random
@@ -22,10 +29,41 @@ npfft = getattr(__import__(Cfg.val['npfft_module'][0], fromlist=[Cfg.val['npfft_
                 Cfg.val['npfft_module'][1])
 
 class Spectrum:
-  # Spectrum is a class that contains information about a single spectrum.
+  """Individual MRS spectrum representation and manipulation.
+
+  This class represents a single MRS spectrum with associated metadata
+  and provides methods for signal processing, visualization, and data
+  export/import.
+
+  Attributes:
+      id (str): Unique identifier for the spectrum
+      pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
+      acquisition (str): Acquisition type (e.g., 'edit_off', 'difference')
+      omega (float): Larmor frequency in Hz
+      source (str, optional): Source of the spectrum data
+      metabolites (list): List of metabolite names in this spectrum
+      linewidth (float, optional): Linewidth parameter
+      sample_rate (float): Sample rate in Hz
+      fft (numpy.ndarray): FFT data of the spectrum
+      scale (float): Scaling factor for the spectrum
+      center_ppm (float): Center PPM value
+      b0_shift_ppm (float): B0 shift in PPM
+      noise (dict, optional): Noise information if added
+  """
 
   def __init__(self, id, pulse_sequence, acquisition, omega,
                source=None, metabolites=None, linewidth=None):
+    """Initialize a new spectrum.
+
+    Args:
+        id (str): Unique identifier for the spectrum
+        pulse_sequence (str): Pulse sequence type
+        acquisition (str): Acquisition type
+        omega (float): Larmor frequency in Hz
+        source (str, optional): Source of the spectrum data. Defaults to None
+        metabolites (list, optional): List of metabolite names. Defaults to None
+        linewidth (float, optional): Linewidth parameter. Defaults to None
+    """
     self.id = id
     self.pulse_sequence = pulse_sequence
     self.acquisition = acquisition
@@ -45,20 +83,57 @@ class Spectrum:
 
   def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
             remove_water_peak=False, phase_correct=False, force_phase_correct=None):
+    """Set spectrum data from frequency domain (FFT).
+
+    Args:
+        fft (array-like): FFT data of the spectrum
+        sample_rate (float): Sample rate in Hz
+        center_ppm (float, optional): Center PPM value. Defaults to 0
+        b0_shift_ppm (float, optional): B0 shift in PPM. Defaults to 0
+        scale (float, optional): Scaling factor. Defaults to 1.0
+        remove_water_peak (bool, optional): Whether to remove water peak. Defaults to False
+        phase_correct (bool, optional): Whether to apply phase correction. Defaults to False
+        force_phase_correct (str, optional): Force specific phase correction method. Defaults to None
+    """
     self.fft = np.asarray(fft)
     self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct)
 
   def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
             remove_water_peak=False, phase_correct=False, force_phase_correct=None):
+    """Set spectrum data from time domain (ADC).
+
+    Converts time domain data to frequency domain using FFT and sets up the spectrum.
+
+    Args:
+        adc (array-like): Time domain ADC data
+        sample_rate (float): Sample rate in Hz
+        center_ppm (float, optional): Center PPM value. Defaults to 0
+        b0_shift_ppm (float, optional): B0 shift in PPM. Defaults to 0
+        scale (float, optional): Scaling factor. Defaults to 1.0
+        remove_water_peak (bool, optional): Whether to remove water peak. Defaults to False
+        phase_correct (bool, optional): Whether to apply phase correction. Defaults to False
+        force_phase_correct (str, optional): Force specific phase correction method. Defaults to None
+    """
     self.fft = npfft.fftshift(npfft.fft(adc))
     self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct)
 
   def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct=None):
+    """Set spectrum parameters and apply processing.
+
+    Args:
+        sample_rate (float): Sampling rate in Hz
+        center_ppm (float): Center frequency in ppm
+        b0_shift_ppm (float): B0 field shift in ppm
+        scale (float): Scaling factor
+        remove_water_peak (bool): Whether to remove water peak
+        phase_correct (str): Phase correction method
+        force_phase_correct (str, optional): Force specific phase correction method
+    """
     self.sample_rate = sample_rate
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
-    if (phase_correct and Cfg.val['phase_correct'] != None) or (force_phase_correct is not None): 
+    if (phase_correct and Cfg.val['phase_correct'] != None) or (force_phase_correct is not None):
       # Only phase correct if also configured or it is forced (specifically used by load_pygamma)
       if Cfg.dev('spectrum_set_phase_correct'):
         fig, axs = plt.subplots(1,2)
@@ -82,14 +157,41 @@ class Spectrum:
       self._fft_remove_water_peak()
 
   def get_f(self):
+    """Get frequency domain data.
+
+    Returns:
+        tuple: (fft_data, ppm_axis) where:
+            - fft_data: Scaled FFT data
+            - ppm_axis: PPM axis values
+    """
     return self.fft*self.scale, \
            np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0 / self.omega + self.center_ppm + self.b0_shift_ppm
 
   def get_t(self):
+    """Get time domain data.
+
+    Returns:
+        tuple: (adc_data, time_axis) where:
+            - adc_data: Time domain ADC data
+            - time_axis: Time axis values in seconds
+    """
     return npfft.ifft(npfft.ifftshift(self.fft * self.scale)), \
            np.arange(0, len(self.fft), 1) / self.sample_rate
 
   def correct_b0(self, shift=None):
+    """Apply B0 correction to the spectrum.
+
+    Either finds a reference peak automatically or applies a given shift.
+
+    Args:
+        shift (float, optional): B0 shift in PPM. If None, automatically finds
+                                reference peak. Defaults to None
+
+    Returns:
+        tuple: (shift_applied, peak_value) where:
+            - shift_applied: The B0 shift applied in PPM
+            - peak_value: Value of the reference peak used
+    """
     # Find reference peak and adjust nu range via ppm_shift
     peak_val = 0.0
     if shift is None:
@@ -107,6 +209,15 @@ class Spectrum:
     return shift, peak_val
 
   def _fft_peak_location(self, location, ppm_range):
+    """Find peak location in FFT spectrum.
+
+    Args:
+        location (float): Expected peak location in ppm
+        ppm_range (float): Search range around location in ppm
+
+    Returns:
+        tuple: (peak_location, peak_value) or (None, None) if not found
+    """
     fft, nu = self.get_f()
     fft_abs = -np.abs(fft)
     cut_off = np.median(fft_abs)
@@ -163,16 +274,32 @@ class Spectrum:
     return None, None
 
   def _phase_correct_ernst(self):
+    """Apply Ernst angle phase correction.
+
+    Corrects the phase of the spectrum using the Ernst angle method.
+    Reference: R Ernst. Numerical Hilbert transform and automatic phase correction in
+    magnetic resonance spectroscopy. J Magn Res 1(1):7-26, 1969.
+    """
     # R Ernst. Numerical Hilbert transform and automatic phase correction in
     # magnetic resonance spectroscopy. J Magn Res 1(1):7-26, 1969.
     # https://www.sciencedirect.com/science/article/abs/pii/0022236469900031
+
     def err(para):
+      """Error function for Ernst phase correction optimization.
+
+      Args:
+          para: Parameter object containing phase values
+
+      Returns:
+          float: Error value for optimization
+      """
       val = para.valuesdict()
       # Adjust phase
       shift = val['phi0'] + val['phi1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
       s_fft = self.fft * np.exp(1j*shift)
       # Target function
       return np.sum(np.imag(s_fft))
+
     import lmfit
     para = lmfit.Parameters()
     para.add('phi0', value=0.0, min=-np.pi/4.0, max=np.pi/4.0)
@@ -190,11 +317,27 @@ class Spectrum:
       self.fft *= np.exp(1j*np.pi)
 
   def _phase_correct_acme(self):
+    """Apply ACME phase correction.
+
+    Automated phase Correction based on Minimization of Entropy.
+    Reference: L Chen, Z Weng, LY Goh, M Garland. An efficient algorithm for automatic
+    phase correction of NMR spectra based on entropy minimization. J Magn
+    Res 158:164–168, 2002.
+    """
     # Automated phase Correction based on Minimization of Entropy
     # L Chen, Z Weng, LY Goh, M Garland. An efficient algorithm for automatic
     # phase correction of NMR spectra based on entropy minimization. J Magn
     # Res 158:164–168, 2002.
+
     def entropy(para):
+      """Entropy function for ACME phase correction optimization.
+
+      Args:
+          para: Parameter object containing phase values
+
+      Returns:
+          float: Entropy value for optimization
+      """
       val = para.valuesdict()
       # Adjust phase
       shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
@@ -205,6 +348,7 @@ class Spectrum:
       h = r1 / np.sum(r1)
       h[np.abs(h)<1e-8] = 1.0
       return -np.sum(h*np.log(h)) + Cfg.val['phase_correct_acme_gamma'] * np.sum(r[r<0]**2)
+
     import lmfit
     para = lmfit.Parameters()
     para.add('phc0', value=0.0, min=-np.pi, max=np.pi)
@@ -222,6 +366,13 @@ class Spectrum:
       self.fft *= np.exp(1j*np.pi)
 
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
+    """Resample FFT to prescribed frequency bins via zero filling.
+
+    Args:
+        high_ppm (float, optional): Upper PPM bound. Defaults to -4.5
+        low_ppm (float, optional): Lower PPM bound. Defaults to -1
+        npts (int, optional): Number of frequency points. Defaults to 2048
+    """
     # Resample fft to prescribed frequency bins via zero filling
     fft, nu = self.get_f()
     if (np.max(nu) < low_ppm) or (np.min(nu) > high_ppm):
@@ -248,6 +399,10 @@ class Spectrum:
     return rfft[index], rnu[index]
 
   def _fft_remove_water_peak(self):
+    """Remove water peak from FFT spectrum.
+
+    Finds the water peak and sets the range centered around it to the median signal.
+    """
     # find the peak then set the range centered around it to the median signal of the fft
     water_peak_loc, _ = self._fft_peak_location(molecules.WATER_REFERENCE, Cfg.val['water_peak_ppm_range'])
     if water_peak_loc is not None:
@@ -278,6 +433,12 @@ class Spectrum:
               break
 
   def add_noise_adc_normal(self, mu=0, sigma=0):
+    """Add normal ADC noise to the spectrum.
+
+    Args:
+        mu (float, optional): Mean of noise distribution. Defaults to 0
+        sigma (float, optional): Standard deviation of noise distribution. Defaults to 0
+    """
     if self.noise != None:
       raise RuntimeError("Adding noise twice is not advised")
     self.noise = ("adc", "normal", mu, sigma)
@@ -288,6 +449,13 @@ class Spectrum:
     self.fft += npfft.fftshift(npfft.fft(noise))
 
   def plot(self, axes, type='fft', mode='magnitude'):
+    """Plot spectrum on given axes.
+
+    Args:
+        axes: Matplotlib axes object
+        type (str, optional): Plot type ('fft' or 'time'). Defaults to 'fft'
+        mode (str, optional): Plot mode ('magnitude', 'real', 'imaginary'). Defaults to 'magnitude'
+    """
     if type == 'time':
       Y, X = self.get_t()
       axes.set_xlabel('Time (s)')
@@ -315,6 +483,16 @@ class Spectrum:
     axes.plot(X,Y)
 
   def plot_spectrum(self, concentrations={}, screen_dpi=96, type='fft'):
+    """Plot spectrum with optional concentration information.
+
+    Args:
+        concentrations (dict, optional): Dictionary of metabolite concentrations. Defaults to {}
+        screen_dpi (int, optional): Screen DPI for display. Defaults to 96
+        type (str, optional): Plot type ('fft' or 'time'). Defaults to 'fft'
+
+    Returns:
+        matplotlib.figure.Figure: The created figure
+    """
     n_cols = 1
     super_title = type.upper() + " "
     if len(concentrations) > 0:
@@ -361,6 +539,12 @@ class Spectrum:
     return figure
 
   def save_json(self, filename, version=1):
+    """Save spectrum data to JSON file.
+
+    Args:
+        filename (str): Output filename
+        version (int, optional): JSON format version. Defaults to 1
+    """
     if version == 1:
       data = {
         'id': self.id,
@@ -379,12 +563,23 @@ class Spectrum:
         'mrsnet_json_format': 1
       }
     else:
-      raise Runtime(f"Unknown json format version {version}")
+      raise RuntimeError(f"Unknown json format version {version}")
     with open(filename, 'w', encoding='utf-8') as f:
       json.dump(data, f, ensure_ascii=False, indent=2)
 
   @staticmethod
   def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
+    """Plot multiple spectra in a single figure.
+
+    Args:
+        spectra (dict): Dictionary of spectrum objects
+        concentrations (dict, optional): Dictionary of metabolite concentrations. Defaults to {}
+        screen_dpi (int, optional): Screen DPI for display. Defaults to 96
+        type (str, optional): Plot type ('fft' or 'time'). Defaults to 'fft'
+
+    Returns:
+        matplotlib.figure.Figure: The created figure
+    """
     n_cols = len(spectra)
     metabolites = spectra[next(iter(spectra))].metabolites # Metabolites have to be the same for all spectra
 
@@ -465,6 +660,22 @@ class Spectrum:
 
   @staticmethod
   def comb(f1,s1,f2,s2,id,acq):
+    """Combine two spectra with weighted addition.
+
+    Args:
+        f1 (float): Weight for first spectrum
+        s1 (Spectrum): First spectrum
+        f2 (float): Weight for second spectrum
+        s2 (Spectrum): Second spectrum
+        id (str): ID for the combined spectrum
+        acq (str): Acquisition type for the combined spectrum
+
+    Returns:
+        Spectrum: Combined spectrum
+
+    Raises:
+        RuntimeError: If spectra have incompatible properties
+    """
     # Weighted addition of two spectra
     if s1.pulse_sequence != s2.pulse_sequence:
       raise RuntimeError("Combing spectra from different pulse sequences")
@@ -502,6 +713,20 @@ class Spectrum:
 
   @staticmethod
   def combs(fs,ss,id,acq):
+    """Combine multiple spectra with weighted sum.
+
+    Args:
+        fs (list): List of weights for spectra
+        ss (list): List of Spectrum objects
+        id (str): ID for the combined spectrum
+        acq (str): Acquisition type for the combined spectrum
+
+    Returns:
+        Spectrum: Combined spectrum
+
+    Raises:
+        RuntimeError: If spectra have incompatible properties
+    """
     # Weighted sum of spectra
     for n in range(1,len(ss)):
       if ss[0].pulse_sequence != ss[n].pulse_sequence:
@@ -559,6 +784,17 @@ class Spectrum:
 
   @staticmethod
   def correct_b0_multi(spectra):
+    """Apply B0 correction across multiple acquisitions.
+
+    Args:
+        spectra (dict): Dictionary of spectrum objects
+
+    Returns:
+        float: B0 shift applied in ppm
+
+    Raises:
+        RuntimeError: If pulse sequence is not megapress
+    """
     # B0 correction across multiple acquisitions
     for a in spectra:
       if spectra[a].pulse_sequence != "megapress":
@@ -572,6 +808,17 @@ class Spectrum:
 
   @staticmethod
   def load_fida(fida_file,id,source,su=False):
+    """Load spectrum from FID-A MATLAB file.
+
+    Args:
+        fida_file (str): Path to FID-A .mat file
+        id (str): Spectrum identifier
+        source (str): Data source identifier
+        su (bool, optional): Use SU-3TSkyra format. Defaults to False
+
+    Returns:
+        Spectrum: Loaded spectrum object
+    """
     fida_data = loadmat(fida_file)
     if 'linewidth' in fida_data:
       lw = float(fida_data['linewidth'][0][0])
@@ -619,6 +866,23 @@ class Spectrum:
   @staticmethod
   def load_pygamma(pygamma_dir, search_path, metabolite, pulse_sequence, omega, linewidth,
                    npts, dt, simulate=True, force_phase_correct="acme"):
+    """Load spectrum from PyGamma simulation.
+
+    Args:
+        pygamma_dir (str): Directory containing PyGamma data
+        search_path (list): Additional search paths
+        metabolite (str): Metabolite name
+        pulse_sequence (str): Pulse sequence name
+        omega (float): Larmor frequency
+        linewidth (float): Spectral linewidth
+        npts (int): Number of data points
+        dt (float): Dwell time
+        simulate (bool, optional): Whether to simulate if not cached. Defaults to True
+        force_phase_correct (str, optional): Phase correction method. Defaults to "acme"
+
+    Returns:
+        list: List of Spectrum objects
+    """
     for spath in [pygamma_dir, *search_path]:
       cache_dir = os.path.join(spath,
                                pulse_sequence + '_' + str(omega) + '_' +
@@ -656,6 +920,20 @@ class Spectrum:
 
   @staticmethod
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
+    """Load spectrum from LCModel basis file.
+
+    Args:
+        basis_file (str): Path to LCModel basis file
+        acquisition (str): Acquisition type
+        req_omega (float): Required Larmor frequency
+        req_metabolites (list): List of required metabolites
+
+    Returns:
+        list: List of Spectrum objects
+
+    Raises:
+        RuntimeError: If basis file doesn't exist or has incompatible properties
+    """
     # Load lcmodel basis
     # http://s-provencher.com/pub/LCModel/manual/manual.pdf
     if not os.path.exists(basis_file):
@@ -764,6 +1042,20 @@ class Spectrum:
 
   @staticmethod
   def load_dicom(file, concentrations=None, metabolites=None, verbose=0):
+    """Load spectrum from DICOM file.
+
+    Args:
+        file (str): Path to DICOM file
+        concentrations (str, optional): Path to concentrations JSON file. Defaults to None
+        metabolites (list, optional): List of metabolites. Defaults to None
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        tuple: (Spectrum object, concentrations dict)
+
+    Raises:
+        RuntimeError: If file doesn't exist or has unsupported format
+    """
     if not os.path.exists(file):
         raise RuntimeError('Dicom file does not exist: ' + file)
     from mrsnet.qdicom.read_dicom_siemens import read_dicom
@@ -868,6 +1160,20 @@ class Spectrum:
 
   @staticmethod
   def load_csv(file, concentrations=None, metabolites=None, verbose=0):
+    """Load spectrum from CSV file.
+
+    Args:
+        file (str): Path to CSV file
+        concentrations (str, optional): Path to concentrations JSON file. Defaults to None
+        metabolites (list, optional): List of metabolites. Defaults to None
+        verbose (int, optional): Verbosity level. Defaults to 0
+
+    Returns:
+        tuple: (Spectrum object, concentrations dict)
+
+    Raises:
+        RuntimeError: If file doesn't exist or has unsupported format
+    """
     if not os.path.exists(file):
         raise RuntimeError('CSV file does not exist: ' + file)
     import csv

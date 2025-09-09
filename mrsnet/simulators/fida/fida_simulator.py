@@ -5,6 +5,12 @@
 # SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com> Swansea University
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""FID-A simulator for MRSNet.
+
+This module provides interfaces to the FID-A MATLAB toolbox for
+simulating MRS basis spectra using various pulse sequences.
+"""
+
 import os
 import errno
 import subprocess
@@ -12,6 +18,20 @@ import subprocess
 from mrsnet.cfg import Cfg
 
 def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, save_dir):
+  """Generate FID-A spectra using MATLAB.
+
+  Args:
+      metabolite_names (list): List of metabolite names to simulate
+      omega (float): B0 field strength in Hz
+      linewidth (float): Linewidth parameter
+      npts (int): Number of points in the spectrum
+      sample_rate (float): Sample rate in Hz
+      source (str): FID-A source type ("fid-a" or "fid-a-2d")
+      save_dir (str): Directory to save generated spectra
+
+  Raises:
+      RuntimeError: If source type is unknown or MATLAB is not installed
+  """
   if source == "fid-a":
     script="run_custom_simMegaPressShapedEdit"
   elif source =="fid-a-2d":
@@ -67,5 +87,13 @@ fida_metabolite_names = {
 }
 
 def fida_metabolite_name(name):
+  """Convert metabolite name to FID-A expected format.
+
+  Args:
+      name (str): Metabolite name to convert
+
+  Returns:
+      str: FID-A compatible metabolite name
+  """
   # Converts to the expected value for FID-A.
   return fida_metabolite_names[name.lower()]
