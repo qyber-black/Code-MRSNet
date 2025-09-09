@@ -306,7 +306,7 @@ class CNN:
 
     # Dataset options
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if validation_data is not None:
       validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
@@ -355,7 +355,7 @@ class CNN:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
     return np.array(self.cnn_arch.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 

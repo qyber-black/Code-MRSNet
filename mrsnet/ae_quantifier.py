@@ -17,11 +17,11 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from keras import layers
-from keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, LeakyReLU
-from keras.models import Model, load_model
-from keras.utils import plot_model
 from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, LeakyReLU
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
 
@@ -438,7 +438,7 @@ class AutoencoderQuantifier:
         val_data=None
 
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
         val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
@@ -492,7 +492,7 @@ class AutoencoderQuantifier:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
     if self.output == "concentrations":
         return np.array(self.aeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)

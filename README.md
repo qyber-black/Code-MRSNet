@@ -1,7 +1,7 @@
 # MRSNet
 
 > SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-> SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
+> SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 > SPDX-FileCopyrightText: Copyright (C) 2021-2022 S Shermer <lw1660@gmail.com>, Swansea University
 > SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 > SPDX-License-Identifier: AGPL-3.0-or-later
@@ -26,10 +26,10 @@ https://langbein.org/mrsnet-paper/
 * Tested on Linux and may not work on any other platform without some adjustments.
   Standard packages for Linux are:
   * Git and git-lfs for git with submodules and LFS support.
-  * Python 3.11 (more recent versions may not work).
+  * Python 3.13 (more recent versions may not work).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
-    `sudo apt update && sudo apt install git git-lfs python3.11 python3.11-venv`
+    `sudo apt update && sudo apt install git git-lfs python3.13 python3.13-venv`
 * For all standard python packages used, see `requirements.txt`. These will be
   installed with the commands below, but here are some extra notes on potential
   issues.
@@ -44,7 +44,7 @@ https://langbein.org/mrsnet-paper/
   * [PyGamma](https://github.com/pygamma-mrs/gamma),
     a MRS simulation toolbox. You only need this if you wish to use the pygamma basis
     spectra simulation. It is currently commented out in `requirements.txt` as not
-    supported in python 3.11. If needed you can still try to install it manually or use a
+    supported in python 3.13. If needed you can still try to install it manually or use a
     supported python version. See https://pygamma-mrs.github.io/gamma.io/release/GammaBuildingLibrary.html
     for installation instructions.
   * GPyOpt is no longer maintained, but usable, and depends on gpy. It can be safely

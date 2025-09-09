@@ -18,7 +18,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from keras.layers import (
+from tensorflow import keras
+from tensorflow.keras.layers import (
   Activation,
   BatchNormalization,
   Conv1D,
@@ -31,9 +32,8 @@ from keras.layers import (
   Reshape,
   UpSampling1D,
 )
-from keras.models import Model, load_model
-from keras.utils import plot_model
-from tensorflow import keras
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
 
@@ -673,7 +673,7 @@ class Autoencoder:
 
     # Dataset options
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
         val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
@@ -831,7 +831,7 @@ class Autoencoder:
 
     # Dataset options
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
         val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
@@ -882,7 +882,7 @@ class Autoencoder:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
     if self.output == "spectra":
       return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
