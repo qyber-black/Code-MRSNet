@@ -44,30 +44,31 @@ class Spectrum:
     self.noise = None
 
   def set_f(self, fft, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
-            remove_water_peak=False, phase_correct=False):
+            remove_water_peak=False, phase_correct=False, force_phase_correct=None):
     self.fft = np.asarray(fft)
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct)
 
   def set_t(self, adc, sample_rate, center_ppm=0, b0_shift_ppm=0, scale=1.0,
-            remove_water_peak=False, phase_correct=False):
+            remove_water_peak=False, phase_correct=False, force_phase_correct=None):
     self.fft = npfft.fftshift(npfft.fft(adc))
-    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct)
+    self._set(sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct)
 
-  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct):
+  def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct=None):
     self.sample_rate = sample_rate
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
-    if phase_correct and Cfg.val['phase_correct'] != None: # Only phase correct if also configured
+    if (phase_correct and Cfg.val['phase_correct'] != None) or (force_phase_correct is not None): 
+      # Only phase correct if also configured or it is forced (specifically used by load_pygamma)
       if Cfg.dev('spectrum_set_phase_correct'):
         fig, axs = plt.subplots(1,2)
         freq, nu = self.get_f()
         axs[0].plot(nu, np.real(freq), color='r')
         axs[0].plot(nu, np.imag(freq), color='g')
         axs[0].set_title("Raw Dicom Data")
-      if Cfg.val['phase_correct'] == 'acme':
+      if Cfg.val['phase_correct'] == 'acme' or force_phase_correct == 'acme':
         self._phase_correct_acme()
-      elif Cfg.val['phase_correct'] == 'ernst':
+      elif Cfg.val['phase_correct'] == 'ernst' or force_phase_correct == 'ernst':
         self._phase_correct_ernst()
       else:
         raise RuntimeError(f"Unknown phase correction algorithm {Cfg.val['phase_correct']}")
@@ -181,7 +182,7 @@ class Spectrum:
     # Adjust phase
     idx = np.argmax(np.abs(np.real(self.fft)))
     max_fft = np.real(self.fft[idx])
-    shift = val['phc0'] + val['phc1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
+    shift = val['phi0'] + val['phi1'] * (np.linspace(-1, 1, len(self.fft)) * self.sample_rate/2.0)
     self.fft *= np.exp(1j*shift)
     idx = np.argmax(np.abs(np.real(self.fft)))
     max_s_fft = np.real(self.fft[idx])
@@ -293,6 +294,7 @@ class Spectrum:
     elif type == 'fft':
       Y, X = self.rescale_fft()
       axes.set_xlabel('Frequency (ppm)')
+      # Note, we are using negative frequencies
       axes.xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
     else:
       raise RuntimeError("Unknown plot type")
@@ -319,7 +321,7 @@ class Spectrum:
       n_cols = 2
     else:
       super_title += "-".join(self.metabolites[0]) + ' '
-    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} Hz"
+    super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} MHz"
     if self.linewidth != None:
       super_title += " Linewidth: " + str(self.linewidth)
     if self.noise != None:
@@ -358,6 +360,29 @@ class Spectrum:
 
     return figure
 
+  def save_json(self, filename, version=1):
+    if version == 1:
+      data = {
+        'id': self.id,
+        'pulse_sequence': self.pulse_sequence,
+        'acquisition': self.acquisition,
+        'omega': self.omega,
+        'source': self.source,
+        'metabolites': self.metabolites,
+        'linewidth': self.linewidth,
+        'sample_rate': self.sample_rate,
+        'fft': [(np.real(v),np.imag(v)) for v in self.fft],
+        'scale': self.scale,
+        'center_ppm': self.center_ppm,
+        'b0_shift_ppm': self.b0_shift_ppm,
+        'noise': self.noise,
+        'mrsnet_json_format': 1
+      }
+    else:
+      raise Runtime(f"Unknown json format version {version}")
+    with open(filename, 'w', encoding='utf-8') as f:
+      json.dump(data, f, ensure_ascii=False, indent=2)
+
   @staticmethod
   def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
     n_cols = len(spectra)
@@ -379,7 +404,7 @@ class Spectrum:
 
     omega = next(iter(omega))
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
-                   f" @ {omega:.2f} Hz"
+                   f" @ {omega:.2f} MHz"
     linewidth = next(iter(linewidth))
     if linewidth != None:
       super_title += " Linewidth: " + str(linewidth)
@@ -575,6 +600,7 @@ class Spectrum:
         scale = fida_data['scaling'][0][0]
       else:
         scale = 1.0
+      # Conjugation due to negative frequencies
       s.set_t(np.conjugate(np.array(fida_data['fid']).flatten())/scale,
               1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
               center_ppm = -fida_data['center_ppm'][0][0])
@@ -584,6 +610,7 @@ class Spectrum:
       #s.set_t(np.conjugate(np.array(fida_data['fid']).flatten()),
       #        1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
       #        center_ppm = -np.median(fida_data['nu']))
+      # Conjugation due to negative frequencies
       s.set_f(np.conjugate(np.array(fida_data['fft']).flatten()),
               1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
               center_ppm = -np.median(fida_data['nu']))
@@ -591,7 +618,7 @@ class Spectrum:
 
   @staticmethod
   def load_pygamma(pygamma_dir, search_path, metabolite, pulse_sequence, omega, linewidth,
-                   npts, dt, simulate=True):
+                   npts, dt, simulate=True, force_phase_correct="acme"):
     for spath in [pygamma_dir, *search_path]:
       cache_dir = os.path.join(spath,
                                pulse_sequence + '_' + str(omega) + '_' +
@@ -621,9 +648,9 @@ class Spectrum:
                      acquisition=acq,
                      omega=omega,
                      linewidth=linewidth)
-        # Time signal produced by pygamma seems mirrored, so need to take the complex conjugate
+        # Conjugation due to negative frequencies
         s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
-                1/dt)
+                1/dt, force_phase_correct=force_phase_correct)
         specs.append(s)
     return specs
 
@@ -837,4 +864,117 @@ class Spectrum:
         axs[0].plot(data)
         axs[0].set_title("Filtered Dicom Data")
     spec.set_t(data,1/dt,center_ppm=-4.7,remove_water_peak=True,phase_correct=True)
+    return spec, cs
+
+  @staticmethod
+  def load_csv(file, concentrations=None, metabolites=None, verbose=0):
+    if not os.path.exists(file):
+        raise RuntimeError('CSV file does not exist: ' + file)
+    import csv
+    with open(file) as csvfile:
+      rows = csv.reader(csvfile)
+      for row in rows:
+        if row[0] == "WriteSpec2asc-v1":
+          pass
+        elif row[0] == "ID":
+          pid = row[1]
+        elif row[0] == "Pulse_sequence":
+          pulse_sequence = row[1]
+          if pulse_sequence in ["EJA_MPRESS"]:
+            pulse_sequence = 'megapress'
+          else:
+            raise RuntimeError(f"{file} - Unrecognised dicom pulse sequence: {pulse_sequence}")
+        elif row[0] == "Transmitter_frequency":
+          omega = float(row[1]) / 1000000.
+        elif row[0] == "Sampling_frequency":
+          dt = 1. / float(row[1])
+        elif row[0] == "FID":
+          data = np.array(row[1:],dtype=np.float64)
+        elif row[0] == "t":
+          pass
+        elif row[0] == "TE":
+          pass
+        elif row[0] == "Samples":
+          pass
+        elif row[0] == "Center_ppm":
+          center_ppm = -float(row[1])
+        else:
+          raise RuntimeError(f"Unknown csv field {row[0]}")
+
+    # Acquisition
+    if pulse_sequence == 'megapress':
+      if 'EDIT_OFF' in file:
+        acquisition = 'edit_off'
+      elif 'EDIT_ON' in file:
+        acquisition = 'edit_on'
+      elif 'DIFF' in file:
+        acquisition = 'difference'
+      else:
+        raise RuntimeError('Loaded csv file for MEGA-PRESS, but acquisition cannot be determined.\n'
+                            'Add "EDIT_OFF", "EDIT_ON" or "DIFF" into the filepath anywhere.')
+    else:
+      raise RuntimeError(f"Pulse sequence {pulse_sequence} not supported")
+
+    fn = os.path.abspath(file).split(os.sep)
+    if len(fn) > 4:
+      fn = fn[-4:]
+    fn = fn[:-1]
+    idl = "/".join(fn)
+    idl += pid
+
+    cs = np.array([])
+    if concentrations is not None:
+      ids = file.split('/')
+      with open(concentrations, 'r') as f:
+        js = json.load(f)
+        if len(metabolites) == 0:
+          metabolites = set()
+          for k in js.keys():
+            for l in js[k].keys():
+              metabolites.add(l)
+          metabolites = molecules.short_name(list(metabolites))
+          metabolites.sort()
+        cs = {}
+        for m in metabolites:
+          cs[m] = 0.0
+        for l in range(len(ids)-1,-1,-1):
+          if ids[l] in js:
+            for m in js[ids[l]].keys():
+              ms = molecules.short_name(m)
+              if ms in metabolites:
+                cs[ms] = float(js[ids[l]][m])
+            if "GlX" in metabolites:
+              for m in js[ids[l]].keys():
+                ms = molecules.short_name(m)
+                if ms == "Gln" or ms == "Glu":
+                  cs["GlX"] += float(js[ids[l]][m])
+    spec = Spectrum(id=idl,
+                    pulse_sequence=pulse_sequence,
+                    acquisition=acquisition,
+                    omega=omega,
+                    source='dicom',
+                    metabolites=metabolites,
+                    linewidth=None) # Unknown
+    if Cfg.val['filter_dicom'] != None:
+      # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Dicom Data")
+      filter_length = (int(Cfg.val['filter_dicom_duration']/dt)//2)*2
+      filterv = np.zeros(len(data))
+      if Cfg.val['filter_dicom'] == 'hamming':
+        filterv[0:filter_length//2] = np.hamming(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'hanning':
+        filterv[0:filter_length//2] = np.hanning(filter_length)[filter_length//2:]
+      elif Cfg.val['filter_dicom'] == 'kaiser':
+        filterv[0:filter_length//2] = np.kaiser(filter_length, Cfg.val['filter_dicom_kaiser'])[filter_length//2:]
+      else:
+        raise RuntimeError("Unknown dicom filter")
+      data = np.multiply(data,filterv)
+      if verbose > 4:
+        fig, axs = plt.subplot(1,2)
+        axs[0].plot(data)
+        axs[0].set_title("Filtered Dicom Data")
+    spec.set_t(data,1/dt,center_ppm=center_ppm,remove_water_peak=True,phase_correct=True)
     return spec, cs

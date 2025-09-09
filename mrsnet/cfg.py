@@ -137,7 +137,7 @@ class Cfg:
 
   @staticmethod
   def get_su_bases(reload=False):
-    if reload:
+    if reload or not hasattr(Cfg,'_su_bases'):
       Cfg._su_bases = []
     if len(Cfg._su_bases) == 0:
       for path in [Cfg.val['path_basis'],*Cfg.val['search_basis']]:

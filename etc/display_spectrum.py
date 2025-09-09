@@ -2,7 +2,7 @@
 #
 # display_spectrum.py - demo script to display a simulated or dicom spectrum
 #
-# SPDX-FileCopyrightText: Copyright (C) 2023 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2023-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 simulated = False # Switch between loading simulated and dicom spectra
@@ -15,7 +15,7 @@ if simulated:
   ds = dataset.Dataset.load(path)
 else:
   # Path to a dicom spectrum (this loads the whole set; can also pick a subfolder for only one)
-  path = 'data/benchmark/E4c/MEGA_RAW_Combi_WS_ON'
+  path = 'data/benchmark/E16/MEGA_RAW_Combi_WS_ON'
   # Load dataset (we do not know the metabolites, so they need to be specified)
   ds = dataset.Dataset("dicom dataset").load_dicoms(path,metabolites=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA']))
 
@@ -28,6 +28,7 @@ show_spec = 0
 # Spectrum is a dictionary of individual spectra (edit_off, edit_on, difference),
 # plot each of them
 import matplotlib.pyplot as plt
+print(f"Showing spectrum {ds.spectra[show_spec]["edit_on"].id}")
 for spec in ds.spectra[show_spec]:
   # Plot spectrum (all datatypes)
   fig = ds.spectra[show_spec][spec].plot_spectrum()
