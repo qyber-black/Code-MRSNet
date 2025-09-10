@@ -113,9 +113,9 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     print("Pulse Sequence: "+model.pulse_sequence)
     print('\n                       Concentrations')
     if len(out) > 0:
-      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:8s}    {out[l,0]:8s}  {pre[l,0]-out[l,0]:8s}')
+      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:.8f}    {out[l,0]:.8f}  {pre[l,0]-out[l,0]:.8f}')
     else:
-      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:8s}')
+      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:.8f}')
     for l in range(0,inp.shape[0]):
       if id is None:
         print(f"Spectrum: {l}")
@@ -164,7 +164,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
     try: # ignore regression failures
       slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
     except Exception:
-      slope, intercept, r_value, p_value, std_err = np.NAN, np.NAN, np.NAN, np.NAN, np.NAN
+      slope, intercept, r_value, p_value, std_err = np.nan, np.nan, np.nan, np.nan, np.nan
       print("**ERROR**: linear regression failed")
     info[m] = {
         'error': {
@@ -198,6 +198,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
     axes[0,l].set_xlim([0,1])
     axes[0,l].set_ylim([0,1])
 
+    print(error[:,l])
     sns.histplot(error[:,l], kde=True, ax=axes[1,l])
     axes[1,l].set_xlabel("Error")
     if l == 0:

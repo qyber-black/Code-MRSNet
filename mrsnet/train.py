@@ -119,7 +119,6 @@ class Train:
     # Cross validation
     train_res = { 'error': [None]*self.k }
     val_res = { 'error': [None]*self.k }
-    has_error = True # analyse_model produces error distribtuions if this is true
     for val_fold in range(0,self.k):
       if verbose > 0:
         print(f"# Fold {val_fold+1} of {self.k}")
@@ -143,12 +142,10 @@ class Train:
         val_res[k].append(val_score[k])
       _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder, 'train',
                                    norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
-      if err is not None:
-        train_res['error'][val_fold] = err
-      else:
-        has_error = False # Should be the same across all calls, but set it each time anyway
+      train_res['error'][val_fold] = err
       _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder, 'validation',
                                    norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
+      val_res['error'][val_fold] = err
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
           if val_fold == 0:
@@ -159,6 +156,8 @@ class Train:
       model.reset()
 
     # Pairwise Wasserstein distance between validation error distributions
+    # Check availability of error distributions across all folds (should
+    has_error = all(e is not None for e in train_res['error']) and all(e is not None for e in val_res['error'])
     if has_error:
       if verbose > 0:
         print("# Wasserstein distance between fold error distributions")
@@ -172,11 +171,11 @@ class Train:
             l = len(val_res['error'][k1])
             sel1 = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
             sel2 = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
-            wd = wasserstein_distance(val_res['error'][k1][sel1],val_res['error'][k2][sel2])
-            wda = wasserstein_distance(np.abs(val_res['error'][k1][sel1]), np.abs(val_res['error'][k2][sel2]))
+            wd = wasserstein_distance(val_res['error'][k1][sel1].ravel(), val_res['error'][k2][sel2].ravel())
+            wda = wasserstein_distance(np.abs(val_res['error'][k1][sel1]).ravel(), np.abs(val_res['error'][k2][sel2]).ravel())
           else:
-            wd = wasserstein_distance(val_res['error'][k1],val_res['error'][k2])
-            wda = wasserstein_distance(np.abs(val_res['error'][k1]), np.abs(val_res['error'][k2]))
+            wd = wasserstein_distance(val_res['error'][k1].ravel(), val_res['error'][k2].ravel())
+            wda = wasserstein_distance(np.abs(val_res['error'][k1]).ravel(), np.abs(val_res['error'][k2]).ravel())
           if verbose > 1:
             print(f"    {k1} - {k2} = {wd}")
             print(f"    |{k1}| - |{k2}| = {wda}")
@@ -195,9 +194,8 @@ class Train:
     self._plot_cross_validate(model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi)
 
     # Save cross-validation result
-    if has_error:
-      del train_res['error']
-      del val_res['error']
+    del train_res['error']
+    del val_res['error']
     with open(os.path.join(folder, "cv_result.json"), 'w') as f:
       print(json.dumps({
           'folds': self.k,

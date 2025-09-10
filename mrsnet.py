@@ -913,6 +913,7 @@ def benchmark(args):
       break
   if len(name) == 0:
     raise RuntimeError("Cannot get model name from model argument")
+
   if args.verbose > 0:
     print(f"# Model {name} : {batchsize} : {epochs} : {train_model} : {trainer} : {rest}")
   if name[0:4] == "cnn_":
@@ -982,10 +983,10 @@ def benchmark(args):
       if args.verbose > 0:
         print(f"# Loading Benchmark {b_id}")
       bm = dataset.Dataset(b_id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], b_id, variant),
-                                           concentrations=os.path.join(Cfg.val['path_benchmark'],
-                                                                       b_id, 'concentrations.json'),
-                                           metabolites=quantifier.metabolites,
-                                           verbose=args.verbose)
+                                             concentrations=os.path.join(Cfg.val['path_benchmark'],
+                                                                         b_id, 'concentrations.json'),
+                                             metabolites=quantifier.metabolites,
+                                             verbose=args.verbose)
       if args.verbose > 3:
         for s,c in zip(bm.spectra,bm.concentrations, strict=False):
           for a in s.keys():
@@ -1006,7 +1007,7 @@ def benchmark(args):
                                                            train_model, trainer, rest),
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
-                    verbose=args.verbose, prefix=id+":"+variant+"_"+args.norm, image_dpi=Cfg.val['image_dpi'],
+                    verbose=args.verbose, prefix=b_id+"_"+variant+"_"+args.norm, image_dpi=Cfg.val['image_dpi'],
                     screen_dpi=Cfg.val['screen_dpi'],norm=args.norm)
 
 def get_std_name(name):
