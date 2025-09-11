@@ -977,6 +977,13 @@ def benchmark(args):
   with open(os.path.join(Cfg.val['path_benchmark'],"benchmark_sequences.json")) as f:
     benchmark_seqs = json.load(f)
   import mrsnet.dataset as dataset
+  # Accumulate all sequences for an aggregated analysis run
+  all_inp = []
+  all_out = []
+  all_ids = []
+  dest_folder = os.path.join(Cfg.val['path_model'], name,
+                             batchsize, epochs,
+                             train_model, trainer, rest)
   for b_id in benchmark_seqs.keys():
     for variant in benchmark_seqs[b_id]:
       if args.verbose > 0:
@@ -1001,13 +1008,29 @@ def benchmark(args):
       id_ref = sorted(bm.spectra[0].keys())[0]
       if args.norm == "default":
         args.norm = quantifier.norm
-      analyse_model(quantifier, d_inp, d_out, os.path.join(Cfg.val['path_model'], name,
-                                                           batchsize, epochs,
-                                                           train_model, trainer, rest),
+      # Per-sequence analysis
+      analyse_model(quantifier, d_inp, d_out, dest_folder,
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
                     verbose=args.verbose, prefix=b_id+"_"+variant+"_"+args.norm, image_dpi=Cfg.val['image_dpi'],
                     screen_dpi=Cfg.val['screen_dpi'],norm=args.norm)
+      # Accumulate for aggregated analysis
+      all_inp.append(d_inp)
+      all_out.append(d_out)
+      all_ids.extend([s[id_ref].id for s in bm.spectra])
+
+  # Run aggregated analysis across all sequences to compute total error
+  if len(all_inp) > 0:
+    if args.verbose > 0:
+      print("# Benchmark All")
+    import numpy as np
+    d_inp_all = np.concatenate(all_inp, axis=0)
+    d_out_all = np.concatenate(all_out, axis=0)
+    analyse_model(quantifier, d_inp_all, d_out_all, dest_folder,
+                  id=all_ids,
+                  show_conc=True, save_conc=True,
+                  verbose=args.verbose, prefix="benchmark_all_"+args.norm,
+                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'], norm=args.norm)
 
 def get_std_name(name):
   """Get standard name from path.
