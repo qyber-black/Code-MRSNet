@@ -42,7 +42,7 @@ class Select:
       verbose (int): Verbosity level
       dataset_name (str): Name of the dataset
       pulse_sequence (str): Pulse sequence type
-      model_str (str): Model architecture string
+      error_type (str): Type of error to use for model selection (concentration, spectra)
       remote (str, optional): Remote execution configuration
       remote_user (str, optional): Remote username
       remote_tasks (int, optional): Number of remote tasks
@@ -83,7 +83,7 @@ class Select:
     self.image_dpi = image_dpi
     self.verbose = verbose
     self.dataset_name = ds.name
-    self.model_str = None
+    self.error_type = None
     if len(remote) > 0:
       remote = remote.split(":")
       self.remote = remote[0]
@@ -123,8 +123,9 @@ class Select:
     if args['model'] == 'cnn':
       # cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid]
       model_str = 'cnn'
+      self.error_type = 'concentration'
       for marg in ["S1", "S2", "C1", "C2", "C3", "C4", "O1", "O2", "F1", "F2", "D", "ACTIVATION"]:
-        model_str += "_"+str(args['model_'+marg])
+        model_str += "_" + str(args['model_'+marg])
         del args['model_'+marg]
       args['model'] = model_str
       from mrsnet.cnn import CNN
@@ -132,6 +133,7 @@ class Select:
                            args['acquisitions'], args['datatype'], args['norm']))
     elif args['model'][0:4] == 'cnn_':
       model_str = args['model']
+      self.error_type = 'concentration'
       from mrsnet.cnn import CNN
       model_name = str(CNN(model_str, self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
@@ -139,39 +141,39 @@ class Select:
       # AE-FC model fully parameterised
       # ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]
       model_str = 'ae_fc'
+      self.error_type = 'spectra'
       for marg in ["LIN", "LOUT", "ACT", "ACT-LAST", "DO"]:
         model_str += "_"
         model_str += str(args['model_' + marg])
         del args['model_' + marg]
       args['model'] = model_str
       from mrsnet.autoencoder import Autoencoder
-      self.model_str = model_str[0:5]
       model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
-                           args['acquisitions'], args['datatype'], args['norm']))
+                                   args['acquisitions'], args['datatype'], args['norm']))
     elif args['model'][0:6] == 'aeq_fc':
       # AEQ-FC model fully parameterised
       # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
       model_str = 'aeq_fc'
+      self.error_type = 'spectra'
       for marg in ["UNITS", "LAYERS", "ACT", "ACT-LAST", "DO"]:
-        model_str += "_"
-        model_str += str(args['model_' + marg])
+        model_str += "_" + str(args['model_' + marg])
         del args['model_' + marg]
       args['model'] = model_str
       from mrsnet.autoencoder import Autoencoder
       model_name = str(Autoencoder(model_str,self.metabolites, self.pulse_sequence,
-                           args['acquisitions'], args['datatype'], args['norm']))
+                                   args['acquisitions'], args['datatype'], args['norm']))
     elif args['model'][0:7] == 'caeq_fc':
       # CAEQ-FC model fully parameterised
       # caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACTIVATION]_[ACTIVATION-LAST]_[DP]
       model_str = 'caeq_fc'
+      self.error_type = 'concentration'
       for marg in ["LIN", "LOUT", "ACT", "ACT-LAST", "DO", "UNITS", "LAYERS", "ACTIVATION", "ACTIVATION-LAST", "DP"]:
-        model_str += "_"
-        model_str += str(args['model_' + marg])
+        model_str += "_" + str(args['model_' + marg])
         del args['model_' + marg]
       args['model'] = model_str
       from mrsnet.ae_quantifier import AutoencoderQuantifier
       model_name = str(AutoencoderQuantifier(model_str,self.metabolites, self.pulse_sequence,
-                           args['acquisitions'], args['datatype'], args['norm']))
+                                             args['acquisitions'], args['datatype'], args['norm']))
 
     else:
       raise RuntimeError(f"Unknown model string {args['model']}")
@@ -417,39 +419,23 @@ class Select:
     """
     try:
       if len(fold) == 0:
-        if self.model_str == "ae_fc":                       # FIXME: I insert a self.model_str in __init__() to make here recognize the mddel string, training autoencoder produces the spectra_errors
-          with open(os.path.join(model_path, "train_spectra_errors.json")) as f:
-            data = json.load(f)
-          train_p = [data['total']['abserror']['mean']]  # total MAE
-          with open(os.path.join(model_path, "validation_spectra_errors.json")) as f:
-            data = json.load(f)
-          val_p = [data['total']['abserror']['mean']]  # total MAE
-        else:
-          with open(os.path.join(model_path,"train_concentration_errors.json")) as f:
-            data = json.load(f)
-          train_p = [data['total']['abserror']['mean']] # total MAE
-          with open(os.path.join(model_path,"validation_concentration_errors.json")) as f:
-            data = json.load(f)
-          val_p = [data['total']['abserror']['mean']] # total MAE
+        with open(os.path.join(model_path, f"train_{self.error_type}_errors.json")) as f:
+          data = json.load(f)
+        train_p = [data['total']['abserror']['mean']] # total MAE
+        with open(os.path.join(model_path, f"validation_{self.error_type}_errors.json")) as f:
+          data = json.load(f)
+        val_p = [data['total']['abserror']['mean']] # total MAE
       else:
         train_p = []
         val_p = []
         f_cnt = 0
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
-          if self.model_str == "ae_fc":
-            with open(os.path.join(model_path, "fold-" + str(f_cnt), "train_spectra_errors.json")) as f:
-              data = json.load(f)
-            train_p.append(data['total']['abserror']['mean'])  # total MAE
-            with open(os.path.join(model_path, "fold-" + str(f_cnt), "validation_spectra_errors.json")) as f:
-              data = json.load(f)
-            val_p.append(data['total']['abserror']['mean'])  # total MAE
-          else:
-            with open(os.path.join(model_path,"fold-"+str(f_cnt),"train_concentration_errors.json")) as f:
-              data = json.load(f)
-            train_p.append(data['total']['abserror']['mean']) # total MAE
-            with open(os.path.join(model_path,"fold-"+str(f_cnt),"validation_concentration_errors.json")) as f:
-              data = json.load(f)
-            val_p.append(data['total']['abserror']['mean']) # total MAE
+          with open(os.path.join(model_path,"fold-"+str(f_cnt),f"train_{self.error_type}_errors.json")) as f:
+            data = json.load(f)
+          train_p.append(data['total']['abserror']['mean']) # total MAE
+          with open(os.path.join(model_path,"fold-"+str(f_cnt),f"validation_{self.error_type}_errors.json")) as f:
+            data = json.load(f)
+          val_p.append(data['total']['abserror']['mean']) # total MAE
           f_cnt += 1
     except Exception as e:
       if self.verbose > 0:
