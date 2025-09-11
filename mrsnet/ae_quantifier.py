@@ -443,13 +443,14 @@ class AutoencoderQuantifier:
     else:
         val_data=None
 
-    ## FIXME: AutoShard?
-    ##options = tf.data.Options()
-    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    ##train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
-    train_data = train_data.batch(batch_size * dev_multiplier)
+    # Dataset options
+    # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
+    # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier) ## .with_options(options)
+        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.aeq.fit(train_data,
@@ -499,11 +500,12 @@ class AutoencoderQuantifier:
     if reshape:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
-    ## FIXME: AutoShard?
-    ##options = tf.data.Options()
-    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    ##data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
-    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32)
+    # Dataset options
+    # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
+    # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
     if self.output == "concentrations":
         return np.array(self.aeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
     if self.output == "spectra":
