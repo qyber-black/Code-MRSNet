@@ -18,7 +18,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from scipy.stats import wasserstein_distance
+from scipy.stats import kruskal, wasserstein_distance
 
 from mrsnet.analyse import analyse_model
 from mrsnet.cfg import Cfg
@@ -163,6 +163,9 @@ class Train:
         print("# Wasserstein distance between fold error distributions")
       max_wd_err = 0.0
       max_wd_aerr = 0.0
+      sum_wd_err = 0.0
+      sum_wd_aerr = 0.0
+      cnt_wd_pairs = 0
       for k1 in range(1,self.k):
         # Compare distributions
         for k2 in range(0,k1):
@@ -183,12 +186,50 @@ class Train:
             max_wd_err = wd
           if wda > max_wd_aerr:
             max_wd_aerr = wda
+          sum_wd_err += wd
+          sum_wd_aerr += wda
+          cnt_wd_pairs += 1
+      mean_wd_err = (sum_wd_err / cnt_wd_pairs) if cnt_wd_pairs > 0 else None
+      mean_wd_aerr = (sum_wd_aerr / cnt_wd_pairs) if cnt_wd_pairs > 0 else None
+
+      # Kruskal-Wallis test across folds (validation errors)
+      if model.model[0:3] == 'ae_' and Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        # Sample each fold consistently with above when very large
+        signed_groups = []
+        abs_groups = []
+        for k in range(0,self.k):
+          l = len(val_res['error'][k])
+          sel = np.random.randint(0,l,size=l*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+          signed_groups.append(val_res['error'][k][sel].ravel())
+          abs_groups.append(np.abs(val_res['error'][k][sel]).ravel())
+      else:
+        signed_groups = [val_res['error'][k].ravel() for k in range(0,self.k)]
+        abs_groups = [np.abs(val_res['error'][k]).ravel() for k in range(0,self.k)]
+
+      try:
+        _, kw_p_err = kruskal(*signed_groups)
+      except Exception:
+        kw_p_err = None
+      try:
+        _, kw_p_aerr = kruskal(*abs_groups)
+      except Exception:
+        kw_p_aerr = None
       if verbose > 0:
         print(f"  Max 1st order Wasserstein distance between validation error: {max_wd_err}")
+        print(f"  Mean 1st order Wasserstein distance between validation error: {mean_wd_err}")
+        if kw_p_err is not None:
+          print(f"  Kruskal-Wallis p-value (signed validation error): {kw_p_err}")
         print(f"  Max 1st order Wasserstein distance between absolute validation error: {max_wd_aerr}")
+        print(f"  Mean 1st order Wasserstein distance between absolute validation error: {mean_wd_aerr}")
+        if kw_p_aerr is not None:
+          print(f"  Kruskal-Wallis p-value (absolute validation error): {kw_p_aerr}")
     else:
       max_wd_err = None
       max_wd_aerr = None
+      mean_wd_err = None
+      mean_wd_aerr = None
+      kw_p_err = None
+      kw_p_aerr = None
 
     # Plot cross-validation results
     self._plot_cross_validate(model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi)
@@ -203,6 +244,10 @@ class Train:
           'train': train_res,
           'max_wasserstein_distance_error': max_wd_err,
           'max_wasserstein_distance_absolute_error': max_wd_aerr,
+          'mean_wasserstein_distance_error': mean_wd_err,
+          'mean_wasserstein_distance_absolute_error': mean_wd_aerr,
+          'kruskal_pvalue_error': kw_p_err,
+          'kruskal_pvalue_absolute_error': kw_p_aerr,
         }, indent=2, sort_keys=True), file=f)
 
   def _plot_cross_validate(self, model, train_res, val_res, has_error, folder, verbose, image_dpi, screen_dpi):
