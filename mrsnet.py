@@ -318,7 +318,7 @@ def gen_basis(args):
     for d in ['magnitude','phase','real','imaginary']:
       fig = b.plot(data=d, type='fft')
       if args.verbose > 0:
-        print(f"Saving figure {b.name()}")
+        print(f"Figure {b.name()}")
       for dpi in Cfg.val['image_dpi']:
         filename = os.path.join(b.path,b.name()+"-"+d+"@"+str(dpi)+".png")
         if not os.path.exists(filename): # Do not overwrite (the files should be correct if no one messes with them or we have a broken simulator)

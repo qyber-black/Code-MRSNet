@@ -60,23 +60,34 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     os.makedirs(folder)
   pre = model.predict(inp,verbose=verbose)
 
-  if norm == 'max':
-    for i in range(pre.shape[0]):
-      pre[i] /= np.max(pre[i, :])
-      out[i] /= np.max(out[i, :])
-  elif norm == 'sum':
-    for i in range(pre.shape[0]):
-      pre[i] /= np.sum(pre[i, :])
-      out[i] /= np.sum(out[i, :])
-  elif norm != 'none' and norm is not None:
-    raise RuntimeError(f"Unknown norm {norm}")
-
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
+    # FIXME: do we need to consider normalisation here as well?
     return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
 
   if model.output != "concentrations":
     raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
+
+  if norm == 'max':
+    for i in range(pre.shape[0]):
+      dpre = np.max(pre[i, :])
+      if dpre != 0:
+        pre[i] /= dpre
+      if len(out) > 0:
+        dout = np.max(out[i, :])
+        if dout != 0:
+          out[i] /= dout
+  elif norm == 'sum':
+    for i in range(pre.shape[0]):
+      dpre = np.sum(pre[i, :])
+      if dpre != 0:
+        pre[i] /= dpre
+      if len(out) > 0:
+        dout = np.sum(out[i, :])
+        if dout != 0:
+          out[i] /= dout
+  elif norm != 'none' and norm is not None:
+    raise RuntimeError(f"Unknown norm {norm}")
 
   # Analyse if we have concentrations
   if len(out) > 0:
@@ -111,11 +122,10 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     print(f"\n# {str(model).upper()} Quantification Results")
     print("Metabolites: "+", ".join(model.metabolites))
     print("Pulse Sequence: "+model.pulse_sequence)
-    print('\n                       Concentrations')
     if len(out) > 0:
-      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:.8f}    {out[l,0]:.8f}  {pre[l,0]-out[l,0]:.8f}')
+      print('\n                Predicted   Actual      Error')
     else:
-      print(f'  {model.metabolites[0]:12s}  {pre[l,0]:.8f}')
+      print('\n                Predicted')
     for l in range(0,inp.shape[0]):
       if id is None:
         print(f"Spectrum: {l}")
@@ -198,7 +208,6 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
     axes[0,l].set_xlim([0,1])
     axes[0,l].set_ylim([0,1])
 
-    print(error[:,l])
     sns.histplot(error[:,l], kde=True, ax=axes[1,l])
     axes[1,l].set_xlabel("Error")
     if l == 0:
@@ -207,15 +216,15 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
       axes[1,l].set_title("Error Distributions")
   info['true'] = out.tolist()
   info['predicted'] = pre.tolist()
-  info['error'] = pre.tolist()
+  info['error'] = error.tolist()
 
   # Total plots/data
-  error = np.reshape(error,np.prod(error.shape))
+  error = np.reshape(error,np.prod(error.shape)) # Flatten on purpose and return value must be flat for overall error analysis used in cross validation (otherwise not used)
   terror_mean = np.mean(error)
   terror_std = np.std(error)
   terror_min = np.min(error)
   terror_max = np.max(error)
-  abserror = np.reshape(abserror,np.prod(abserror.shape))
+  abserror  = np.reshape(abserror,np.prod(abserror.shape))
   tabserror_mean = np.mean(abserror)
   tabserror_std = np.std(abserror)
   tabserror_min = np.min(abserror)
@@ -434,7 +443,7 @@ def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
     axs = axs.reshape(1,3) # Undo subplot change of indices
   fig.suptitle(f"Spectra Signal Prediction ({prefix})")
 
-  X = np.arange(model.high_ppm,model.low_ppm,(model.low_ppm-model.high_ppm)/pre.shape[2])  # noqa: N806
+  X = np.linspace(model.high_ppm, model.low_ppm, pre.shape[2], endpoint=True)  # noqa: N806
 
   r = 0
   for ac in range(0,pre.shape[0]):
