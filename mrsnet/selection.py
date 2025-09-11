@@ -229,9 +229,9 @@ class Select:
           if (repeat_id > 0 and
               fn == trainer+"-"+str(repeat_id) and
               os.path.exists(os.path.join(base_path,fn,
-                             fold,"train_concentration_errors.json")) and
+                             fold,f"train_{self.error_type}_errors.json")) and
               os.path.exists(os.path.join(base_path,fn,
-                             fold,"validation_concentration_errors.json"))):
+                             fold,f"validation_{self.error_type}_errors.json"))):
             if repeat_id > selected_id:
               selected_id = repeat_id
           else:
@@ -243,6 +243,10 @@ class Select:
     if selected_id < 0:
       selected_id = 1
     model_path = os.path.join(base_path,trainer+"-"+str(selected_id))
+
+    print(f"Model path: {model_path}")
+    if not os.path.exists(model_path):
+      exit()
 
     # Create task
     self.tasks.append({
@@ -266,7 +270,8 @@ class Select:
       if not load_only and self.verbose > 0:
         print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
-      if os.path.exists(os.path.join(t['model_path'],t['fold'],"model.keras")):
+      if os.path.exists(os.path.join(t['model_path'],t['fold'],"model.keras")) or \
+         os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")): # Can use old results here
         if self.verbose > 0:
           print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
@@ -696,7 +701,6 @@ class SelectGPO(Select):
   the parameter space and find optimal hyperparameters.
   """
 
-  # FIXME: Adjust for numpy2 / GPyOpt dependency on numpy 1
   # FIXME: error norm fixes - consistently max / update results
 
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
@@ -738,7 +742,13 @@ class SelectGPO(Select):
     total = np.prod([len(models.values[k]) for k in keys])
     if self.verbose > 0:
       print(f"Search space size: {total}")
-    import GPyOpt as gpo  # noqa: N813
+    # Prefer GPyOpt if available; otherwise fall back to Optuna (NumPy 2 compatible)
+    use_gpyopt = False
+    try:
+      import GPyOpt as gpo  # noqa: N813
+      use_gpyopt = True
+    except Exception:
+      gpo = None  # type: ignore
     domain = []
     self.values = {}
     for k in var_keys:
@@ -783,7 +793,7 @@ class SelectGPO(Select):
           key_vals[k] = models.values[k][random.randrange(len(models.values[k]))]  # noqa: S311
       self._add_task(key_vals, path_model)
       self._run_tasks()
-    # Convert eval. data to GPO format
+    # Convert eval. data to optimizer format (indices in [0..len(values)-1])
     Xdata = np.ndarray((0,len(var_keys)))  # noqa: N806
     Ydata = np.ndarray((0,1))  # noqa: N806
     res_n = len(self.val_performance[0])
@@ -814,12 +824,71 @@ class SelectGPO(Select):
     Perf_data_pos = len(self.val_performance)  # noqa: N806
     # Init GPO performance data
     remaining_samples = total - Xdata.shape[0] // res_n
-    idx_best = np.argmin(Ydata,axis=0)[0]
-    Ybest = [Ydata[idx_best,0]]  # noqa: N806
+    # Calculate average performance for each unique model (accounting for k-fold)
+    unique_models = Xdata.shape[0] // res_n
+    model_avg_performance = []
+    for model_idx in range(unique_models):
+      start_idx = model_idx * res_n
+      end_idx = start_idx + res_n
+      avg_perf = np.mean(Ydata[start_idx:end_idx, 0])
+      model_avg_performance.append(avg_perf)
+
+    best_model_idx = np.argmin(model_avg_performance)
+    best_avg_performance = model_avg_performance[best_model_idx]
+    Ybest = [best_avg_performance]  # noqa: N806
     XDiff = [0]  # noqa: N806
     XLast = Xdata[-1,:]  # noqa: N806
+    best_data_idx = best_model_idx * res_n
     if self.verbose > 0:
-      print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {Xdata[idx_best,:]!s}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
+      print(f"## Best: Model {best_model_idx} avg = {best_avg_performance:.8f} {Xdata[best_data_idx,:]!s}  of {unique_models} models")
+
+    # If using Optuna, initialise study and inject existing observations
+    if not use_gpyopt:
+      try:
+        import datetime
+
+        import optuna
+        from optuna.distributions import IntDistribution
+        try:
+          from optuna.samplers import GPSampler  # Gaussian Process sampler
+          sampler = GPSampler()
+          if self.verbose > 0:
+            print("# Using Optuna GPSampler (Gaussian Process Bayesian Optimization)")
+        except Exception as gps_error:
+          from optuna.samplers import TPESampler
+          sampler = TPESampler(multivariate=True)
+          if self.verbose > 0:
+            print("# WARNING: Using Optuna TPESampler instead of GPSampler (different strategy)")
+            print("#   GPSampler uses Gaussian Process with Expected Improvement acquisition")
+            print("#   TPESampler uses Tree-structured Parzen Estimator (different Bayesian approach)")
+            if "torch" in str(gps_error).lower():
+              print("#   GPSampler requires PyTorch - install with: pip install torch")
+      except Exception as e:
+        raise RuntimeError("Optuna is required for SelectGPO with NumPy 2; please install optuna") from e
+      # Minimization of validation error
+      study = optuna.create_study(directions=["minimize"], sampler=sampler)
+      distributions = {vk: IntDistribution(0, len(models.values[vk]) - 1) for vk in var_keys}
+      # Seed the study with historical data (use average performance across folds)
+      for model_idx in range(unique_models):
+        start_idx = model_idx * res_n
+        end_idx = start_idx + res_n
+        avg_perf = np.mean(Ydata[start_idx:end_idx, 0])
+        params = {vk: int(Xdata[start_idx, i]) for i, vk in enumerate(var_keys)}
+        # Add historical trial to the study
+        now = datetime.datetime.now()
+        study.add_trial(optuna.trial.FrozenTrial(
+          trial_id=model_idx,
+          number=model_idx,
+          state=optuna.trial.TrialState.COMPLETE,
+          value=float(avg_perf),
+          datetime_start=now,
+          datetime_complete=now,
+          params=params,
+          distributions=distributions,
+          user_attrs={},
+          system_attrs={},
+          intermediate_values={}
+        ))
 
     # Optimisation iterations
     current_iter = len(self.key_vals)
@@ -830,7 +899,7 @@ class SelectGPO(Select):
     if Cfg.dev('selectgpo_no_search'):
       current_iter = self.repeats
     while current_iter < self.repeats and remaining_samples > 0:
-      if eval_per_step  == 1:
+      if eval_per_step == 1:
         evaluator = 'sequential'
       else:
         # Switch to avoid posterior sampling bias
@@ -838,17 +907,32 @@ class SelectGPO(Select):
       if self.verbose > 0:
         print(f"### Iteration {current_iter+1} / {self.repeats} - samples remaining: {remaining_samples} [eval: {evaluator}]")
       # Optimiser to get next evaluations
-      bop = gpo.methods.BayesianOptimization(f=None, domain=domain,
-                                             X=Xdata, Y=Ydata,
-                                             normalize_Y=False,
-                                             batch_size=np.min([eval_per_step,remaining_samples]),
-                                             evaluator_type=evaluator,
-                                             verbosity=(self.verbose>1),
-                                             acquisition_type='EI',
-                                             acquisition_optimizer_type='lbfgs',
-                                             exact_feval=False,
-                                             de_duplication=True)
-      Xnext = bop.suggest_next_locations()  # noqa: N806
+      batch_size = int(np.min([eval_per_step,remaining_samples]))
+      if use_gpyopt:
+        bop = gpo.methods.BayesianOptimization(f=None, domain=domain,
+                                               X=Xdata, Y=Ydata,
+                                               normalize_Y=False,
+                                               batch_size=batch_size,
+                                               evaluator_type=evaluator,
+                                               verbosity=(self.verbose>1),
+                                               acquisition_type='EI',
+                                               acquisition_optimizer_type='lbfgs',
+                                               exact_feval=False,
+                                               de_duplication=True)
+        Xnext = bop.suggest_next_locations()  # noqa: N806
+      else:
+        # Optuna-based suggestion on the index space
+        if evaluator == 'random':
+          Xnext = np.ndarray((batch_size, len(var_keys)))  # noqa: N806
+          for bi in range(batch_size):
+            for li, vk in enumerate(var_keys):
+              Xnext[bi, li] = random.randrange(len(models.values[vk]))  # noqa: S311
+        else:
+          Xnext = np.ndarray((batch_size, len(var_keys)))  # noqa: N806
+          for bi in range(batch_size):
+            trial = study.ask(distributions)  # type: ignore[name-defined]
+            for li, vk in enumerate(var_keys):
+              Xnext[bi, li] = int(trial.params[vk])
 
       # Evaluate next data points
       for x in Xnext:
@@ -870,15 +954,52 @@ class SelectGPO(Select):
         Ydata = np.vstack((Ydata,Ynext))  # noqa: N806
       Perf_data_pos = len(self.val_performance)  # noqa: N806
 
-      # Update results
-      idx_best = np.argmin(Ydata,axis=0)[0]
-      Ybest.append(Ydata[idx_best,0])
+      # Inform Optuna about observed performances (use mean across folds)
+      if not use_gpyopt:
+        res_n = len(self.val_performance[0])
+        for l in range(0, Xnext.shape[0]):
+          vals = [self.val_performance[Perf_data_pos - Xnext.shape[0] + l][ri] for ri in range(0, res_n)]
+          mean_val = float(np.mean(vals))
+          params = {vk: int(Xnext[l, i]) for i, vk in enumerate(var_keys)}
+          # Add new trial to the study
+          trial_number = len(study.trials)
+          now = datetime.datetime.now()
+          study.add_trial(optuna.trial.FrozenTrial(
+            trial_id=trial_number,
+            number=trial_number,
+            state=optuna.trial.TrialState.COMPLETE,
+            value=mean_val,
+            datetime_start=now,
+            datetime_complete=now,
+            params=params,
+            distributions=distributions,
+            user_attrs={},
+            system_attrs={},
+            intermediate_values={}
+          ))
+
+      # Update results - find best model based on average performance across folds
+      # Calculate average performance for each unique model (accounting for k-fold)
+      unique_models = Xdata.shape[0] // res_n
+      model_avg_performance = []
+      for model_idx in range(unique_models):
+        start_idx = model_idx * res_n
+        end_idx = start_idx + res_n
+        avg_perf = np.mean(Ydata[start_idx:end_idx, 0])
+        model_avg_performance.append(avg_perf)
+
+      best_model_idx = np.argmin(model_avg_performance)
+      best_avg_performance = model_avg_performance[best_model_idx]
+      Ybest.append(best_avg_performance)
+
+      # Get the actual data point index for the best model (first fold)
+      best_data_idx = best_model_idx * res_n
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
       XLast = Xdata[-1,:]  # noqa: N806
       if self.verbose > 0:
-        print(f"## Best: Y[{idx_best}] = {Ybest[-1]} {Xdata[idx_best,:]!s}  of {Ydata.shape[0]}/{res_n} = {Ydata.shape[0]//res_n} samples")
+        print(f"## Best: Model {best_model_idx} avg = {best_avg_performance:.6f} {Xdata[best_data_idx,:]!s}  of {unique_models} models")
         for l in range(0,len(var_keys)):
-          key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[idx_best,l])]
+          key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[best_data_idx,l])]
         print("   "+str([str(key_vals[k]) for k in var_keys]))
       # Next iter
       current_iter += 1
