@@ -742,19 +742,19 @@ def model_selection(args):
   if args.method == "grid":
     from mrsnet.selection import SelectGrid
     selector = SelectGrid(args.metabolites,args.dataset,args.epochs,args.validate,args.remote,
-                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
+                          Cfg.val['screen_dpi'],Cfg.val['image_dpi'],Cfg.val['search_model'],args.verbose)
   elif args.method == "qmc":
     from mrsnet.selection import SelectQMC
     selector = SelectQMC(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],Cfg.val['search_model'],args.verbose)
   elif args.method == "gpo":
     from mrsnet.selection import SelectGPO
     selector = SelectGPO(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
+                         Cfg.val['screen_dpi'],Cfg.val['image_dpi'],Cfg.val['search_model'],args.verbose)
   elif args.method == "ga":
     from mrsnet.selection import SelectGA
     selector = SelectGA(args.metabolites,args.dataset,args.epochs,args.validate,args.repeats,args.remote,
-                        Cfg.val['screen_dpi'],Cfg.val['image_dpi'],args.verbose)
+                        Cfg.val['screen_dpi'],Cfg.val['image_dpi'],Cfg.val['search_model'],args.verbose)
   else:
     raise RuntimeError(f"Unknown model selection method {args.method}")
   selector.optimise(args.collection, models, Cfg.val['path_model'])

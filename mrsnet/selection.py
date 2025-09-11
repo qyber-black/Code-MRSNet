@@ -49,7 +49,7 @@ class Select:
       remote_wait (int, optional): Remote wait time
   """
 
-  def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose):
+  def __init__(self,remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,search_model,verbose):
     """Initialize model selection.
 
     Parameters
@@ -61,6 +61,7 @@ class Select:
         validate (str): Validation strategy
         screen_dpi (int): DPI for screen display
         image_dpi (list): DPI for saved images
+        search_model (list): List of search model paths
         verbose (int): Verbosity level
     """
     from mrsnet.dataset import Dataset
@@ -75,6 +76,8 @@ class Select:
       self.pulse_sequence = ds.pulse_sequence
     else:
       raise RuntimeError("Cannot find dataset")
+    # Search paths: path_model first, then search_model paths
+    self.search_model = search_model
     self.metabolites = metabolites
     self.dataset = dataset
     self.epochs = epochs
@@ -107,6 +110,60 @@ class Select:
     self.key_vals = []
     self.val_performance = []
     self.train_performance = []
+
+  def _find_existing_model(self, model_name, args, train_model, trainer, fold, path_model):
+    """Find existing model across path_model and search_model paths.
+
+    Parameters
+    ----------
+        model_name (str): Name of the model
+        args (dict): Model arguments including batchsize
+        train_model (str): Training model identifier
+        trainer (str): Trainer type
+        fold (str): Fold identifier
+        path_model (str): Base path for model storage
+
+    Returns
+    -------
+        tuple: (model_path, selected_id) if found, (None, -1) if not found
+    """
+    for search_path in [path_model, *self.search_model]:
+      base_path = os.path.join(search_path, model_name, args['batchsize'], str(self.epochs), train_model)
+
+      if os.path.isdir(base_path):
+        # Find model folder, assuming there may be multiple repeats.
+        # We assume the last valid repeat is the best option/latest result.
+        selected_id = -1
+        for fn in os.listdir(base_path):
+          ffn = os.path.join(base_path, fn)
+          if os.path.isdir(ffn):
+            file_s = fn.split("-")
+            repeat_id = -1
+            if len(file_s) > 1:
+              try:
+                repeat_id = int(file_s[-1])
+              except Exception:  # noqa: S110
+                pass
+            if (repeat_id > 0 and
+                fn == trainer+"-"+str(repeat_id) and
+                os.path.exists(os.path.join(base_path, fn, fold, f"train_{self.error_type}_errors.json")) and
+                os.path.exists(os.path.join(base_path, fn, fold, f"validation_{self.error_type}_errors.json"))):
+              if repeat_id > selected_id:
+                selected_id = repeat_id
+            else:
+              if self.verbose > 0:
+                print(f"# WARNING: {ffn} - broken/incomplete model")
+          else:
+            if self.verbose > 0:
+              print(f"# WARNING: {ffn} - this file should not be there")
+
+        if selected_id > 0:
+          model_path = os.path.join(base_path, trainer+"-"+str(selected_id))
+          if self.verbose > 0:
+            print(f"# Found existing model at: {model_path}")
+          return model_path, selected_id
+
+    return None, -1
 
   def _add_task(self,key_vals,path_model):
     """Add a new optimization task.
@@ -209,44 +266,14 @@ class Select:
       trainer = "NoValidation"
     else:
       raise RuntimeError(f"Unknown validation {args.validate}")
-    # Check if sane, delete otherwise
-    base_path = os.path.join(path_model, model_name, args['batchsize'], str(self.epochs),
-                             train_model)
-    # Find model folder, assuming there may be multiple repeats.
-    # We assume the last valid repeat is the best option/latest result.
-    selected_id = -1
-    if os.path.isdir(base_path):
-      for fn in os.listdir(base_path):
-        ffn = os.path.join(base_path,fn)
-        if os.path.isdir(ffn):
-          file_s = fn.split("-")
-          repeat_id = -1
-          if len(file_s) > 1:
-            try:
-              repeat_id = int(file_s[-1])
-            except Exception:  # noqa: S110
-              pass
-          if (repeat_id > 0 and
-              fn == trainer+"-"+str(repeat_id) and
-              os.path.exists(os.path.join(base_path,fn,
-                             fold,f"train_{self.error_type}_errors.json")) and
-              os.path.exists(os.path.join(base_path,fn,
-                             fold,f"validation_{self.error_type}_errors.json"))):
-            if repeat_id > selected_id:
-              selected_id = repeat_id
-          else:
-            if self.verbose > 0:
-              print(f"# WARNING: {ffn} - broken/incomplete model")
-        else:
-          if self.verbose > 0:
-            print(f"# WARNING: {ffn} - this file should not be there")
-    if selected_id < 0:
-      selected_id = 1
-    model_path = os.path.join(base_path,trainer+"-"+str(selected_id))
 
-    print(f"Model path: {model_path}")
-    if not os.path.exists(model_path):
-      exit()
+    # Check for existing model across path_model and search_model paths
+    model_path, selected_id = self._find_existing_model(model_name, args, train_model, trainer, fold, path_model)
+    if model_path is None:
+      # No existing model found, create new one
+      base_path = os.path.join(path_model, model_name, args['batchsize'], str(self.epochs), train_model)
+      selected_id = 1
+      model_path = os.path.join(base_path, trainer+"-"+str(selected_id))
 
     # Create task
     self.tasks.append({
@@ -289,7 +316,7 @@ class Select:
             self.val_performance.append(val_p)
             self.train_performance.append(train_p)
           else:
-            self.val_performance.append([999999.0]*len(self.val_performance[0]))
+            self.val_performance.append([999999.0]*len(self.val_performance[0])) # Let's hope the first one does not fail
             self.train_performance.append([999999.0]*len(self.val_performance[0]))
             print("**Error:** Local job failed: "+str(t))
         else:
@@ -313,7 +340,7 @@ class Select:
                 self.val_performance.append(val_p)
                 self.train_performance.append(train_p)
               else:
-                self.val_performance.append([999999.0]*len(self.val_performance[0]))
+                self.val_performance.append([999999.0]*len(self.val_performance[0])) # Let's hope the first one does not fail
                 self.train_performance.append([999999.0]*len(self.val_performance[0]))
                 print("**Error:** Remote job failed: "+str(remote_run[k]))
               remote_run[k][0] = 'complete'
@@ -578,7 +605,7 @@ class SelectGrid(Select):
   to find the optimal hyperparameters.
   """
 
-  def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,verbose):
+  def __init__(self,metabolites,dataset,epochs,validate,remote,screen_dpi,image_dpi,search_model,verbose):
     """Initialize grid search selector.
 
     Parameters
@@ -592,7 +619,7 @@ class SelectGrid(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,search_model,verbose)
 
   def optimise(self, collection_name, models, path_model):
     """Perform grid search optimization.
@@ -633,7 +660,7 @@ class SelectQMC(Select):
   to find optimal hyperparameters.
   """
 
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,search_model,verbose):
     """Initialize QMC selector.
 
     Parameters
@@ -648,7 +675,7 @@ class SelectQMC(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,search_model,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
@@ -701,9 +728,7 @@ class SelectGPO(Select):
   the parameter space and find optimal hyperparameters.
   """
 
-  # FIXME: error norm fixes - consistently max / update results
-
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,search_model,verbose):
     """Initialize GPO selector.
 
     Parameters
@@ -718,7 +743,7 @@ class SelectGPO(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,search_model,verbose)
     self.repeats = repeats
 
   def optimise(self, collection_name, models, path_model):
@@ -1034,7 +1059,7 @@ class SelectGA(Select):
   optimal hyperparameters through evolutionary optimization.
   """
 
-  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
+  def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,search_model,verbose):
     """Initialize GA selector.
 
     Parameters
@@ -1049,7 +1074,7 @@ class SelectGA(Select):
         image_dpi (list): DPI for saved images
         verbose (int): Verbosity level
     """
-    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,verbose)
+    super().__init__(remote,metabolites,dataset,epochs,validate,screen_dpi,image_dpi,search_model,verbose)
     self.repeats = repeats
     self.last_fitness = 0
 
@@ -1192,7 +1217,8 @@ def _ga_fitness_func(solution, solution_idx):
     raise RuntimeError("Could not find result")
   if ga_aux['select'].verbose > 0:
     print(f" = {val}")
-  return 1/(val+1e-8)
+  # Avoid division by zero and ensure positive fitness
+  return 1/(max(val, 1e-8))
 
 def _ga_on_generation(ga_instance):
   """Callback function for GA generation completion.
