@@ -363,11 +363,13 @@ class CNN:
     if reshape:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
       d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
-    ## FIXME: AutoShard?
-    ##options = tf.data.Options()
-    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    ##data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
-    data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32)
+
+    # Dataset options
+    # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
+    # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
     return np.array(self.cnn_arch.predict(data,verbose=(verbose>0)*2),dtype=np.float64)
 
   def save(self, folder):
