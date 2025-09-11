@@ -63,7 +63,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
     # FIXME: do we need to consider normalisation here as well?
-    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi)
+    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi)
 
   if model.output != "concentrations":
     raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
@@ -91,7 +91,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   # Analyse if we have concentrations
   if len(out) > 0:
-    info, error = _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, screen_dpi)
+    info, error = _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi)
   else:
     info = None
     error = None
@@ -141,7 +141,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   return pre, info, error
 
 
-def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, screen_dpi):
+def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi):
   """Analyze model prediction errors.
 
   Parameters
@@ -151,6 +151,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
       out: Ground truth values
       folder (str): Output folder for results
       prefix (str): File prefix for output files
+      norm (str): Normalization method used
       verbose (int): Verbosity level
       image_dpi (list): Image DPI settings
       screen_dpi (int): Screen DPI setting
@@ -165,7 +166,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
   abserror_std = np.std(abserror,axis=0)
   abserror_min = np.min(abserror,axis=0)
   abserror_max = np.max(abserror,axis=0)
-  info = { 'prefix': prefix }
+  info = { 'prefix': prefix, 'norm': norm }
 
   # Per metabolite plots/data
   fig, axes =  plt.subplots(2,len(model.metabolites)+1)
@@ -282,7 +283,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, verbose, image_dpi, sc
 
   return info, error
 
-def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, image_dpi, screen_dpi):
+def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi):
   """Analyze spectra reconstruction errors from autoencoder.
 
   Parameters
@@ -294,6 +295,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
       folder (str): Output folder for results
       prefix (str): File prefix for output files
       id (list): List of spectrum identifiers
+      norm (str): Normalization method used
       verbose (int): Verbosity level
       image_dpi (list): Image DPI settings
       screen_dpi (int): Screen DPI setting
@@ -315,7 +317,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, verbose, im
     abserror_std = np.std(abserror,axis=(0,3))
     abserror_min = np.min(abserror,axis=(0,3))
     abserror_max = np.max(abserror,axis=(0,3))
-    info = { 'prefix': prefix }
+    info = { 'prefix': prefix, 'norm': norm }
     # Per acquisition-datatype signal
     fig, axes =  plt.subplots(pre.shape[1],pre.shape[2]+1)
     if pre.shape[1] == 1:
