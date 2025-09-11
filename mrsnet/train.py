@@ -335,13 +335,13 @@ class Train:
     ax21.set_title("Validation Metrics")
     for l in range(0,len(keys)):
       if l == 0:
-        ax21.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        ax21.plot(range(0,self.k), val_res[keys[l]], color=cols[l])
         ax21.set_ylim([ymin2x[l],ymax2x[l]])
         ax21.set_ylabel(keys[0])
         ax21.tick_params(axis='y', labelcolor=cols[l])
       else:
         ax2 = ax21.twinx()
-        ax2.plot(range(0,self.k), train_res[keys[l]], color=cols[l])
+        ax2.plot(range(0,self.k), val_res[keys[l]], color=cols[l])
         ax2.set_ylim([ymin2x[l],ymax2x[l]])
         ax2.set_ylabel(keys[l])
         ax2.tick_params(axis='y', labelcolor=cols[l])
@@ -419,7 +419,7 @@ class Split(Train):
 
     Parameters
     ----------
-        p (float): Percentage of data to use for validation (0-1)
+        p (float): Percentage of data to use for training (0-1)
     """
     Train.__init__(self,2)
     self.p = p
@@ -641,7 +641,7 @@ class KFold(Train):
     """
     # Stratify data into k folds
     data_dim = data[0].shape[0]
-    out_dim = data[1].shape[-1]
+    out_dim = data[-1].shape[-1]
     if verbose > 0:
       print(f"# Creating {self.k} folds for {out_dim}-dimensional output data for {data_dim} points")
     idx = np.arange(0,data_dim)
@@ -652,8 +652,10 @@ class KFold(Train):
       rng.shuffle(idx)
     # Venetian blinds splitting into buckets
     if verbose > 0:
-      print("  Venetian blinds, step=1 mod k")
-    self._bucket_idx = np.floor(idx % self.k).astype(np.int64)
+      print("  Venetian blinds, step=1 mod k (respecting shuffled order)")
+    # Assign folds round-robin in the (possibly shuffled) order
+    self._bucket_idx = np.empty(data_dim, dtype=np.int64)
+    self._bucket_idx[idx] = (np.arange(data_dim) % self.k).astype(np.int64)
     if verbose > 1:
       for b in range(0,self.k):
         print(f"    Bucket {b}: {np.where(self._bucket_idx == b)[0].shape[0]}")

@@ -235,7 +235,7 @@ def add_arguments_train_select(p):
   p.add_argument('-d', '--dataset', type=str, help='Folder with dataset for training (path ending SOURCE/MANUFACTURER/OMEGA/LINEWIDTH/METABOLITES/PULSE_SEQUENCE/NOISE_P-NOISE_TYPE-NOISE_MU-NOISE_SIGMA/SIZE-ID).')
   p.add_argument('-e', '--epochs', type=int, default=500,
                  help='Number of training epochs.')
-  p.add_argument('-k', '--validate', type=float, default=0.7,
+  p.add_argument('-k', '--validate', type=float, default=0.8,
                  help='Validation (k>1: k-fold cross-validation; k<-1: duplex k-fold cross-validation; 0..1: train percentage split; -1..0: duplex train percentage split; 0: no split/testing).')
 
 def add_arguments_train(p):
