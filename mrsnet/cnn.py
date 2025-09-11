@@ -312,13 +312,13 @@ class CNN:
                  timer]
 
     # Dataset options
-    ## FIXME: AuthShard?
-    ##options = tf.data.Options()
-    ##options.distribute_options.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    ##train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
-    train_data = train_data.batch(batch_size * dev_multiplier)
+    # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
+    # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if validation_data is not None:
-      validation_data = validation_data.batch(batch_size * dev_multiplier) ##.with_options(options)
+      validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.cnn_arch.fit(train_data,
