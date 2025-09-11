@@ -710,6 +710,9 @@ class SelectGPO(Select):
   the parameter space and find optimal hyperparameters.
   """
 
+  # FIXME: Adjust for numpy2 / GPyOpt dependency on numpy 1
+  # FIXME: error norm fixes - consistently max / update results
+
   def __init__(self,metabolites,dataset,epochs,validate,repeats,remote,screen_dpi,image_dpi,verbose):
     """Initialize GPO selector.
 
