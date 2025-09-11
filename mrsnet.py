@@ -27,13 +27,11 @@ from mrsnet.cfg import Cfg
 
 
 def main():
-  """Main function of MRSNet: parse arguments, setup basic environment and run.
+  """Parse arguments, setup basic environment and run - Main function of MRSNet.
 
   Sets up the command-line interface with subcommands for various MRSNet operations
   including basis generation, simulation, training, and quantification.
-  """  # noqa: D401
-  # Main function of MRSNet: parse arguments, setup basic environment and run
-
+  """
   # Process arguments
   parser = argparse.ArgumentParser(description='Magnetic Resonance Spectra (MRS) Quantification',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -155,11 +153,11 @@ def add_arguments_basis(p):
   # Add basis source arguments
   su_b = Cfg.get_su_bases()
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', *su_b], default=['fid-a'],
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', *su_b], default=['fid-a-2d'],
                  nargs='+',
                  help='Data source(s) for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
-                 choices=['siemens', 'ge', 'phillips'], default=['siemens'],
+                 choices=['siemens', 'ge', 'philips'], default=['siemens'],
                  nargs='+',
                  help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
@@ -217,7 +215,7 @@ def add_arguments_compare(p):
                  choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', *su_b], default='lcmodel',
                  help='Data source for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
-                 choices=['siemens', 'ge', 'phillips'], default='siemens',
+                 choices=['siemens', 'ge', 'philips'], default='siemens',
                  help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=123.23, nargs=1,
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.98 T Siemens scanner).')
@@ -312,18 +310,19 @@ def gen_basis(args):
     print("# Generating plots")
   for b in bases:
     if args.verbose > 0:
-      print(b)
-    for f in glob.glob(os.path.join(Cfg.val['path_basis'],b.source,b.name()+"*.png")):
+      print(f"Basis {b!s}")
+    if b.path is None:
+      raise RuntimeError("Basis path is not set")
+    for f in glob.glob(b.path+"*.png"):
       os.remove(f)
     for d in ['magnitude','phase','real','imaginary']:
       fig = b.plot(data=d, type='fft')
       if args.verbose > 0:
         print(f"Saving figure {b.name()}")
-      dir_name = os.path.join(Cfg.val['path_basis'],b.source)
-      if not os.path.isdir(dir_name):
-        os.makedirs(dir_name)
       for dpi in Cfg.val['image_dpi']:
-        plt.savefig(os.path.join(dir_name,b.name()+"-"+d+"@"+str(dpi)+".png"), dpi=dpi)
+        filename = os.path.join(b.path,b.name()+"-"+d+"@"+str(dpi)+".png")
+        if not os.path.exists(filename): # Do not overwrite (the files should be correct if no one messes with them or we have a broken simulator)
+          plt.savefig(filename, dpi=dpi)
       if args.verbose > 1:
         fig.set_dpi(Cfg.val['screen_dpi'])
         plt.show(block=True)
@@ -641,8 +640,8 @@ def train(args):
           trainer = id[k+9]
           rest = id[k+10] if len(id) > k+10 else '' # Folds
           break
-      if len(name) == 0:
-        raise Exception("Cannot get model name from model argument")
+        if len(name) == 0:
+          raise RuntimeError("Cannot get model name from model argument")
       if args.verbose > 0:
         print(f"# Loading autoencoder model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
       folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
@@ -704,7 +703,7 @@ def train(args):
           data = [d_noise, d_clean, d_conc]  # output last
           data_name = ds_noisy.name + "_" + ds_rest
   else:
-    raise Exception(f"Unknown model {args.model}")
+    raise RuntimeError(f"Unknown model {args.model}")
   if args.verbose > 0:
     print(f"# Model:\n  {model!s}")
 
@@ -814,7 +813,7 @@ def quantify(args):
       except Exception:
         quantifier = None
       if quantifier is None:
-        raise Exception("Model not found")
+        raise RuntimeError("Model not found")
 
   elif name[0:3] == "ae_" or name[0:4] == "aeq_":
     from mrsnet.autoencoder import Autoencoder
@@ -826,7 +825,7 @@ def quantify(args):
             folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
             quantifier = Autoencoder.load(folder)
         except Exception:
-            raise Exception("Model not found") from None
+            raise RuntimeError("Model not found") from None
   elif name[0:5] == "caeq_":
     from mrsnet.ae_quantifier import AutoencoderQuantifier
     try:
@@ -837,10 +836,10 @@ def quantify(args):
             folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
             quantifier = AutoencoderQuantifier.load(folder)
         except Exception:
-            raise Exception("Model not found") from None
+            raise RuntimeError("Model not found") from None
 
   else:
-    raise Exception("Unknown model "+name)
+    raise RuntimeError("Unknown model "+name)
   if ds is None:
     if args.verbose > 0:
       print(f"# Loading dicom data {args.dataset}")
@@ -875,7 +874,7 @@ def quantify(args):
                             n_fft_pts=quantifier.fft_samples, verbose=args.verbose,
                             export_concentrations=False)
     else:
-      raise Exception("Unknown dataset type "+ds_type)
+      raise RuntimeError("Unknown dataset type "+ds_type)
   id_ref = sorted(ds.spectra[0].keys())[0]
   # Store results in data repository
   from mrsnet.analyse import analyse_model
@@ -933,7 +932,7 @@ def benchmark(args):
       except Exception:
         quantifier = None
       if quantifier is None:
-        raise Exception("Model not found")
+        raise RuntimeError("Model not found")
   elif name[0:4] == "aeq_":
     from mrsnet.autoencoder import Autoencoder
     quantifier = None
@@ -951,7 +950,7 @@ def benchmark(args):
       except Exception:
         quantifier = None
       if quantifier is None:
-        raise Exception("Model not found")
+        raise RuntimeError("Model not found")
   elif name[0:4] == "caeq":
     from mrsnet.ae_quantifier import AutoencoderQuantifier
     quantifier = None
@@ -969,11 +968,11 @@ def benchmark(args):
       except Exception:
         quantifier = None
       if quantifier is None:
-        raise Exception("Model not found")
+        raise RuntimeError("Model not found")
   elif name[0:3] == "ae_":
-    raise Exception("No concentration prediction implemented")
+    raise RuntimeError("No concentration prediction implemented")
   else:
-    raise Exception("Unknown model "+name)
+    raise RuntimeError("Unknown model "+name)
   import json
   with open(os.path.join(Cfg.val['path_benchmark'],"benchmark_sequences.json")) as f:
     benchmark_seqs = json.load(f)
@@ -1057,5 +1056,5 @@ if __name__ == '__main__':
     tf.config.set_visible_devices([], 'GPU')
     for device in tf.config.get_visible_devices():
       assert device.device_type != 'GPU'  # noqa: S101
-    print("**WARNING - GPUs disabled on request")
+    print("**WARNING - GPUs disabled on request**")
   main()

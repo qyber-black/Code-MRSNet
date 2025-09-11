@@ -516,7 +516,7 @@ class Spectrum:
     if len(concentrations) > 0:
       n_cols = 2
     else:
-      super_title += "-".join(self.metabolites[0]) + ' '
+      super_title += "-".join(self.metabolites) + ' '
     super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} MHz"
     if self.linewidth is not None:
       super_title += " Linewidth: " + str(self.linewidth)
@@ -608,7 +608,7 @@ class Spectrum:
     if len(concentrations) > 0:
       n_cols +=1
     else:
-      super_title += "-".join(metabolites[0]) + " "
+      super_title += "-".join(metabolites) + " "
     source = {spectra[a].source for a in spectra}
     pulse_sequence = {spectra[a].pulse_sequence for a in spectra}
     omega = {spectra[a].omega for a in spectra}
@@ -916,7 +916,9 @@ class Spectrum:
     Returns
     -------
         list: List of Spectrum objects
+        path (str): Directory containing PyGamma spectra loaded
     """
+    filename = None
     for spath in [pygamma_dir, *search_path]:
       cache_dir = os.path.join(spath,
                                pulse_sequence + '_' + str(omega) + '_' +
@@ -924,12 +926,17 @@ class Spectrum:
       filename = os.path.join(cache_dir, metabolite+".json")
       if os.path.exists(filename):
         break
-    if not os.path.exists(filename):
+    if filename is None:
+      cache_dir = os.path.join(pygamma_dir,
+                               pulse_sequence + '_' + str(omega) + '_' +
+                               str(linewidth) + '_' + str(npts) + '_' + str(dt))
       if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
       from mrsnet.simulators.pygamma.pygamma_simulator import pygamma_spectra_sim
-      pygamma_spectra_sim(metabolite, omega, pulse_sequence,
-                          linewidth, cache_dir, npts, dt)
+      pygamma_spectra_sim(metabolite, omega, pulse_sequence, linewidth, cache_dir, npts, dt)
+      filename = os.path.join(cache_dir, metabolite+".json")
+      if not os.path.exists(filename):
+        raise RuntimeError('PyGamma cache file does not exist: ' + filename)
     specs = []
     with open(filename, 'rb') as load_file:
       for raw in json.load(load_file):
@@ -950,7 +957,7 @@ class Spectrum:
         s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
                 1/dt, force_phase_correct=force_phase_correct)
         specs.append(s)
-    return specs
+    return specs, os.path.dirname(cache_dir)
 
   @staticmethod
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
@@ -1043,7 +1050,9 @@ class Spectrum:
                 fft[:ishift] = 0.0
               elif ishift < 0:
                 fft[fft.shape[0]-ishift:] = 0.0
-              # We have ON = OFF + 2*diff
+              # LCModel DIFF corresponds to the measured ON - OFF spectrum.
+              # Hence DIFF already contains approximately twice the edited metabolite contribution (e.g. GABA),
+              # and downstream we should consistently use DIFF = ON - OFF without additional rescaling.
               fft_scale = metadata["BASIS"]["TRAMP"]*100.0/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
               #adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
