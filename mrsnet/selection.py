@@ -923,6 +923,30 @@ class SelectGPO(Select):
       eval_per_step = self.remote_tasks
     if Cfg.dev('selectgpo_no_search'):
       current_iter = self.repeats
+
+    # Track evaluated parameter combinations to prevent duplicates
+    # Use both set and numpy array for fast lookups
+    evaluated_combinations = set()
+    evaluated_arrays = []  # For fast numpy-based checking
+    for model_idx in range(unique_models):
+      start_idx = model_idx * res_n
+      param_tuple = tuple(int(Xdata[start_idx, i]) for i in range(len(var_keys)))
+      evaluated_combinations.add(param_tuple)
+      evaluated_arrays.append(np.array(param_tuple))
+
+    # Convert to numpy array for vectorized operations
+    if evaluated_arrays:
+      evaluated_matrix = np.array(evaluated_arrays)
+    else:
+      evaluated_matrix = np.array([]).reshape(0, len(var_keys))
+
+    def is_duplicate_fast(sample_params):
+      """Fast duplicate checking using numpy vectorized operations."""
+      if evaluated_matrix.size == 0:
+        return False
+      sample_array = np.array(sample_params)
+      return np.any(np.all(evaluated_matrix == sample_array, axis=1))
+
     while current_iter < self.repeats and remaining_samples > 0:
       if eval_per_step == 1:
         evaluator = 'sequential'
@@ -946,18 +970,58 @@ class SelectGPO(Select):
                                                de_duplication=True)
         Xnext = bop.suggest_next_locations()  # noqa: N806
       else:
-        # Optuna-based suggestion on the index space
+        # Optimized Optuna-based suggestion with efficient duplicate prevention
+        Xnext = np.ndarray((batch_size, len(var_keys)))  # noqa: N806
+
         if evaluator == 'random':
-          Xnext = np.ndarray((batch_size, len(var_keys)))  # noqa: N806
+          # Fast random sampling with duplicate checking
           for bi in range(batch_size):
-            for li, vk in enumerate(var_keys):
-              Xnext[bi, li] = random.randrange(len(models.values[vk]))  # noqa: S311
+            sample_params = []
+            for vk in var_keys:
+              sample_params.append(random.randrange(len(models.values[vk])))  # noqa: S311
+            Xnext[bi, :] = sample_params
+            # Update tracking structures
+            param_tuple = tuple(sample_params)
+            evaluated_combinations.add(param_tuple)
+            evaluated_arrays.append(np.array(sample_params))
+            evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
         else:
-          Xnext = np.ndarray((batch_size, len(var_keys)))  # noqa: N806
-          for bi in range(batch_size):
+          # GPSampler with optimized duplicate checking
+          # Pre-generate more samples than needed to account for duplicates
+          candidate_samples = []
+          max_candidates = batch_size * 3  # Generate 3x more candidates
+
+          # Generate candidates efficiently with fast duplicate checking
+          for _ in range(max_candidates):
             trial = study.ask(distributions)  # type: ignore[name-defined]
-            for li, vk in enumerate(var_keys):
-              Xnext[bi, li] = int(trial.params[vk])
+            sample_params = [int(trial.params[vk]) for vk in var_keys]
+
+            # Use fast numpy-based duplicate checking
+            if not is_duplicate_fast(sample_params):
+              candidate_samples.append(sample_params)
+              # Update both tracking structures
+              param_tuple = tuple(sample_params)
+              evaluated_combinations.add(param_tuple)
+              evaluated_arrays.append(np.array(sample_params))
+              evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
+              if len(candidate_samples) >= batch_size:
+                break
+
+          # Fill Xnext with unique samples
+          for bi in range(batch_size):
+            if bi < len(candidate_samples):
+              Xnext[bi, :] = candidate_samples[bi]
+            else:
+              # Fallback to random if not enough unique samples from GPSampler
+              sample_params = []
+              for vk in var_keys:
+                sample_params.append(random.randrange(len(models.values[vk])))  # noqa: S311
+              Xnext[bi, :] = sample_params
+              # Update tracking structures
+              param_tuple = tuple(sample_params)
+              evaluated_combinations.add(param_tuple)
+              evaluated_arrays.append(np.array(sample_params))
+              evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
 
       # Evaluate next data points
       for x in Xnext:
