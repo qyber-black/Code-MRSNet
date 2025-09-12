@@ -19,6 +19,8 @@ import mrsnet.molecules as molecules
 from mrsnet.dataset import Dataset
 
 
+# FIXME: check comparison and also compare real with sim
+
 def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, screen_dpi=96):
   """Compare dataset spectra to spectra generated from basis.
 
