@@ -1,4 +1,4 @@
-# mrsnet/comapre.py - MRSNet - compare and analyse spectra
+# mrsnet/compare.py - MRSNet - compare and analyse spectra
 #
 # SPDX-FileCopyrightText: Copyright (C) 2021-2024 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University

@@ -18,11 +18,38 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import tensorflow as tf
 from scipy.stats import kruskal, wasserstein_distance
 
 from mrsnet.analyse import analyse_model
 from mrsnet.cfg import Cfg
 from mrsnet.getfolder import get_folder
+
+
+def reshape_spectra_data(spectra_tensor, add_channel_dim=False):
+    """Reshape spectra data from (batch, acquisition, datatype, frequency) to (batch, acquisition*datatype, frequency).
+
+    This utility function standardizes the data reshaping used across all model types.
+
+    Parameters
+    ----------
+        spectra_tensor (tensorflow.Tensor): Input spectra tensor with shape (batch, acquisition, datatype, frequency)
+        add_channel_dim (bool, optional): Whether to add a channel dimension for CNN models. Defaults to False
+
+    Returns
+    -------
+        tensorflow.Tensor: Reshaped tensor with shape (batch, acquisition*datatype, frequency) or (batch, acquisition*datatype, frequency, 1) if add_channel_dim=True
+    """
+    if add_channel_dim:
+        return tf.reshape(spectra_tensor,
+                         (spectra_tensor.shape[0],
+                          spectra_tensor.shape[1] * spectra_tensor.shape[2],
+                          spectra_tensor.shape[3], 1))
+    else:
+        return tf.reshape(spectra_tensor,
+                         (spectra_tensor.shape[0],
+                          spectra_tensor.shape[1] * spectra_tensor.shape[2],
+                          spectra_tensor.shape[3]))
 
 
 class Train:

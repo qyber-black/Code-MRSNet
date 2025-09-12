@@ -796,6 +796,7 @@ def quantify(args):
     raise RuntimeError("Cannot get model name from model argument")
   if args.verbose > 0:
     print(f"# Loading model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
+  folder = None
   if name[0:4] == "cnn_":
     from mrsnet.cnn import CNN
     quantifier = None
@@ -840,6 +841,8 @@ def quantify(args):
 
   else:
     raise RuntimeError("Unknown model "+name)
+  if folder is None:
+    raise RuntimeError("Result folder is not set")
   if ds is None:
     if args.verbose > 0:
       print(f"# Loading dicom data {args.dataset}")

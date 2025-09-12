@@ -79,7 +79,7 @@ class Cfg:
     'phase_correct_acme_gamma': 100, # penalty weight for acme phase correction
     'npfft_module': ['numpy','fft'], # ['pyfftw.interfaces','numpy_fft'] or
                                      # ['numpy','fft'] or ['scipy','fft'], etc.
-    'lcmodel_megapress_difference_variant': 'kasier', # kasier or govindaraju
+    'lcmodel_megapress_difference_variant': 'kasier', # kasier (sic) or govindaraju
     'num_eps': 1e-8,            # numerical epsilon for float comparisons
     'base_learning_rate': 1e-4, # Learning rate for batch size 16 (scaled linearly
                                 # with batch_size - https://arxiv.org/abs/1706.02677)

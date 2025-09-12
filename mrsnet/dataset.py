@@ -242,7 +242,7 @@ class Dataset:
           elif sampler == 'dirichlet-one':
             # Dirichlet sampling, equal weight for all metabolites
             concentrations[idx:idx+n_g,g] = np.random.default_rng().dirichlet([1]*len(g), n_g)
-          elif sampler == 'sobol-ones':
+          elif sampler == 'sobol-one':
             # Sobol sampling
             concentrations[idx:idx+n_g,g] = sobol_seq.i4_sobol_generate(len(g), n_g+skip)[skip:,:]
             skip += n_g # Get different samples for the groups

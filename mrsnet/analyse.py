@@ -69,6 +69,12 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   if model.output != "concentrations":
     raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
 
+  # Note: For AutoencoderQuantifier models (output="concentrations"), we only analyze
+  # concentration predictions. To analyze spectrum reconstruction, you would need to:
+  # 1. Set model.output="spectra" temporarily, or
+  # 2. Call model.predict() with appropriate parameters to get spectrum outputs, or
+  # 3. Add a separate analysis method for dual-output models
+
   if norm == 'max':
     for i in range(pre.shape[0]):
       dpre = np.max(pre[i, :])
@@ -141,8 +147,6 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   # Final cleanup
   plt.close('all')
-  plt.clf()
-  plt.cla()
   gc.collect()
 
   return pre, info, error

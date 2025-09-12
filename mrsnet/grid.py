@@ -64,7 +64,7 @@ class Grid:
     -------
         Grid: Loaded grid object
     """
-    with open(filename, 'rb') as load_file:
+    with open(filename) as load_file:
       values = json.load(load_file)
       for k in values:
         for l in range(0,len(values[k])):

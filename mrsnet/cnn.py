@@ -26,7 +26,7 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
-from mrsnet.train import calculate_flops
+from mrsnet.train import calculate_flops, reshape_spectra_data
 
 
 class CNN:
@@ -244,14 +244,14 @@ class CNN:
 
     d_inp = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
     d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
-    d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
+    d_inp = reshape_spectra_data(d_inp, add_channel_dim=True)
 
     train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
 
     if v_data is not None:
       v_inp = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
       v_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
-      v_inp = tf.reshape(v_inp,(v_inp.shape[0],v_inp.shape[1]*v_inp.shape[2],v_inp.shape[3],1))
+      v_inp = reshape_spectra_data(v_inp, add_channel_dim=True)
       validation_data = tf.data.Dataset.from_tensor_slices((v_inp, v_out))
     else:
       validation_data = None
@@ -362,7 +362,7 @@ class CNN:
     """
     if reshape:
       d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
-      d_inp = tf.reshape(d_inp,(d_inp.shape[0],d_inp.shape[1]*d_inp.shape[2],d_inp.shape[3],1))
+      d_inp = reshape_spectra_data(d_inp, add_channel_dim=True)
 
     # Dataset options
     # Robust against TF AutoShardPolicy changes on single-machine multi-GPU

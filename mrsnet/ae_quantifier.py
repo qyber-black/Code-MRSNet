@@ -26,7 +26,7 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
-from mrsnet.train import calculate_flops
+from mrsnet.train import calculate_flops, reshape_spectra_data
 
 from .cnn import TimeHistory
 
@@ -319,6 +319,13 @@ class AutoencoderQuantifier:
     -------
         tuple: (train_results, validation_results)
     """
+    # Validate data format
+    if len(d_data) != 3:
+      raise RuntimeError(f"AutoencoderQuantifier requires 3 data elements [spectra_in, spectra_out, concentrations], got {len(d_data)}")
+
+    if v_data is not None and len(v_data) != 3:
+      raise RuntimeError(f"AutoencoderQuantifier validation data requires 3 elements [spectra_in, spectra_out, concentrations], got {len(v_data)}")
+
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -338,15 +345,11 @@ class AutoencoderQuantifier:
 
     # Input spectra (for autoencoder and quantifier)
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
-    d_spectra_in = tf.reshape(d_spectra_in,
-                                (d_spectra_in.shape[0],
-                                 d_spectra_in.shape[1] * d_spectra_in.shape[2], d_spectra_in.shape[3]))
+    d_spectra_in = reshape_spectra_data(d_spectra_in)
 
     # Output spectra for autoencoder
     d_spectra_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
-    d_spectra_out = tf.reshape(d_spectra_out,
-                                 (d_spectra_out.shape[0],
-                                  d_spectra_out.shape[1] * d_spectra_out.shape[2], d_spectra_out.shape[3]))
+    d_spectra_out = reshape_spectra_data(d_spectra_out)
     # Output concentrations for quantifier
     d_conc = tf.convert_to_tensor(d_data[-1], dtype=tf.float32)
 
@@ -355,14 +358,10 @@ class AutoencoderQuantifier:
 
     if v_data is not None:
         v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
-        v_spectra_in = tf.reshape(v_spectra_in,
-                                  (v_spectra_in.shape[0],
-                                   v_spectra_in.shape[1] * v_spectra_in.shape[2], v_spectra_in.shape[3]))
+        v_spectra_in = reshape_spectra_data(v_spectra_in)
 
         v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
-        v_spectra_out = tf.reshape(v_spectra_out,
-                                   (v_spectra_out.shape[0],
-                                    v_spectra_out.shape[1] * v_spectra_out.shape[2], v_spectra_out.shape[3]))
+        v_spectra_out = reshape_spectra_data(v_spectra_out)
         v_conc = tf.convert_to_tensor(v_data[-1], dtype=tf.float32)
         val_data_spectra = tf.data.Dataset.from_tensor_slices(v_spectra_in)
         val_data_target = tf.data.Dataset.from_tensor_slices((v_spectra_out, v_conc))
@@ -380,8 +379,7 @@ class AutoencoderQuantifier:
       print(f"# Train Autoencoder Quantification Network {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-    loss_huber = keras.losses.Huber(name='huber_loss')
-    loss = "huber_loss"
+    loss = keras.losses.Huber(name='huber_loss')
 
     if len(devices) > 1:
       # Multi-GPU training
@@ -394,7 +392,7 @@ class AutoencoderQuantifier:
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
-        self.aeq.compile(loss=[loss_huber,loss_huber],
+        self.aeq.compile(loss=[loss,loss],
                         optimizer=optimiser,
                         metrics=['mae'])
     else:
@@ -406,7 +404,7 @@ class AutoencoderQuantifier:
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
                                         epsilon=Cfg.val['epsilon'])
-      self.aeq.compile(loss=[loss_huber,loss_huber],
+      self.aeq.compile(loss=[loss,loss],
                       optimizer=optimiser,
                       metrics=['mae'])
 
@@ -628,7 +626,7 @@ class AutoencoderQuantifier:
                   [[self.model + " " + prefix.upper() + " Training Results"],
                    [""],
                    ["", "Train", "Validation"],
-                   [loss.upper(), d_score[0], v_score[0]],
+                   [loss.name.upper(), d_score[0], v_score[0]],
                    ["MAE", d_score[1], v_score[1]],
                    [""],
                    ["History"]])
@@ -640,7 +638,7 @@ class AutoencoderQuantifier:
       for key in keys:
           if loss in key or 'loss' in key:
               axes[0].semilogy(history[key], label=key)
-              axes[0].set_ylabel(loss.upper())
+              axes[0].set_ylabel(loss.name.upper())
               axes[0].legend(loc='upper right')
           if 'mae' in key:
               axes[1].semilogy(history[key], label=key)

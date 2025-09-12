@@ -614,7 +614,7 @@ class Autoencoder:
       print(f"# Train Autoencoder {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-    loss = "huber_loss"
+    loss = keras.losses.Huber(name='huber_loss')
 
     if len(devices) > 1:
       # Multi-GPU training
@@ -707,12 +707,12 @@ class Autoencoder:
        v_score = np.array([np.nan,np.nan])
     if verbose > 0:
        print( "             Train          Validation")
-       print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
+       print(f"{loss.name.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
        print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
-    self._save_results(folder, "ae", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
+    self._save_results(folder, "ae", history.history, d_score, v_score, loss.name, image_dpi, screen_dpi, verbose)
 
-    d_res={loss.upper():d_score[0],"MAE":d_score[1]}
-    v_res={loss.upper():v_score[0],"MAE":v_score[1]}
+    d_res={loss.name.upper():d_score[0],"MAE":d_score[1]}
+    v_res={loss.name.upper():v_score[0],"MAE":v_score[1]}
     return d_res, v_res
 
   def _train_aeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
@@ -780,7 +780,7 @@ class Autoencoder:
       print(f"# Train Quantifier {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-    loss = "huber_loss"
+    loss = keras.losses.Huber(name='huber_loss')
 
     if len(devices) > 1:
       # Multi-GPU training
@@ -870,12 +870,12 @@ class Autoencoder:
       v_score = np.array([np.nan,np.nan])
     if verbose > 0:
       print( "             Train          Validation")
-      print(f"{loss.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
+      print(f"{loss.name.upper():10s}:  {d_score[0]:.12f} {v_score[0]:.12f}")
       print(f"MAE       :  {d_score[1]:.12f} {v_score[1]:.12f}")
-    self._save_results(folder, "ae_quantifier", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
+    self._save_results(folder, "ae_quantifier", history.history, d_score, v_score, loss.name, image_dpi, screen_dpi, verbose)
 
-    d_res = {loss.upper():d_score[0],"MAE":d_score[1]}
-    v_res = {loss.upper():v_score[0],"MAE":v_score[1]}
+    d_res = {loss.name.upper():d_score[0],"MAE":d_score[1]}
+    v_res = {loss.name.upper():v_score[0],"MAE":v_score[1]}
 
     return d_res, v_res
 
@@ -1015,7 +1015,7 @@ class Autoencoder:
         writer.writerows([[self.model+" "+prefix.upper()+" Training Results", "", "", "", "", "Loaded AE: " + self.ae_path],
                         [""],
                         ["",     "Train",    "Validation"],
-                        [loss.upper(),  d_score[0], v_score[0]],
+                        [loss.name.upper(),  d_score[0], v_score[0]],
                         ["MAE",  d_score[1], v_score[1]],
                         [""],
                         ["History"]])
@@ -1024,7 +1024,7 @@ class Autoencoder:
               [[self.model + " " + prefix.upper() + " Training Results"],
                [""],
                ["", "Train", "Validation"],
-               [loss.upper(), d_score[0], v_score[0]],
+               [loss.name.upper(), d_score[0], v_score[0]],
                ["MAE", d_score[1], v_score[1]],
                [""],
                ["History"]])
@@ -1036,7 +1036,7 @@ class Autoencoder:
     for key in keys:
       if loss in key or 'loss' in key:
         axes[0].semilogy(history[key], label=key)
-        axes[0].set_ylabel(loss.upper())
+        axes[0].set_ylabel(loss.name.upper())
         axes[0].legend(loc='upper right')
       if 'mae' in key:
         axes[1].semilogy(history[key], label=key)
