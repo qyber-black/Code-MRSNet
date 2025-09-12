@@ -127,7 +127,6 @@ class Select:
     -------
         model_path if found, None if not found
     """
-    print("#SEARCHING FOR EXISTING MODEL")
     for search_path in [path_model, *self.search_model]:
       base_path = os.path.join(search_path, model_name, args['batchsize'], str(self.epochs), train_model)
       print("Checking for existing model at: ", base_path)
