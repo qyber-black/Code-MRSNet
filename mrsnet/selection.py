@@ -125,12 +125,15 @@ class Select:
 
     Returns
     -------
-        tuple: (model_path, selected_id) if found, (None, -1) if not found
+        model_path if found, None if not found
     """
+    print("#SEARCHING FOR EXISTING MODEL")
     for search_path in [path_model, *self.search_model]:
       base_path = os.path.join(search_path, model_name, args['batchsize'], str(self.epochs), train_model)
+      print("Checking for existing model at: ", base_path)
 
       if os.path.isdir(base_path):
+        print("Checking for existing model at: ", base_path)
         # Find model folder, assuming there may be multiple repeats.
         # We assume the last valid repeat is the best option/latest result.
         selected_id = -1
@@ -161,9 +164,9 @@ class Select:
           model_path = os.path.join(base_path, trainer+"-"+str(selected_id))
           if self.verbose > 0:
             print(f"# Found existing model at: {model_path}")
-          return model_path, selected_id
+          return model_path
 
-    return None, -1
+    return None
 
   def _add_task(self,key_vals,path_model):
     """Add a new optimization task.
@@ -268,12 +271,11 @@ class Select:
       raise RuntimeError(f"Unknown validation {args.validate}")
 
     # Check for existing model across path_model and search_model paths
-    model_path, selected_id = self._find_existing_model(model_name, args, train_model, trainer, fold, path_model)
+    model_path = self._find_existing_model(model_name, args, train_model, trainer, fold, path_model)
     if model_path is None:
       # No existing model found, create new one
       base_path = os.path.join(path_model, model_name, args['batchsize'], str(self.epochs), train_model)
-      selected_id = 1
-      model_path = os.path.join(base_path, trainer+"-"+str(selected_id))
+      model_path = os.path.join(base_path, trainer+"-1")
 
     # Create task
     self.tasks.append({
@@ -297,8 +299,9 @@ class Select:
       if not load_only and self.verbose > 0:
         print(f"# Task {counter} / {len(self.tasks)}")
       val_p = None
-      if os.path.exists(os.path.join(t['model_path'],t['fold'],"model.keras")) or \
-         os.path.exists(os.path.join(t['model_path'],t['fold'],"tf_model")): # Can use old results here
+      if (os.path.exists(os.path.join(t['model_path'],t['fold'],"model.keras")) or
+          (os.path.exists(os.path.join(t['model_path'],t['fold'],f"train_{self.error_type}_errors.json")) and
+           os.path.exists(os.path.join(t['model_path'],t['fold'],f"validation_{self.error_type}_errors.json")))): # Can use old results here as we only need the evaluation data
         if self.verbose > 0:
           print(f"Exists {t['model_path']}:{t['fold']}")
         val_p, train_p = self._load_performance(t['model_path'], t['fold'])
@@ -438,7 +441,7 @@ class Select:
     return all[id][0]
 
   def _load_performance(self, model_path, fold):
-    """Load performance metrics from a trained model.
+    """Load comprehensive performance metrics from a trained model.
 
     Parameters
     ----------
@@ -447,28 +450,40 @@ class Select:
 
     Returns
     -------
-        dict: Performance metrics including loss and MAE
+        tuple: (validation_performance, training_performance) lists of MAE values
     """
     try:
       if len(fold) == 0:
+        # Single fold case
         with open(os.path.join(model_path, f"train_{self.error_type}_errors.json")) as f:
-          data = json.load(f)
-        train_p = [data['total']['abserror']['mean']] # total MAE
+          train_data = json.load(f)
         with open(os.path.join(model_path, f"validation_{self.error_type}_errors.json")) as f:
-          data = json.load(f)
-        val_p = [data['total']['abserror']['mean']] # total MAE
+          val_data = json.load(f)
+
+        # Extract comprehensive metrics
+        train_p = [train_data['total']['abserror']['mean']]  # total MAE
+        val_p = [val_data['total']['abserror']['mean']]      # total MAE
+
+        # FIXME: Store additional metrics for potential future use, for single and cross-validation below
+        # Note: Currently we only use MAE for compatibility, but we could extend this
+        # to include other metrics like R^2, std (stability: 1/(std + 1e-6)),
+        # generalization (1/|train_mae-val_mae| + 1e-6)etc. from the JSON files
+
       else:
+        # Cross-validation case
         train_p = []
         val_p = []
         f_cnt = 0
         while os.path.exists(os.path.join(model_path,"fold-"+str(f_cnt))):
           with open(os.path.join(model_path,"fold-"+str(f_cnt),f"train_{self.error_type}_errors.json")) as f:
-            data = json.load(f)
-          train_p.append(data['total']['abserror']['mean']) # total MAE
+            train_data = json.load(f)
           with open(os.path.join(model_path,"fold-"+str(f_cnt),f"validation_{self.error_type}_errors.json")) as f:
-            data = json.load(f)
-          val_p.append(data['total']['abserror']['mean']) # total MAE
+            val_data = json.load(f)
+
+          train_p.append(train_data['total']['abserror']['mean'])  # total MAE
+          val_p.append(val_data['total']['abserror']['mean'])      # total MAE
           f_cnt += 1
+
     except Exception as e:
       if self.verbose > 0:
         print(f"# WARNING: {model_path} - model broken")
@@ -477,7 +492,7 @@ class Select:
     return val_p, train_p
 
   def _save_performance(self, collection_name, var_keys, fix_keys):
-    """Save performance results to CSV files.
+    """Save comprehensive model selection performance results to CSV file.
 
     Parameters
     ----------
@@ -487,21 +502,83 @@ class Select:
     """
     var_keys.sort()
     fix_keys.sort()
+
     # Results folder
     basename = os.path.basename(collection_name).replace(".json","")
     from mrsnet.getfolder import get_folder
     folder = get_folder(self.dataset,basename+"-"+str(self.epochs)+"-"+str(self.validate)+"-%s")
     os.makedirs(folder, exist_ok=True)
-    # Store performance data
-    idx = [l[0] for l in sorted(enumerate(self.val_performance), key=lambda x:np.mean(x[1]))]
+
+    # Calculate comprehensive performance metrics
+    n_models = len(self.val_performance)
+    n_folds = len(self.val_performance[0]) if n_models > 0 else 0
+
+    # Calculate metrics for each model
+    model_metrics = []
+    for i in range(n_models):
+      val_perf = np.array(self.val_performance[i])
+      train_perf = np.array(self.train_performance[i])
+
+      # Basic statistics
+      val_mean = np.mean(val_perf)
+      val_std = np.std(val_perf)
+      val_min = np.min(val_perf)
+      val_max = np.max(val_perf)
+      val_median = np.median(val_perf)
+
+      train_mean = np.mean(train_perf)
+      train_std = np.std(train_perf)
+
+      # Overfitting metrics
+      overfitting_gap = train_mean - val_mean  # Positive = overfitting
+      generalization_ratio = val_mean / train_mean if train_mean > 0 else float('inf')
+
+      # Stability metrics
+      val_cv = val_std / val_mean if val_mean > 0 else float('inf')  # Coefficient of variation
+      fold_range = val_max - val_min
+
+      # Robustness metrics
+      val_iqr = np.percentile(val_perf, 75) - np.percentile(val_perf, 25)
+
+      model_metrics.append({
+        'iteration': i,
+        'val_mean': val_mean,
+        'val_std': val_std,
+        'val_min': val_min,
+        'val_max': val_max,
+        'val_median': val_median,
+        'val_cv': val_cv,
+        'val_iqr': val_iqr,
+        'fold_range': fold_range,
+        'train_mean': train_mean,
+        'train_std': train_std,
+        'overfitting_gap': overfitting_gap,
+        'generalization_ratio': generalization_ratio,
+        'val_folds': val_perf.tolist(),
+        'train_folds': train_perf.tolist()
+      })
+
+    # Sort by validation mean (best first)
+    sorted_models = sorted(model_metrics, key=lambda x: x['val_mean'])
+
+    # Assign ranks
+    for rank, model in enumerate(sorted_models):
+      model['rank'] = rank + 1
+
+    # Create comprehensive CSV with iteration order preserved
     with open(os.path.join(folder,"model_performance.csv"), "w") as f:
       writer = csv.writer(f, delimiter=",")
+
+      # Header information
       writer.writerow([f"Results from {self.__class__.__name__}"])
       writer.writerow([])
       writer.writerow(["Dataset", self.dataset])
       writer.writerow(["Epochs", self.epochs])
       writer.writerow(["Validate", self.validate])
+      writer.writerow(["Error Type", self.error_type])
       writer.writerow([])
+
+      # Fixed parameters
       writer.writerow(["Fixed Parameters", *fix_keys])
       row=[""]
       for k in fix_keys:
@@ -510,26 +587,67 @@ class Select:
         row.append(self.key_vals[0][k])
       writer.writerow(row)
       writer.writerow([])
-      writer.writerow(var_keys
-                      + ["Val. Perf."]*len(self.val_performance[0])
-                      + ["Train Perf."]*len(self.train_performance[0]))
-      for l in range(0,len(self.val_performance)):
-        ll = idx[l]
-        row = []
-        for k in var_keys:
-          if isinstance(self.key_vals[ll][k],list):
-            self.key_vals[ll][k] = "-".join(self.key_vals[ll][k]) # Merge lists for later (plot)
-          row.append(self.key_vals[ll][k])
-        row += self.val_performance[ll]
-        row += self.train_performance[ll]
+
+      # Column headers
+      header = (["Iteration", "Rank"] +
+                var_keys +
+                ["Val_Mean", "Val_Std", "Val_Min", "Val_Max", "Val_Median", "Val_CV", "Val_IQR", "Fold_Range"] +
+                ["Train_Mean", "Train_Std", "Overfitting_Gap", "Generalization_Ratio"] +
+                [f"Val_Fold_{i}" for i in range(n_folds)] +
+                [f"Train_Fold_{i}" for i in range(n_folds)])
+      writer.writerow(header)
+
+      # Data rows (preserving iteration order)
+      for i in range(n_models):
+        model = model_metrics[i]  # Use original iteration order
+        row = ([model['iteration'], model['rank']] +
+               [self.key_vals[i][k] if not isinstance(self.key_vals[i][k], list)
+                else "-".join(self.key_vals[i][k]) for k in var_keys] +
+               [model['val_mean'], model['val_std'], model['val_min'], model['val_max'],
+                model['val_median'], model['val_cv'], model['val_iqr'], model['fold_range']] +
+               [model['train_mean'], model['train_std'], model['overfitting_gap'],
+                model['generalization_ratio']] +
+               model['val_folds'] + model['train_folds'])
         writer.writerow(row)
-    # Bar plot of validate/train performance
+    # # E.g. after model selection analyze the CSV:
+    # import pandas as pd
+    # df = pd.read_csv('model_performance.csv')
+    # # Find most stable models (low coefficient of variation)
+    # stable_models = df.nsmallest(10, 'Val_CV')
+    # # Find models with least overfitting
+    # generalizable_models = df.nsmallest(10, 'Overfitting_Gap')
+    # # Compare top 5 models across all metrics
+    # top_models = df.nsmallest(5, 'Val_Mean')[['Iteration', 'Rank', 'Val_Mean', 'Val_CV', 'Overfitting_Gap']]
+
+    # Create summary statistics file
+    with open(os.path.join(folder,"model_summary.json"), "w") as f:
+      summary = {
+        'total_models': n_models,
+        'n_folds': n_folds,
+        'best_model': {
+          'iteration': sorted_models[0]['iteration'],
+          'rank': 1,
+          'val_mean': sorted_models[0]['val_mean'],
+          'val_std': sorted_models[0]['val_std'],
+          'overfitting_gap': sorted_models[0]['overfitting_gap']
+        },
+        'performance_stats': {
+          'val_mean_range': [min(m['val_mean'] for m in model_metrics),
+                           max(m['val_mean'] for m in model_metrics)],
+          'avg_overfitting_gap': np.mean([m['overfitting_gap'] for m in model_metrics]),
+          'models_with_overfitting': len([m for m in model_metrics if m['overfitting_gap'] > 0.01]),
+          'most_stable_model': min(model_metrics, key=lambda x: x['val_cv'])['iteration']
+        }
+      }
+      json.dump(summary, f, indent=2)
+
+    # Bar plot of validate/train performance (sorted by performance)
     fig, ax = plt.subplots()
-    parameters = [":".join([str(self.key_vals[idx[p]][k]) for k in var_keys])
-                  for p in range(0,len(self.key_vals))]
-    val_error = [np.mean(self.val_performance[idx[p]]) for p in range(0,len(self.val_performance))]
-    train_error = [np.mean(self.train_performance[idx[p]]) for p in range(0,len(self.val_performance))]
-    top_n = np.min([len(self.val_performance),50])
+    parameters = [":".join([str(self.key_vals[sorted_models[p]['iteration']][k]) for k in var_keys])
+                  for p in range(0,len(sorted_models))]
+    val_error = [sorted_models[p]['val_mean'] for p in range(0,len(sorted_models))]
+    train_error = [sorted_models[p]['train_mean'] for p in range(0,len(sorted_models))]
+    top_n = np.min([len(sorted_models),50])
     top_n = np.max(np.argwhere(np.array(val_error[:top_n]) < 999999.0)) # Don't plot failed
     Y = np.arange(2*len(val_error),1,-2)  # noqa: N806
     ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
@@ -537,17 +655,17 @@ class Select:
     ax.barh(y=Y[:top_n]-0.75, width=train_error[:top_n], height=0.6, left=0, align='center',
             label="Train Error", color="#A1C9F4", zorder=0)
     ax.scatter(y=[Y[:top_n]]*len(self.val_performance[0]),
-               x=[self.val_performance[idx[p]][q]
+               x=[sorted_models[p]['val_folds'][q]
                   for q in range(0,len(self.val_performance[0])) for p in range(0,top_n)],
                color="#000000", s=5.0, zorder=2)
     ax.scatter(y=[Y[:top_n]-0.75]*len(self.train_performance[0]),
-               x=[self.train_performance[idx[p]][q]
-                   for q in range(0,len(self.train_performance[0])) for p in range(0,top_n)],
+               x=[sorted_models[p]['train_folds'][q]
+                  for q in range(0,len(self.train_performance[0])) for p in range(0,top_n)],
                color="#000000", s=5.0, zorder=2)
     plt.yticks(Y[:top_n], parameters[:top_n])
     ax.legend(loc="upper right", frameon=True)
-    ax.set(xlim=(0,np.max([np.max([self.val_performance[idx[p]] for p in range(0,top_n)]),
-                           np.max([self.train_performance[idx[p]] for p in range(0,top_n)])])),
+    ax.set(xlim=(0,np.max([np.max([sorted_models[p]['val_folds'] for p in range(0,top_n)]),
+                           np.max([sorted_models[p]['train_folds'] for p in range(0,top_n)])])),
            ylabel="", xlabel="Mean Absolute Concentration Error")
     fig.tight_layout()
     for dpi in self.image_dpi:
@@ -572,12 +690,12 @@ class Select:
                                   for p in range(0,len(self.val_performance))])))
       key_vals = [str(v) for v in key_vals]
       for ki in range(0,len(key_vals)):
-        val_per = [val_error[p]
-                    for p in range(0,len(self.val_performance))
-                      if key_vals[ki] == str(self.key_vals[idx[p]][group_id])]
-        train_per = [train_error[p]
-                     for p in range(0,len(self.train_performance))
-                       if key_vals[ki] == str(self.key_vals[idx[p]][group_id])]
+        val_per = [sorted_models[p]['val_mean']
+                    for p in range(0,len(sorted_models))
+                      if key_vals[ki] == str(self.key_vals[sorted_models[p]['iteration']][group_id])]
+        train_per = [sorted_models[p]['train_mean']
+                     for p in range(0,len(sorted_models))
+                       if key_vals[ki] == str(self.key_vals[sorted_models[p]['iteration']][group_id])]
         offset=0.1
         bp=ax[k].boxplot(x=val_per,positions=[X[ki]-offset],patch_artist=True,labels=["Val. Err"],zorder=0)
         bp['boxes'][0].set_facecolor("#4878D0")
