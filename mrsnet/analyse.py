@@ -11,6 +11,7 @@ including error analysis, visualization, and result reporting.
 """
 
 import csv
+import gc
 import glob
 import json
 import os
@@ -137,6 +138,12 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       else:
         for k,m in enumerate(model.metabolites):
           print(f'  {m:12s}  {pre[l,k]:8f}')
+
+  # Final cleanup
+  plt.close('all')
+  plt.clf()
+  plt.cla()
+  gc.collect()
 
   return pre, info, error
 
@@ -279,7 +286,14 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
   if verbose > 1:
     fig.set_dpi(screen_dpi)
     plt.show()
-  plt.close()
+
+  # Clean up matplotlib resources
+  plt.close(fig)
+  plt.clf()
+  plt.cla()
+
+  # Force garbage collection
+  gc.collect()
 
   return info, error
 
@@ -396,7 +410,14 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
     if verbose > 1:
       fig.set_dpi(screen_dpi)
       plt.show()
-    plt.close()
+
+    # Clean up matplotlib resources
+    plt.close(fig)
+    plt.clf()
+    plt.cla()
+
+    # Force garbage collection
+    gc.collect()
   else:
     info = None
     error = None
@@ -418,7 +439,15 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
     if verbose > 3:
       fig.set_dpi(screen_dpi)
       plt.show()
-    plt.close()
+
+    # Clean up matplotlib resources for each spectrum
+    plt.close(fig)
+    plt.clf()
+    plt.cla()
+
+    # Periodic garbage collection for large datasets
+    if s % 10 == 0:
+      gc.collect()
 
   return pre, info, error
 
@@ -473,5 +502,9 @@ def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
       axs[r,2].legend(loc='best')
 
       r += 1
+
+  # Clean up any temporary matplotlib objects
+  plt.clf()
+  plt.cla()
 
   return fig
