@@ -11,31 +11,30 @@ In older versions of MRSNet, concentration error analysis JSON files were saved 
 The `fix_concentration_errors_json.py` script:
 
 1. **Finds** all `*_concentration_errors.json` files recursively in a given directory
-2. **Normalizes** all data to max normalization (divides each sample by its maximum value)
-3. **Recalculates** all error statistics from the normalized `true` and `predicted` data
-4. **Updates** the JSON files with:
+2. **Regenerates** the complete analysis using the original `analyse_model` function with max normalization
+3. **Overwrites** the JSON files with:
    - The `norm` field set to `'max'`
-   - Recalculated error statistics (ensuring consistency)
+   - Completely recalculated error statistics using the original analysis algorithms
    - Normalized `true` and `predicted` arrays
-   - Creates backup files before modifying
+   - All error metrics (mean, std, min, max) and linear regression statistics
+4. **Uses** a dummy model wrapper to leverage the existing analysis infrastructure
 
 ## Usage
 
 ### Basic Usage
 
 ```bash
-# Dry run to see what would be changed
-python etc/fix_concentration_errors_json.py data/model-cnn --dry-run --verbose
-
-# Actually fix the files
+# Fix files with verbose output
 python etc/fix_concentration_errors_json.py data/model-cnn --verbose
+
+# Fix files silently
+python etc/fix_concentration_errors_json.py data/model-cnn
 ```
 
 ### Arguments
 
 - `folder_path`: Path to search for concentration error JSON files (searches recursively)
-- `--dry-run`: Show what would be changed without actually modifying files
-- `--verbose`: Show detailed information about each file processed
+- `--verbose` or `-v`: Show detailed information about each file processed
 
 ### Examples
 
@@ -43,19 +42,16 @@ python etc/fix_concentration_errors_json.py data/model-cnn --verbose
 # Fix all files in the model-cnn directory
 python etc/fix_concentration_errors_json.py data/model-cnn
 
-# Fix files in a specific subdirectory
-python etc/fix_concentration_errors_json.py data/model-cnn/cnn_medium_sigmoid_pool
-
-# Dry run with verbose output
-python etc/fix_concentration_errors_json.py data/model-cnn --dry-run --verbose
+# Fix files in a specific subdirectory with verbose output
+python etc/fix_concentration_errors_json.py data/model-cnn/cnn_medium_sigmoid_pool --verbose
 ```
 
 ## Safety Features
 
-- **Backup Creation**: Original files are renamed to `.json.backup` before modification
-- **Dry Run Mode**: Test what would be changed without modifying files
 - **Error Handling**: Continues processing other files if one fails
 - **Validation**: Checks for required fields before processing
+- **Memory Management**: Aggressive cleanup of matplotlib resources and garbage collection
+- **Skip Existing**: Files that already have a `norm` field are skipped
 
 ## File Structure
 
@@ -79,24 +75,33 @@ After processing, the files will have an additional `norm` field:
 ```json
 {
   "prefix": "train",
-  "norm": "sum",
+  "norm": "max",
   ...
 }
 ```
 
-## Approach Validity
+## Technical Approach
 
-This approach is valid because:
+This approach is robust because:
 
-1. **Raw Data Available**: The JSON files contain the original `true` and `predicted` arrays
-2. **Consistent Normalization**: All data is normalized to the same method (max normalization)
-3. **Reversible Process**: All error statistics are calculated from the normalized values
-4. **Consistency**: Recalculating ensures all statistics are consistent with max normalization
-5. **Simplicity**: No need to detect different normalization methods - everything becomes comparable
+1. **Complete Regeneration**: Uses the original `analyse_model` function to ensure perfect consistency
+2. **Dummy Model Wrapper**: Creates a mock model that returns precomputed predictions
+3. **Max Normalization**: All data is consistently normalized using max normalization
+4. **Original Algorithms**: All error statistics are calculated using the exact same algorithms as the original analysis
+5. **Memory Efficient**: Aggressive cleanup prevents memory leaks during batch processing
+
+## Implementation Details
+
+- **DummyModel Class**: Wraps precomputed predictions to work with the existing analysis infrastructure
+- **No Plot Generation**: Uses `create_plots=False` to avoid regenerating plots
+- **Automatic Metabolite Detection**: Extracts metabolite names from existing JSON structure
+- **Batch Processing**: Processes multiple files with periodic memory cleanup
+- **Error Recovery**: Continues processing even if individual files fail
 
 ## Notes
 
-- The script processes files in place, creating backups
+- The script overwrites files in place (no backup creation)
 - Files that already have a `norm` field are skipped
-- The script handles common metabolite names: Cr, GABA, Gln, Glu, NAA
-- Error statistics are recalculated using the same algorithms as the original analysis code
+- The script automatically detects metabolite names from the JSON structure
+- All error statistics are recalculated using the original analysis algorithms
+- Memory cleanup occurs every 5 files to prevent accumulation

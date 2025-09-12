@@ -26,7 +26,7 @@ from mrsnet.cfg import Cfg
 
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
-                  verbose=0, image_dpi=[300], screen_dpi=96):
+                  verbose=0, image_dpi=[300], screen_dpi=96, create_plots=True):
   """Analyze model performance and generate reports.
 
   Performs comprehensive analysis of model performance including error metrics,
@@ -46,6 +46,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       verbose (int, optional): Verbosity level. Defaults to 0
       image_dpi (list, optional): DPI for saved images. Defaults to [300]
       screen_dpi (int, optional): DPI for screen display. Defaults to 96
+      create_plots (bool, optional): Whether to create and save plots. Defaults to True
 
   Returns
   -------
@@ -64,7 +65,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
     # FIXME: do we need to consider normalisation here as well?
-    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi)
+    return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi, create_plots)
 
   if model.output != "concentrations":
     raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
@@ -98,7 +99,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   # Analyse if we have concentrations
   if len(out) > 0:
-    info, error = _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi)
+    info, error = _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi, create_plots)
   else:
     info = None
     error = None
@@ -152,7 +153,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   return pre, info, error
 
 
-def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi):
+def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi, create_plots=True):
   """Analyze model prediction errors.
 
   Parameters
@@ -166,6 +167,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
       verbose (int): Verbosity level
       image_dpi (list): Image DPI settings
       screen_dpi (int): Screen DPI setting
+      create_plots (bool): Whether to create and save plots
   """
   error = pre - out
   error_mean = np.mean(error,axis=0)
@@ -180,8 +182,9 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
   info = { 'prefix': prefix, 'norm': norm }
 
   # Per metabolite plots/data
-  fig, axes =  plt.subplots(2,len(model.metabolites)+1)
-  fig.suptitle(f"Concentration Error Analysis ({prefix})")
+  if create_plots:
+    fig, axes =  plt.subplots(2,len(model.metabolites)+1)
+    fig.suptitle(f"Concentration Error Analysis ({prefix})")
   for l,m in enumerate(model.metabolites):
     try: # ignore regression failures
       slope, intercept, r_value, p_value, std_err = linregress(out[:,l], pre[:,l])
@@ -209,23 +212,24 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
           'std_err': std_err
         }
       }
-    axes[0,l].plot([0, 1], [0, 1], label='true line')
-    sns.regplot(y=pre[:,l], x=out[:,l], ax=axes[0,l])
-    axes[0,l].set_title(m)
-    axes[0,l].set_xlabel("True")
-    if l == 0:
-      axes[0,l].set_ylabel("Predicted")
-    if l == len(model.metabolites)//2:
-      axes[0,l].set_title("True vs. Predicted\n\n"+m)
-    axes[0,l].set_xlim([0,1])
-    axes[0,l].set_ylim([0,1])
+    if create_plots:
+      axes[0,l].plot([0, 1], [0, 1], label='true line')
+      sns.regplot(y=pre[:,l], x=out[:,l], ax=axes[0,l])
+      axes[0,l].set_title(m)
+      axes[0,l].set_xlabel("True")
+      if l == 0:
+        axes[0,l].set_ylabel("Predicted")
+      if l == len(model.metabolites)//2:
+        axes[0,l].set_title("True vs. Predicted\n\n"+m)
+      axes[0,l].set_xlim([0,1])
+      axes[0,l].set_ylim([0,1])
 
-    sns.histplot(error[:,l], kde=True, ax=axes[1,l])
-    axes[1,l].set_xlabel("Error")
-    if l == 0:
-      axes[1,l].set_ylabel("Count")
-    if l == len(model.metabolites)//2:
-      axes[1,l].set_title("Error Distributions")
+      sns.histplot(error[:,l], kde=True, ax=axes[1,l])
+      axes[1,l].set_xlabel("Error")
+      if l == 0:
+        axes[1,l].set_ylabel("Count")
+      if l == len(model.metabolites)//2:
+        axes[1,l].set_title("Error Distributions")
   info['true'] = out.tolist()
   info['predicted'] = pre.tolist()
   info['error'] = error.tolist()
@@ -272,36 +276,39 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
   if verbose > 0:
     print(f"  Total mean absolute error ({prefix}): {info['total']['abserror']['mean']}")
 
-  axes[0,len(model.metabolites)].plot([0, 1], [0, 1], label='true line')
-  sns.regplot(y=pre_all, x=out_all, ax=axes[0,len(model.metabolites)])
-  axes[0,len(model.metabolites)].set_title('Total')
-  axes[0,len(model.metabolites)].set_xlabel("True")
-  axes[0,len(model.metabolites)].set_xlim([0,1])
-  axes[0,len(model.metabolites)].set_ylim([0,1])
-  sns.histplot(error, kde=True, ax=axes[1,len(model.metabolites)])
-  axes[1,len(model.metabolites)].set_xlabel("Error")
+  if create_plots:
+    axes[0,len(model.metabolites)].plot([0, 1], [0, 1], label='true line')
+    sns.regplot(y=pre_all, x=out_all, ax=axes[0,len(model.metabolites)])
+    axes[0,len(model.metabolites)].set_title('Total')
+    axes[0,len(model.metabolites)].set_xlabel("True")
+    axes[0,len(model.metabolites)].set_xlim([0,1])
+    axes[0,len(model.metabolites)].set_ylim([0,1])
+    sns.histplot(error, kde=True, ax=axes[1,len(model.metabolites)])
+    axes[1,len(model.metabolites)].set_xlabel("Error")
 
+    for f in glob.glob(os.path.join(folder, prefix + '_concentration_errors@*.png')):
+      os.remove(f)
+    for dpi in image_dpi:
+      plt.savefig(os.path.join(folder, prefix + '_concentration_errors@'+str(dpi)+'.png'), dpi=dpi)
+    if verbose > 1:
+      fig.set_dpi(screen_dpi)
+      plt.show()
+
+    # Clean up matplotlib resources
+    plt.close(fig)
+    plt.clf()
+    plt.cla()
+
+    # Force garbage collection
+    gc.collect()
+
+  # Save the JSON data
   with open(os.path.join(folder, prefix+"_concentration_errors.json"), 'w') as f:
     print(json.dumps(info, indent=2, sort_keys=True), file=f)
-  for f in glob.glob(os.path.join(folder, prefix + '_concentration_errors@*.png')):
-    os.remove(f)
-  for dpi in image_dpi:
-    plt.savefig(os.path.join(folder, prefix + '_concentration_errors@'+str(dpi)+'.png'), dpi=dpi)
-  if verbose > 1:
-    fig.set_dpi(screen_dpi)
-    plt.show()
-
-  # Clean up matplotlib resources
-  plt.close(fig)
-  plt.clf()
-  plt.cla()
-
-  # Force garbage collection
-  gc.collect()
 
   return info, error
 
-def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi):
+def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi, create_plots=True):
   """Analyze spectra reconstruction errors from autoencoder.
 
   Parameters
@@ -317,6 +324,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
       verbose (int): Verbosity level
       image_dpi (list): Image DPI settings
       screen_dpi (int): Screen DPI setting
+      create_plots (bool): Whether to create and save plots
   """
   # Analyse spectra output from autoencoder
   if len(out) > 0:
@@ -337,10 +345,11 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
     abserror_max = np.max(abserror,axis=(0,3))
     info = { 'prefix': prefix, 'norm': norm }
     # Per acquisition-datatype signal
-    fig, axes =  plt.subplots(pre.shape[1],pre.shape[2]+1)
-    if pre.shape[1] == 1:
-      axes = axes.reshape((1,axes.shape[0])) # Subplot can change the indices; undo this
-    fig.suptitle(f"Spectra Signal Prediction Error Analysis ({prefix})")
+    if create_plots:
+      fig, axes =  plt.subplots(pre.shape[1],pre.shape[2]+1)
+      if pre.shape[1] == 1:
+        axes = axes.reshape((1,axes.shape[0])) # Subplot can change the indices; undo this
+      fig.suptitle(f"Spectra Signal Prediction Error Analysis ({prefix})")
     for ac in range(0,pre.shape[1]):
       for dt in range(0,pre.shape[2]):
         if verbose > 0:
@@ -359,16 +368,17 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
               'max': abserror_max[ac,dt],
             }
           }
-        d = np.copy(error[:,ac,dt,:]).flatten()
-        # Histogram over the full error distribution is expensive; so we sample to estimate, if configured
-        if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
-          sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
-          d = d[sel]
-        sns.histplot(d.flatten(), ax=axes[ac,dt])
-        axes[ac,dt].set_title(f"Error Dist. Signal {model.acquisitions[ac]}-{model.datatype[dt]}")
-        axes[ac,dt].set_xlabel("Error")
-        if ac == 0:
-          axes[ac,dt].set_ylabel("Count")
+        if create_plots:
+          d = np.copy(error[:,ac,dt,:]).flatten()
+          # Histogram over the full error distribution is expensive; so we sample to estimate, if configured
+          if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+            sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+            d = d[sel]
+          sns.histplot(d.flatten(), ax=axes[ac,dt])
+          axes[ac,dt].set_title(f"Error Dist. Signal {model.acquisitions[ac]}-{model.datatype[dt]}")
+          axes[ac,dt].set_xlabel("Error")
+          if ac == 0:
+            axes[ac,dt].set_ylabel("Count")
     # Total error
     error = np.reshape(error,np.prod(error.shape))
     terror_mean = np.mean(error)
@@ -396,62 +406,62 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
       }
     if verbose > 0:
       print(f"  Total mean absolute error ({prefix}): {info['total']['abserror']['mean']}")
-    d = error.flatten()
-    # Histogram over the full error distribution is expensive; so we sample to estimate, if configured
-    if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
-      sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
-      d = d[sel]
-    sns.histplot(d, ax=axes[0,pre.shape[2]])
-    axes[0,pre.shape[2]].set_title("Total Error Dist.")
-    axes[0,pre.shape[2]].set_xlabel("Error")
+    if create_plots:
+      d = error.flatten()
+      # Histogram over the full error distribution is expensive; so we sample to estimate, if configured
+      if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
+        sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
+        d = d[sel]
+      sns.histplot(d, ax=axes[0,pre.shape[2]])
+      axes[0,pre.shape[2]].set_title("Total Error Dist.")
+      axes[0,pre.shape[2]].set_xlabel("Error")
 
+      for f in glob.glob(os.path.join(folder, prefix + '_spectra_errors@*.png')):
+        os.remove(f)
+      for dpi in image_dpi:
+        plt.savefig(os.path.join(folder, prefix + '_spectra_errors@'+str(dpi)+'.png'), dpi=dpi)
+      if verbose > 1:
+        fig.set_dpi(screen_dpi)
+        plt.show()
+
+      # Clean up matplotlib resources
+      plt.close(fig)
+
+      # Force garbage collection
+      gc.collect()
+
+    # Save the JSON data
     with open(os.path.join(folder, prefix+"_spectra_errors.json"), 'w') as f:
       print(json.dumps(info, indent=2, sort_keys=True), file=f)
-    for f in glob.glob(os.path.join(folder, prefix + '_spectra_errors@*.png')):
-      os.remove(f)
-    for dpi in image_dpi:
-      plt.savefig(os.path.join(folder, prefix + '_spectra_errors@'+str(dpi)+'.png'), dpi=dpi)
-    if verbose > 1:
-      fig.set_dpi(screen_dpi)
-      plt.show()
-
-    # Clean up matplotlib resources
-    plt.close(fig)
-    plt.clf()
-    plt.cla()
-
-    # Force garbage collection
-    gc.collect()
   else:
     info = None
     error = None
 
   # Plot and compare spectra
-  path = os.path.join(folder, prefix + "_spectra")
-  if not os.path.exists(path):
-    os.makedirs(path)
-  if verbose > 0:
-    print("# Plot predicted spectra: "+path)
-  if len(out) > 0:
-    ss = min(pre.shape[0],Cfg.val['analysis_predicted_spectra_samples']) # Limit spectra if we have ground truth
-  else:
-    ss = pre.shape[0] # All spectra if no ground truth
-  for s in range(0,ss):
-    fig = _plot_predicted_spectra(model, prefix, s, inp[s,:,:,:], pre[s,:,:,:], out[s,:,:,:] if len(out) > 0 else [])
-    for dpi in image_dpi:
-      plt.savefig(os.path.join(path, f'spectrum_{s}@'+str(dpi)+'.png'), dpi=dpi)
-    if verbose > 3:
-      fig.set_dpi(screen_dpi)
-      plt.show()
+  if create_plots:
+    path = os.path.join(folder, prefix + "_spectra")
+    if not os.path.exists(path):
+      os.makedirs(path)
+    if verbose > 0:
+      print("# Plot predicted spectra: "+path)
+    if len(out) > 0:
+      ss = min(pre.shape[0],Cfg.val['analysis_predicted_spectra_samples']) # Limit spectra if we have ground truth
+    else:
+      ss = pre.shape[0] # All spectra if no ground truth
+    for s in range(0,ss):
+      fig = _plot_predicted_spectra(model, prefix, s, inp[s,:,:,:], pre[s,:,:,:], out[s,:,:,:] if len(out) > 0 else [])
+      for dpi in image_dpi:
+        plt.savefig(os.path.join(path, f'spectrum_{s}@'+str(dpi)+'.png'), dpi=dpi)
+      if verbose > 3:
+        fig.set_dpi(screen_dpi)
+        plt.show()
 
-    # Clean up matplotlib resources for each spectrum
-    plt.close(fig)
-    plt.clf()
-    plt.cla()
+      # Clean up matplotlib resources for each spectrum
+      plt.close(fig)
 
-    # Periodic garbage collection for large datasets
-    if s % 10 == 0:
-      gc.collect()
+      # Periodic garbage collection for large datasets
+      if s % 10 == 0:
+        gc.collect()
 
   return pre, info, error
 

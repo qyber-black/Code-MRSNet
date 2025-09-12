@@ -116,6 +116,7 @@ def fix_json_file(file_path: Path, verbose: bool = False) -> bool:
         verbose=verbose,
         image_dpi=image_dpi,
         screen_dpi=screen_dpi,
+        create_plots=False
       )
 
     # Clean up memory
