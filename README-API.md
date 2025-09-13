@@ -210,13 +210,6 @@ Callback for tracking training time.
 
 #### Autoencoder Models (`mrsnet.autoencoder`)
 
-#### `ConvAutoEnc` Class
-Convolutional autoencoder model.
-
-**Methods:**
-- `__init__(n_specs, n_freqs, filter, latent, pooling, dropout, name)` - Initialize autoencoder
-- `call(x)` - Forward pass
-
 #### `FCAutoEnc` Class
 Fully connected autoencoder model.
 

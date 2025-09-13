@@ -65,7 +65,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
-    # FIXME: do we need to consider normalisation here as well?
+    # Spectra are already normalized during dataset export (normalise=True)
     return _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbose, image_dpi, screen_dpi, create_plots)
 
   if model.output != "concentrations":
@@ -343,6 +343,8 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
       create_plots (bool): Whether to create and save plots
   """
   # Analyse spectra output from autoencoder
+  # Note: Spectra are already normalized during dataset export (normalise=True)
+  # so predictions and ground truth should already be on the same scale
   if len(out) > 0:
     # Difference between predicted and actual spectra
     # Stats are over all spectra and frequency bins, hence tuple as axis
