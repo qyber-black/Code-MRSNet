@@ -22,18 +22,18 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
-  Activation,
-  BatchNormalization,
-  Conv1D,
-  Conv1DTranspose,
-  Dense,
-  Dropout,
-  Flatten,
-  LeakyReLU,
-  MaxPool1D,
-  Reshape,
-  UpSampling1D,
-)
+    Activation,
+    BatchNormalization,
+    Conv1D,
+    Conv1DTranspose,
+    Dense,
+    Dropout,
+    Flatten,
+    LeakyReLU,
+    MaxPool1D,
+    Reshape,
+    UpSampling1D,
+  )
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
@@ -160,7 +160,9 @@ class ConvAutoEnc(Model):
     # Decoder
     self.decoder = tf.keras.Sequential(name='Decoder')
     n_channels = 2*filter
-    n_signal = n_freqs//(2*2*2*2) # Divide by strides in encoder
+    if n_freqs < 16:
+      raise ValueError(f"n_freqs ({n_freqs}) must be >= 16 for this architecture")
+    n_signal = n_freqs // 16 # Divide by strides in encoder (2^4)
     self.decoder.add(Dense(n_channels * n_signal))
     self.decoder.add(Reshape(target_shape=(n_channels, n_signal)))
     # Decoder Layers: filter, convolution_kernel, strides, pooling, dropout
@@ -208,8 +210,12 @@ def _dense_layer(m, units, activation, dropout):
   m.add(Dense(units))
   if dropout == 0.0:
     m.add(BatchNormalization())
-  if activation[0:9] == "leakyrelu":
-    m.add(LeakyReLU(alpha=activation[9:]))
+  if activation.startswith("leakyrelu") and len(activation) > 9:
+    try:
+        alpha = float(activation[9:])
+        m.add(LeakyReLU(alpha=alpha))
+    except ValueError:
+        raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}")
   elif activation != "None":
     m.add(Activation(activation))
   # If None: Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
@@ -258,7 +264,6 @@ class FCAutoEnc(Model):
     for _l in range(0,layers_enc-1):
       _dense_layer(self.encoder, units, activation, dropout)
       units //= 2
-    self.units = units
     _dense_layer(self.encoder, units, activation, -1) # no regulariser at latent representation
 
     # Decoder
@@ -430,7 +435,6 @@ class Autoencoder:
 
   def reset(self):
     """Reset the model to initial state."""
-    del self.ae
     self.ae = None
     self.train_dataset_name = None
 

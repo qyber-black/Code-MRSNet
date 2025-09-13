@@ -102,7 +102,6 @@ class FCAutoEncQuant(Model):
     for _l in range(0,layers_enc-2):
       x = _dense_layer(x, units, activation, dropout)
       units //= 2
-    self.units = units
 
     encoder_output = _dense_layer(x, units, activation, -1) # no regulariser at latent representation
 
@@ -113,7 +112,6 @@ class FCAutoEncQuant(Model):
     for _l in range(0, layers_dec-2):
       x = _dense_layer(x, units, activation, -1)
       units *= 2
-    self.units = units
     decoder_output = _dense_layer(x, units, activation_last, -1, "decoder_output")
 
     #Quantifier
@@ -189,7 +187,6 @@ class AutoencoderQuantifier:
 
   def reset(self):
     """Reset the model to initial state."""
-    del self.aeq
     self.aeq = None
     self.train_dataset_name = None
 

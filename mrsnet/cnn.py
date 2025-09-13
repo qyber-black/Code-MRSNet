@@ -96,7 +96,6 @@ class CNN:
 
     Clears the current model architecture and training dataset information.
     """
-    del self.cnn_arch
     self.cnn_arch = None
     self.train_dataset_name = None
 
