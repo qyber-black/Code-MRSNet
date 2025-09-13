@@ -15,3 +15,6 @@ MRSNET_DEV=selectgpo_optimise_noload ./mrsnet.py select -d ./data/sim-spectra-me
 
 # Model selection for CNN with extended CNN parameters
 n=0; while [ $n -lt 100 ]; do MRSNET_DEV=selectgpo_optimise_noload ./mrsnet.py select -d ./data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/10000-1 -e 100 -k 5 --method gpo ./data/model-cnn/selection-spec/cnn-para-all.json -v -r 250; n="`expr $n + 1`"; done
+
+# Model selection on CNN para search (without actual search)
+MRSNET_DEV=selectgpo_no_search ./mrsnet.py select -d ./data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/10000-1 -e 100 -k 5 --method gpo ./data/model-cnn/selection-spec/cnn-para-all.json -v -r 150

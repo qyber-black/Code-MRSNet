@@ -144,15 +144,14 @@ class Select:
                 repeat_id = int(file_s[-1])
               except Exception:  # noqa: S110
                 pass
-            if (repeat_id > 0 and
-                fn == trainer+"-"+str(repeat_id) and
-                os.path.exists(os.path.join(base_path, fn, fold, f"train_{self.error_type}_errors.json")) and
-                os.path.exists(os.path.join(base_path, fn, fold, f"validation_{self.error_type}_errors.json"))):
-              if repeat_id > selected_id:
-                selected_id = repeat_id
-            else:
-              if self.verbose > 0:
-                print(f"# WARNING: {ffn} - broken/incomplete model")
+            if repeat_id > 0 and fn == trainer+"-"+str(repeat_id):
+              if (os.path.exists(os.path.join(base_path, fn, fold, f"train_{self.error_type}_errors.json")) and
+                  os.path.exists(os.path.join(base_path, fn, fold, f"validation_{self.error_type}_errors.json"))):
+                if repeat_id > selected_id:
+                  selected_id = repeat_id
+              else:
+                if self.verbose > 0:
+                  print(f"# WARNING: {ffn} - broken/incomplete model")
           else:
             if self.verbose > 0:
               print(f"# WARNING: {ffn} - this file should not be there")
