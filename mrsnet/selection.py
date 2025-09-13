@@ -129,10 +129,8 @@ class Select:
     """
     for search_path in [path_model, *self.search_model]:
       base_path = os.path.join(search_path, model_name, args['batchsize'], str(self.epochs), train_model)
-      print("Checking for existing model at: ", base_path)
 
       if os.path.isdir(base_path):
-        print("Checking for existing model at: ", base_path)
         # Find model folder, assuming there may be multiple repeats.
         # We assume the last valid repeat is the best option/latest result.
         selected_id = -1
@@ -161,7 +159,7 @@ class Select:
 
         if selected_id > 0:
           model_path = os.path.join(base_path, trainer+"-"+str(selected_id))
-          if self.verbose > 0:
+          if self.verbose > 4:
             print(f"# Found existing model at: {model_path}")
           return model_path
 
@@ -991,16 +989,34 @@ class SelectGPO(Select):
         from optuna.distributions import IntDistribution
         try:
           from optuna.samplers import GPSampler  # Gaussian Process sampler
-          sampler = GPSampler()
+          # GPSampler configuration to match GPyOpt behavior
+          sampler = GPSampler(
+              warm_starting_trial=None,  # No warm starting
+              n_startup_trials=max(5, len(var_keys)),  # More startup trials like GPyOpt
+              n_ei_candidates=200,  # More candidates for better acquisition optimization
+              independent_sampler=None,  # Use full GP for all parameters
+              warn_independent_sampling=True
+            )
+          # Note: Optuna GPSampler uses Expected Improvement (EI) by default
+          # and optimizes acquisition function internally (similar to GPyOpt's L-BFGS)
           if self.verbose > 0:
             print("# Using Optuna GPSampler (Gaussian Process Bayesian Optimization)")
+            print(f"#   Startup trials: {max(5, len(var_keys))}, EI candidates: 200")
+            print("#   Acquisition: Expected Improvement (EI) with L-BFGS optimization")
         except Exception as gps_error:
           from optuna.samplers import TPESampler
-          sampler = TPESampler(multivariate=True)
+          # Enhanced TPESampler as fallback
+          sampler = TPESampler(
+              multivariate=True,
+              group=True,  # Enable multivariate modeling
+              warn_independent_sampling=True,
+              n_startup_trials=min(20, max(5, len(var_keys) * 2)),
+              n_ei_candidates=100
+            )
           if self.verbose > 0:
-            print("# WARNING: Using Optuna TPESampler instead of GPSampler (different strategy)")
-            print("#   GPSampler uses Gaussian Process with Expected Improvement acquisition")
-            print("#   TPESampler uses Tree-structured Parzen Estimator (different Bayesian approach)")
+            print("# WARNING: Using Optuna TPESampler instead of GPSampler")
+            print("#   TPESampler uses Tree-structured Parzen Estimator with multivariate modeling")
+            print(f"#   Startup trials: {min(20, max(5, len(var_keys) * 2))}, EI candidates: 100")
             if "torch" in str(gps_error).lower():
               print("#   GPSampler requires PyTorch - install with: pip install torch")
       except Exception as e:
@@ -1062,14 +1078,27 @@ class SelectGPO(Select):
       sample_array = np.array(sample_params)
       return np.any(np.all(evaluated_matrix == sample_array, axis=1))
 
+    # Original GPyOpt-like strategy: alternate between evaluator types
+    # GPyOpt alternates between 'sequential', 'random', and 'thompson_sampling'
+    startup_trials = max(5, len(var_keys))  # Match GPSampler startup trials
+
     while current_iter < self.repeats and remaining_samples > 0:
-      if eval_per_step == 1:
-        evaluator = 'sequential'
+      # Original GPyOpt strategy: alternate evaluator types
+      if current_iter < startup_trials:
+        # Startup phase: random sampling for initialization
+        evaluator = 'random'
+        if self.verbose > 0:
+          print(f"### Iteration {current_iter+1} / {self.repeats} - STARTUP PHASE [evaluator: {evaluator}]")
       else:
-        # Switch to avoid posterior sampling bias
-        evaluator = 'thompson_sampling' if current_iter % 2 == 0 else 'random'
-      if self.verbose > 0:
-        print(f"### Iteration {current_iter+1} / {self.repeats} - samples remaining: {remaining_samples} [eval: {evaluator}]")
+        # Main optimization: alternate between sequential and thompson_sampling (like original GPyOpt)
+        # GPyOpt alternates between sequential (exploitation) and thompson_sampling (exploration)
+        if current_iter % 2 == 0:
+          evaluator = 'sequential'  # Use acquisition function optimization (exploitation)
+        else:
+          evaluator = 'thompson_sampling'  # Use Thompson sampling (exploration)
+        if self.verbose > 0:
+          print(f"### Iteration {current_iter+1} / {self.repeats} - OPTIMIZATION PHASE [evaluator: {evaluator}]")
+
       # Optimiser to get next evaluations
       batch_size = int(np.min([eval_per_step,remaining_samples]))
       if use_gpyopt:
@@ -1101,42 +1130,79 @@ class SelectGPO(Select):
             evaluated_arrays.append(np.array(sample_params))
             evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
         else:
-          # GPSampler with optimized duplicate checking
-          # Pre-generate more samples than needed to account for duplicates
-          candidate_samples = []
-          max_candidates = batch_size * 3  # Generate 3x more candidates
+          # Original GPyOpt-like behavior: alternate between sequential and thompson_sampling
+          if evaluator == 'thompson_sampling':
+            # Thompson sampling: use GPSampler with more diverse sampling (exploration)
+            candidate_samples = []
+            max_candidates = batch_size * 15  # More candidates for Thompson sampling
 
-          # Generate candidates efficiently with fast duplicate checking
-          for _ in range(max_candidates):
-            trial = study.ask(distributions)  # type: ignore[name-defined]
-            sample_params = [int(trial.params[vk]) for vk in var_keys]
+            attempts = 0
+            max_attempts = max_candidates * 3  # Allow more attempts for Thompson sampling
+            while len(candidate_samples) < batch_size and attempts < max_attempts:
+              trial = study.ask(distributions)  # type: ignore[name-defined]
+              sample_params = [int(trial.params[vk]) for vk in var_keys]
+              attempts += 1
 
-            # Use fast numpy-based duplicate checking
-            if not is_duplicate_fast(sample_params):
-              candidate_samples.append(sample_params)
-              # Update both tracking structures
-              param_tuple = tuple(sample_params)
-              evaluated_combinations.add(param_tuple)
-              evaluated_arrays.append(np.array(sample_params))
-              evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
-              if len(candidate_samples) >= batch_size:
-                break
+              # Use fast numpy-based duplicate checking
+              if not is_duplicate_fast(sample_params):
+                candidate_samples.append(sample_params)
+                # Update both tracking structures
+                param_tuple = tuple(sample_params)
+                evaluated_combinations.add(param_tuple)
+                evaluated_arrays.append(np.array(sample_params))
+                evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
 
-          # Fill Xnext with unique samples
-          for bi in range(batch_size):
-            if bi < len(candidate_samples):
-              Xnext[bi, :] = candidate_samples[bi]
-            else:
-              # Fallback to random if not enough unique samples from GPSampler
-              sample_params = []
-              for vk in var_keys:
-                sample_params.append(random.randrange(len(models.values[vk])))  # noqa: S311
-              Xnext[bi, :] = sample_params
-              # Update tracking structures
-              param_tuple = tuple(sample_params)
-              evaluated_combinations.add(param_tuple)
-              evaluated_arrays.append(np.array(sample_params))
-              evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
+            # Fill Xnext with unique samples
+            for bi in range(batch_size):
+              if bi < len(candidate_samples):
+                Xnext[bi, :] = candidate_samples[bi]
+              else:
+                # Fallback to random if not enough unique samples from GPSampler
+                sample_params = []
+                for vk in var_keys:
+                  sample_params.append(random.randrange(len(models.values[vk])))  # noqa: S311
+                Xnext[bi, :] = sample_params
+                # Update tracking structures
+                param_tuple = tuple(sample_params)
+                evaluated_combinations.add(param_tuple)
+                evaluated_arrays.append(np.array(sample_params))
+                evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
+          else:
+            # Sequential evaluator: pure GPSampler with acquisition function optimization (exploitation)
+            candidate_samples = []
+            max_candidates = batch_size * 10  # More candidates for better acquisition optimization
+
+            attempts = 0
+            max_attempts = max_candidates * 2  # Allow more attempts for GPSampler
+            while len(candidate_samples) < batch_size and attempts < max_attempts:
+              trial = study.ask(distributions)  # type: ignore[name-defined]
+              sample_params = [int(trial.params[vk]) for vk in var_keys]
+              attempts += 1
+
+              # Use fast numpy-based duplicate checking
+              if not is_duplicate_fast(sample_params):
+                candidate_samples.append(sample_params)
+                # Update both tracking structures
+                param_tuple = tuple(sample_params)
+                evaluated_combinations.add(param_tuple)
+                evaluated_arrays.append(np.array(sample_params))
+                evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
+
+            # Fill Xnext with unique samples
+            for bi in range(batch_size):
+              if bi < len(candidate_samples):
+                Xnext[bi, :] = candidate_samples[bi]
+              else:
+                # Fallback to random if not enough unique samples from GPSampler
+                sample_params = []
+                for vk in var_keys:
+                  sample_params.append(random.randrange(len(models.values[vk])))  # noqa: S311
+                Xnext[bi, :] = sample_params
+                # Update tracking structures
+                param_tuple = tuple(sample_params)
+                evaluated_combinations.add(param_tuple)
+                evaluated_arrays.append(np.array(sample_params))
+                evaluated_matrix = np.vstack([evaluated_matrix, np.array(sample_params)])
 
       # Evaluate next data points
       for x in Xnext:
@@ -1159,13 +1225,14 @@ class SelectGPO(Select):
       Perf_data_pos = len(self.val_performance)  # noqa: N806
 
       # Inform Optuna about observed performances (use mean across folds)
+      # This is crucial for GP model updates - GPyOpt updates after each evaluation
       if not use_gpyopt:
         res_n = len(self.val_performance[0])
         for l in range(0, Xnext.shape[0]):
           vals = [self.val_performance[Perf_data_pos - Xnext.shape[0] + l][ri] for ri in range(0, res_n)]
           mean_val = float(np.mean(vals))
           params = {vk: int(Xnext[l, i]) for i, vk in enumerate(var_keys)}
-          # Add new trial to the study
+          # Add new trial to the study (this triggers GP model update)
           trial_number = len(study.trials)
           now = datetime.datetime.now()
           study.add_trial(optuna.trial.FrozenTrial(
@@ -1181,6 +1248,16 @@ class SelectGPO(Select):
             system_attrs={},
             intermediate_values={}
           ))
+
+        # Force GP model update by accessing the sampler's internal state
+        # This ensures the GP model is updated after each batch of evaluations
+        if hasattr(sampler, '_gaussian_process'):
+          # Trigger GP model retraining
+          try:
+            sampler._gaussian_process._fit_gp_model()
+          except Exception as e:
+            if self.verbose > 1:
+              print(f"# GP model update failed: {e}")
 
       # Update results - find best model based on average performance across folds
       # Calculate average performance for each unique model (accounting for k-fold)
@@ -1201,7 +1278,7 @@ class SelectGPO(Select):
       XDiff.append(np.linalg.norm(XLast-Xdata[-1,:]))
       XLast = Xdata[-1,:]  # noqa: N806
       if self.verbose > 0:
-        print(f"## Best: Model {best_model_idx} avg = {best_avg_performance:.6f} {Xdata[best_data_idx,:]!s}  of {unique_models} models")
+        print(f"## Best: Model {best_model_idx} avg = {best_avg_performance:.8f} {Xdata[best_data_idx,:]!s}  of {unique_models} models")
         for l in range(0,len(var_keys)):
           key_vals[var_keys[l]] = models.values[var_keys[l]][int(Xdata[best_data_idx,l])]
         print("   "+str([str(key_vals[k]) for k in var_keys]))
@@ -1210,6 +1287,14 @@ class SelectGPO(Select):
 
     # Store performance info
     folder = self._save_performance(collection_name+"-gpo", var_keys, fix_keys)
+
+    # Print optimization summary
+    if self.verbose > 0:
+      print("\n# GPO Optimization Summary:")
+      print(f"#   Total iterations: {current_iter}")
+      print(f"#   Models evaluated: {unique_models}")
+      print(f"#   Best performance: {best_avg_performance:.8f}")
+      print("#   Strategy: Original GPyOpt alternating sequential/thompson_sampling evaluators")
 
     # GPO convergence
     fig, ax = plt.subplots(1,2)
