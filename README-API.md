@@ -28,6 +28,8 @@ The main package is located in `mrsnet/` and contains the following modules:
 - `grid.py` - Grid search utilities
 - `selection.py` - Model selection algorithms
 - `getfolder.py` - File system utilities
+- `qdicom/` - DICOM file handling utilities
+- `simulators/` - Simulation tools (FID-A, PyGamma)
 
 ## Main Entry Point
 
@@ -402,6 +404,25 @@ Genetic Algorithm model selection.
 #### Functions
 - `get_folder(folder, subfolder_pattern, timeout, delay)` - Get unique subfolder for data storage
 
+## API Usage Patterns
+
+The MRSNet API follows a consistent pattern across all modules:
+
+1. **Configuration**: Initialize the configuration system with `Cfg.init()`
+2. **Data Loading**: Use `Dataset.load()` or `Spectrum.load_*()` methods
+3. **Model Creation**: Instantiate models (CNN, Autoencoder, etc.) with parameters
+4. **Training**: Use training classes from `mrsnet.train` module
+5. **Prediction**: Call `predict()` method on trained models
+6. **Analysis**: Use `analyse.py` functions for evaluation
+
+### Key Design Principles
+
+- **Modular Architecture**: Each component (basis, spectrum, dataset, model) is self-contained
+- **Consistent Interfaces**: All models implement similar `train()`, `predict()`, and `save()` methods
+- **Flexible Configuration**: Configuration can be overridden via JSON files
+- **Multiple Data Sources**: Support for LCModel, FID-A, PyGamma, and DICOM data
+- **Extensible Models**: Easy to add new model architectures
+
 ## Usage Examples
 
 ### Basic Usage
@@ -449,20 +470,24 @@ python mrsnet.py quantify -d /path/to/dicoms -m /path/to/model
 
 ## Dependencies
 
-- Python 3.11+
-- TensorFlow 2.15
-- NumPy
-- SciPy
-- Matplotlib
-- Seaborn
-- scikit-learn
-- joblib
-- tqdm
-- sobol_seq
-- GPyOpt (optional)
-- pygad (optional)
-- lmfit (optional)
-- pyfftw (optional)
+- Python 3.11+ (tested up to Python 3.13)
+- TensorFlow 2.20
+- NumPy 2.3.3
+- SciPy 1.16.1
+- Matplotlib 3.10
+- Seaborn 0.13.2
+- scikit-learn 1.7.2
+- joblib 1.4.2
+- tqdm 4.66.4
+- sobol_seq 0.2.0
+- PyTorch 2.8.0
+- Optuna 4.5.0
+- pydicom 2.4.4
+- pygad 3.3.1
+- lmfit 1.3.2
+- pyfftw 0.15.0
+- GPyOpt (optional, commented out in requirements.txt)
+- PyGamma (optional, commented out in requirements.txt)
 
 ## License
 

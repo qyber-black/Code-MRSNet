@@ -26,17 +26,17 @@ https://langbein.org/mrsnet-paper/
 * Tested on Linux and may not work on any other platform without some adjustments.
   Standard packages for Linux are:
   * Git and git-lfs for git with submodules and LFS support.
-  * Python 3.13 (more recent versions may not work).
+  * Python 3.11+ (this version has been tested with Python 3.13).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
-    `sudo apt update && sudo apt install git git-lfs python3.13 python3.13-venv`
+    `sudo apt update && sudo apt install git git-lfs python3.11 python3.11-venv`
 * For all standard python packages used, see `requirements.txt`. These will be
   installed with the commands below, but here are some extra notes on potential
   issues.
   * [Tensorflow](https://www.tensorflow.org/) as machine learning library. In particular
     for training, but also for quantification, a GPU (with tensorflow support) is strongly
-    recommended, with [cudnn](https://developer.nvidia.com/cudnn) or [OneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/optimization-for-tensorflow-installation-guide.html). Version 2.15 should
-    work, but more recent versions will likely fail.
+    recommended, with [cudnn](https://developer.nvidia.com/cudnn). Version 2.20 is
+    currently supported and tested.
   * For scipy/numpy you may need to install lapack and blas libraries for your
     system. By default we use numpy's fft, but you can also use fftw3 for the
     Fourier transform functions via pyfftw (see the `npfft_module` config
@@ -44,7 +44,7 @@ https://langbein.org/mrsnet-paper/
   * [PyGamma](https://github.com/pygamma-mrs/gamma),
     a MRS simulation toolbox. You only need this if you wish to use the pygamma basis
     spectra simulation. It is currently commented out in `requirements.txt` as not
-    supported in python 3.13. If needed you can still try to install it manually or use a
+    supported in recent Python versions. If needed you can still try to install it manually or use a
     supported python version. See https://pygamma-mrs.github.io/gamma.io/release/GammaBuildingLibrary.html
     for installation instructions.
   * GPyOpt is no longer maintained, but usable, and depends on gpy. It can be safely
@@ -262,6 +262,8 @@ Released versions:
 * v2.0 - update to python3 and tensorflow 2; code, api and ui cleanups; updates to
   spectra processing; extended dataset generation, model training, model selection,
   and quantification.
+* v2.1 - current version with TensorFlow 2.20, Python 3.13 support, and enhanced
+  model architectures including autoencoders and autoencoder-quantifiers.
 
 ## Locations
 
