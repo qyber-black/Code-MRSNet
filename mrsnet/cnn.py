@@ -21,8 +21,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.keras.layers import BatchNormalization, Conv2D, Dense, Dropout, Flatten, InputLayer, MaxPool2D, ReLU
-from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import BatchNormalization, Conv2D, Dense, Dropout, Flatten, Input, MaxPool2D, ReLU
+from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
@@ -99,37 +99,42 @@ class CNN:
     self.cnn_arch = None
     self.train_dataset_name = None
 
-  def _freq_conv_layer(self, filter, c, s, dropout):
-    """Add a frequency convolution layer to the CNN.
+  def _freq_conv_layer(self, x, filter, c, s, dropout):
+    """Add a frequency convolution layer to the CNN using functional API.
 
     Parameters
     ----------
+        x (tensor): Input tensor
         filter (int): Number of filters
         c (int): Convolution kernel size
         s (int): Stride size
         dropout (float): Dropout rate
+
+    Returns
+    -------
+        tensor: Output tensor
     """
     if s <= 0:
-      self.cnn_arch.add(Conv2D(filter, c))
+      x = Conv2D(filter, c)(x)
     else:
-      self.cnn_arch.add(Conv2D(filter, c, strides=(1,s)))
+      x = Conv2D(filter, c, strides=(1,s))(x)
     if dropout == 0.0:
-      self.cnn_arch.add(BatchNormalization())
-    self.cnn_arch.add(ReLU())
+      x = BatchNormalization()(x)
+    x = ReLU()(x)
     if dropout > 0.0:
-      self.cnn_arch.add(Dropout(dropout))
+      x = Dropout(dropout)(x)
     if s < 0:
-      self.cnn_arch.add(MaxPool2D((1,-s)))
+      x = MaxPool2D((1,-s))(x)
+    return x
 
   def _construct(self, input_shape, output_shape):
-    """Construct the CNN architecture.
+    """Construct the CNN architecture using functional API.
 
     Parameters
     ----------
         input_shape (tuple): Input tensor shape
         output_shape (tuple): Output tensor shape
     """
-    self.cnn_arch = Sequential(name=self.model)
     vals = self.model.split("_")
     if vals[0] != 'cnn':
       raise RuntimeError(f"Unknown model {vals[0]}")
@@ -175,25 +180,35 @@ class CNN:
       dense = int(vals[11])
       output_act = vals[12]
 
-    self.cnn_arch.add(InputLayer(shape=input_shape))
-    self._freq_conv_layer(filter1, (1,freq_convolution1), strides1, dropout1)
-    self._freq_conv_layer(filter1, (1,freq_convolution2), strides1, dropout1)
+    # Input layer
+    inputs = Input(shape=input_shape, name="spectra_input")
+    x = inputs
 
-    while self.cnn_arch.layers[-1].output.shape[1] != 1:
-      self._freq_conv_layer(filter1,
-                            (min(self.cnn_arch.layers[-1].output.shape[1],3),freq_convolution3),
-                            1, dropout1)
+    # Initial convolution layers
+    x = self._freq_conv_layer(x, filter1, (1,freq_convolution1), strides1, dropout1)
+    x = self._freq_conv_layer(x, filter1, (1,freq_convolution2), strides1, dropout1)
 
+    # Dynamic convolution layers until spatial dimension is 1
+    while x.shape[1] != 1:
+      x = self._freq_conv_layer(x, filter1,
+                                (min(x.shape[1],3),freq_convolution3),
+                                1, dropout1)
+
+    # Additional convolution layers
     for n_filters in [filter1, filter2]:
       for _l in range(2):
-        self._freq_conv_layer(n_filters, (1, freq_convolution4), 1,        dropout1)
-        self._freq_conv_layer(n_filters, (1, freq_convolution4), strides2, dropout1)
+        x = self._freq_conv_layer(x, n_filters, (1, freq_convolution4), 1, dropout1)
+        x = self._freq_conv_layer(x, n_filters, (1, freq_convolution4), strides2, dropout1)
 
-    self.cnn_arch.add(Flatten())
-    self.cnn_arch.add(Dense(dense,activation="sigmoid"))
+    # Dense layers
+    x = Flatten()(x)
+    x = Dense(dense, activation="sigmoid", name="dense_hidden")(x)
     if dropout2 > 0.0:
-      self.cnn_arch.add(Dropout(dropout2))
-    self.cnn_arch.add(Dense(output_shape[-1], activation=output_act))
+      x = Dropout(dropout2)(x)
+    outputs = Dense(output_shape[-1], activation=output_act, name="output")(x)
+
+    # Create model
+    self.cnn_arch = Model(inputs=inputs, outputs=outputs, name=self.model)
 
   def train(self, d_data, v_data, epochs, batch_size,
             folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):

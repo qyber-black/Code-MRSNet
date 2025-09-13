@@ -43,20 +43,24 @@ from mrsnet.train import calculate_flops
 
 
 # Helper to construct convolutional encoder layer
-def _enc_conv_layer(m, filter, c, s, pooling, dropout):
-  """Construct a convolutional encoder layer.
+def _enc_conv_layer(x, filter, c, s, pooling, dropout):
+  """Construct a convolutional encoder layer using functional API.
 
   Adds a Conv1D layer over the last index (frequency bins) with specified
   convolution kernel size and ReLU activation.
 
   Parameters
   ----------
-      m (keras.Sequential): Sequential model to add layers to
+      x (tensor): Input tensor
       filter (int): Number of filters for the convolution
       c (int): Convolution kernel size
       s (int): Strides or pooling size
       pooling (bool): If True, use max pooling; if False, use strides
       dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+
+  Returns
+  -------
+      tensor: Output tensor
   """
   # Conv1D layer over last index (freq. bins) with convolution kernel size c and relu activation
   # if pooling == True:  use s max pooling;
@@ -65,32 +69,37 @@ def _enc_conv_layer(m, filter, c, s, pooling, dropout):
   #            ==0: batch normalisation before activation;
   #            < 0: nothing
   if pooling:
-    m.add(Conv1D(filter, c, strides=1, padding="same", data_format="channels_first"))
+    x = Conv1D(filter, c, strides=1, padding="same", data_format="channels_first")(x)
   else:
-    m.add(Conv1D(filter, c, strides=s, padding="same", data_format="channels_first"))
+    x = Conv1D(filter, c, strides=s, padding="same", data_format="channels_first")(x)
   if dropout == 0.0:
-    m.add(BatchNormalization())
-  m.add(Activation('relu'))
+    x = BatchNormalization()(x)
+  x = Activation('relu')(x)
   if dropout > 0.0:
-    m.add(Dropout(dropout))
+    x = Dropout(dropout)(x)
   if pooling:
-    m.add(MaxPool1D(s))
+    x = MaxPool1D(s)(x)
+  return x
 
 # Helper to construct convolutional decoder layer
-def _dec_convt_layer(m, filter, c, s, pooling, dropout):
-  """Construct a convolutional decoder layer.
+def _dec_convt_layer(x, filter, c, s, pooling, dropout):
+  """Construct a convolutional decoder layer using functional API.
 
   Adds a Conv1DTranspose layer over the last index (frequency filter bins) with
   specified convolution kernel size and ReLU activation.
 
   Parameters
   ----------
-      m (keras.Sequential): Sequential model to add layers to
+      x (tensor): Input tensor
       filter (int): Number of filters for the convolution
       c (int): Convolution kernel size
       s (int): Strides or upsampling size
       pooling (bool): If True, use upsampling; if False, use strides
       dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+
+  Returns
+  -------
+      tensor: Output tensor
   """
   # Conv1DT layer over last index (freq. filter bins) with convolution kernel size c and relu activation
   # if pooling == True:  use s max pooling;
@@ -99,18 +108,19 @@ def _dec_convt_layer(m, filter, c, s, pooling, dropout):
   #            ==0: batch normalisation before activation;
   #            < 0: nothing
   if pooling:
-    m.add(Conv1DTranspose(filter, c, strides=1, padding="same", data_format="channels_first"))
+    x = Conv1DTranspose(filter, c, strides=1, padding="same", data_format="channels_first")(x)
   else:
-    m.add(Conv1DTranspose(filter, c, strides=s, padding="same", data_format="channels_first"))
+    x = Conv1DTranspose(filter, c, strides=s, padding="same", data_format="channels_first")(x)
   if dropout == 0.0:
-    m.add(BatchNormalization())
-  m.add(Activation('relu'))
+    x = BatchNormalization()(x)
+  x = Activation('relu')(x)
   if dropout > 0.0:
-    m.add(Dropout(dropout))
+    x = Dropout(dropout)(x)
   if pooling:
-    m.add(UpSampling1D(s))
+    x = UpSampling1D(s)(x)
+  return x
 
-# Convolutional autoencoder via Model interface (using Sequential interface internally)
+# Convolutional autoencoder via functional API
 class ConvAutoEnc(Model):
   """Convolutional autoencoder model for MRS spectra.
 
@@ -119,8 +129,8 @@ class ConvAutoEnc(Model):
 
   Attributes
   ----------
-      encoder (keras.Sequential): Encoder network
-      decoder (keras.Sequential): Decoder network
+      encoder (keras.Model): Encoder network
+      decoder (keras.Model): Decoder network
   """
 
   def __init__(self, n_specs, n_freqs, filter, latent, pooling, dropout, name='ConvAutoEnc'):
@@ -145,36 +155,41 @@ class ConvAutoEnc(Model):
     # FIXME: could parameterise kernel size(s) and strides and also depth of network
     super().__init__(name=name)
 
+    # Input
+    encoder_input = keras.Input(shape=(n_specs, n_freqs), name="spectra_input")
+
     # Encoder
-    self.encoder = tf.keras.Sequential(name='Encoder')
-    # Encoder Layers: filter, convolution_kernel, strides, pooling, dropout
-    _enc_conv_layer(self.encoder, filter,   7, 2, pooling, dropout)
-    _enc_conv_layer(self.encoder, filter,   7, 2, pooling, dropout)
-    _enc_conv_layer(self.encoder, 2*filter, 5, 2, pooling, dropout)
-    _enc_conv_layer(self.encoder, 2*filter, 5, 2, pooling, dropout)
-    _enc_conv_layer(self.encoder, 2*filter, 3, 1, pooling, dropout)
-    _enc_conv_layer(self.encoder, 2*filter, 3, 1, pooling, dropout)
-    self.encoder.add(Flatten())
-    self.encoder.add(Dense(latent)) # Latent representation size
+    x = _enc_conv_layer(encoder_input, filter,   7, 2, pooling, dropout)
+    x = _enc_conv_layer(x, filter,   7, 2, pooling, dropout)
+    x = _enc_conv_layer(x, 2*filter, 5, 2, pooling, dropout)
+    x = _enc_conv_layer(x, 2*filter, 5, 2, pooling, dropout)
+    x = _enc_conv_layer(x, 2*filter, 3, 1, pooling, dropout)
+    x = _enc_conv_layer(x, 2*filter, 3, 1, pooling, dropout)
+    x = Flatten()(x)
+    encoder_output = Dense(latent, name="latent")(x) # Latent representation size
 
     # Decoder
-    self.decoder = tf.keras.Sequential(name='Decoder')
     n_channels = 2*filter
     if n_freqs < 16:
       raise ValueError(f"n_freqs ({n_freqs}) must be >= 16 for this architecture")
     n_signal = n_freqs // 16 # Divide by strides in encoder (2^4)
-    self.decoder.add(Dense(n_channels * n_signal))
-    self.decoder.add(Reshape(target_shape=(n_channels, n_signal)))
+    x = Dense(n_channels * n_signal)(encoder_output)
+    x = Reshape(target_shape=(n_channels, n_signal))(x)
     # Decoder Layers: filter, convolution_kernel, strides, pooling, dropout
-    _dec_convt_layer(self.decoder, 2*filter, 3, 1, pooling, dropout)
-    _dec_convt_layer(self.decoder, 2*filter, 3, 1, pooling, dropout)
-    _dec_convt_layer(self.decoder, 2*filter, 5, 2, pooling, dropout)
-    _dec_convt_layer(self.decoder, 2*filter, 5, 2, pooling, dropout)
-    _dec_convt_layer(self.decoder, filter,   7, 2, pooling, dropout)
-    _dec_convt_layer(self.decoder, filter,   7, 2, pooling, dropout)
+    x = _dec_convt_layer(x, 2*filter, 3, 1, pooling, dropout)
+    x = _dec_convt_layer(x, 2*filter, 3, 1, pooling, dropout)
+    x = _dec_convt_layer(x, 2*filter, 5, 2, pooling, dropout)
+    x = _dec_convt_layer(x, 2*filter, 5, 2, pooling, dropout)
+    x = _dec_convt_layer(x, filter,   7, 2, pooling, dropout)
+    x = _dec_convt_layer(x, filter,   7, 2, pooling, dropout)
     # Final, no activation
-    self.decoder.add(Conv1D(n_specs, 7, activation=None, padding='same', data_format="channels_first"))
+    decoder_output = Conv1D(n_specs, 7, activation=None, padding='same', data_format="channels_first", name="decoder_output")(x)
 
+    # Create models
+    self.encoder = keras.Model(inputs=encoder_input, outputs=encoder_output, name='Encoder')
+    self.decoder = keras.Model(inputs=encoder_output, outputs=decoder_output, name='Decoder')
+
+    # Build the full model
     self.build((None,n_specs,n_freqs))
 
   def call(self,x):
@@ -193,36 +208,42 @@ class ConvAutoEnc(Model):
     return x
 
 # Helper to construct dense layer
-def _dense_layer(m, units, activation, dropout):
-  """Construct a dense layer with optional batch normalization and dropout.
+def _dense_layer(x, units, activation, dropout, name=None):
+  """Construct a dense layer with optional batch normalization and dropout using functional API.
 
   Parameters
   ----------
-      m (keras.Sequential): Sequential model to add layers to
+      x (tensor): Input tensor
       units (int): Number of units in the dense layer
       activation (str): Activation function name
       dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
+      name (str, optional): Layer name. Defaults to None
+
+  Returns
+  -------
+      tensor: Output tensor
   """
   # Dense layer over last index (freq. bins) using given activation
   # if dropout > 0: dropout rate after activation;
   #            ==0: batch normalisation before activation;
   #            < 0: nothing
-  m.add(Dense(units))
+  x = Dense(units, name=name)(x)
   if dropout == 0.0:
-    m.add(BatchNormalization())
+    x = BatchNormalization()(x)
   if activation.startswith("leakyrelu") and len(activation) > 9:
     try:
         alpha = float(activation[9:])
-        m.add(LeakyReLU(alpha=alpha))
-    except ValueError:
-        raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}")
+        x = LeakyReLU(alpha=alpha)(x)
+    except ValueError as err:
+        raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
   elif activation != "None":
-    m.add(Activation(activation))
+    x = Activation(activation)(x)
   # If None: Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
   if dropout > 0.0:
-    m.add(Dropout(dropout))
+    x = Dropout(dropout)(x)
+  return x
 
-#  Fully connected autoencoder via Model interface (using Sequential interface internally)
+#  Fully connected autoencoder via functional API
 class FCAutoEnc(Model):
   """Fully connected autoencoder model for MRS spectra.
 
@@ -231,8 +252,8 @@ class FCAutoEnc(Model):
 
   Attributes
   ----------
-      encoder (keras.Sequential): Encoder network
-      decoder (keras.Sequential): Decoder network
+      encoder (keras.Model): Encoder network
+      decoder (keras.Model): Decoder network
   """
 
   def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last ,dropout, name='FCAutoEnc'):
@@ -258,21 +279,31 @@ class FCAutoEnc(Model):
     self.n_specs = n_specs
     super().__init__(name=name)
 
+    # Input
+    encoder_input = keras.Input(shape=(n_specs, n_freqs), name="spectra_input")
+
     # Encoder
-    self.encoder = tf.keras.Sequential(name='Encoder')
     units = n_freqs
+    x = encoder_input
     for _l in range(0,layers_enc-1):
-      _dense_layer(self.encoder, units, activation, dropout)
+      x = _dense_layer(x, units, activation, dropout)
       units //= 2
-    _dense_layer(self.encoder, units, activation, -1) # no regulariser at latent representation
+    self.units = units
+    encoder_output = _dense_layer(x, units, activation, -1, name="latent") # no regulariser at latent representation
 
     # Decoder
-    self.decoder = tf.keras.Sequential(name='Decoder')
     units = n_freqs//(2**(layers_dec-1))
+    x = encoder_output
     for _l in range(0,layers_dec-1):
-      _dense_layer(self.decoder, units, activation, -1) # no regularisers in decoder
+      x = _dense_layer(x, units, activation, -1) # no regularisers in decoder
       units *= 2
-    _dense_layer(self.decoder, units, activation_last, -1)
+    decoder_output = _dense_layer(x, units, activation_last, -1, name="decoder_output")
+
+    # Create models
+    self.encoder = keras.Model(inputs=encoder_input, outputs=encoder_output, name='Encoder')
+    self.decoder = keras.Model(inputs=encoder_output, outputs=decoder_output, name='Decoder')
+
+    # Build the full model
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
 
   def call(self,x):
@@ -330,13 +361,15 @@ class EncQuant(Model):
     self.encoder.trainable = False # FIXME: maybe we want to continue training part/all of it anyway; needs testing
 
     # Quantifier
-    self.quantifier = tf.keras.Sequential(name='Quantifier')
-    self.quantifier.add(Flatten())
+    quantifier_input = keras.Input(shape=encoder.output_shape[1:], name="quantifier_input")
+    x = Flatten()(quantifier_input)
     for _l in range(0, layers-1):
-      _dense_layer(self.quantifier, units, act, dp)
+      x = _dense_layer(x, units, act, dp)
       units //= 2
     # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    _dense_layer(self.quantifier, output_conc, act_last, -1) #The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
+    quantifier_output = _dense_layer(x, output_conc, act_last, -1, name="quantifier_output") #The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
+
+    self.quantifier = keras.Model(inputs=quantifier_input, outputs=quantifier_output, name='Quantifier')
 
     self.build((None, n_specs, n_freqs)) # Build encoder - quantifier
 

@@ -57,7 +57,7 @@ def _dense_layer(m,units, activation, dropout, name=None):
     x = x
   return x
 
-#  Fully connected autoencoder via Model interface (using Sequential interface internally)
+#  Fully connected autoencoder via functional API
 class FCAutoEncQuant(Model):
   """Fully connected autoencoder-quantifier model.
 
