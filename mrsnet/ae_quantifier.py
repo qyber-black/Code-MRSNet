@@ -252,9 +252,9 @@ class AutoencoderQuantifier:
         if verbose > 0:
           print(f"GPU Devices: {devices}")
       if len(d_data) != 3:
-        raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out|conc]")
+        raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out,conc]")
       if v_data is not None and len(v_data) != 3:
-        raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out|conc]")
+        raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out,conc]")
 
       if len(train_dataset_name) > 0:
         self.train_dataset_name = train_dataset_name
@@ -401,7 +401,7 @@ class AutoencoderQuantifier:
                                                  mode='min',
                                                  verbose=(verbose > 0),
                                                  restore_best_weights=True),
-                   timer]
+                 timer]
 
     # Dataset options
     train_data=tf.data.Dataset.zip((train_data_spectra,train_data_target))

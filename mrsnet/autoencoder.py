@@ -7,8 +7,8 @@
 """Autoencoder models for MRSNet.
 
 This module provides various autoencoder architectures for MRS spectra,
-including convolutional and fully connected autoencoders, as well as
-encoder-quantifier models for concentration prediction.
+including fully connected autoencoders and encoder-quantifier models
+for concentration prediction.
 """
 
 import csv
@@ -24,15 +24,10 @@ from tensorflow import keras
 from tensorflow.keras.layers import (
     Activation,
     BatchNormalization,
-    Conv1D,
-    Conv1DTranspose,
     Dense,
     Dropout,
     Flatten,
     LeakyReLU,
-    MaxPool1D,
-    Reshape,
-    UpSampling1D,
   )
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
@@ -41,171 +36,6 @@ from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops
 
-
-# Helper to construct convolutional encoder layer
-def _enc_conv_layer(x, filter, c, s, pooling, dropout):
-  """Construct a convolutional encoder layer using functional API.
-
-  Adds a Conv1D layer over the last index (frequency bins) with specified
-  convolution kernel size and ReLU activation.
-
-  Parameters
-  ----------
-      x (tensor): Input tensor
-      filter (int): Number of filters for the convolution
-      c (int): Convolution kernel size
-      s (int): Strides or pooling size
-      pooling (bool): If True, use max pooling; if False, use strides
-      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
-
-  Returns
-  -------
-      tensor: Output tensor
-  """
-  # Conv1D layer over last index (freq. bins) with convolution kernel size c and relu activation
-  # if pooling == True:  use s max pooling;
-  #            == False: use s strides
-  # if dropout > 0: dropout rate after activation;
-  #            ==0: batch normalisation before activation;
-  #            < 0: nothing
-  if pooling:
-    x = Conv1D(filter, c, strides=1, padding="same", data_format="channels_first")(x)
-  else:
-    x = Conv1D(filter, c, strides=s, padding="same", data_format="channels_first")(x)
-  if dropout == 0.0:
-    x = BatchNormalization()(x)
-  x = Activation('relu')(x)
-  if dropout > 0.0:
-    x = Dropout(dropout)(x)
-  if pooling:
-    x = MaxPool1D(s)(x)
-  return x
-
-# Helper to construct convolutional decoder layer
-def _dec_convt_layer(x, filter, c, s, pooling, dropout):
-  """Construct a convolutional decoder layer using functional API.
-
-  Adds a Conv1DTranspose layer over the last index (frequency filter bins) with
-  specified convolution kernel size and ReLU activation.
-
-  Parameters
-  ----------
-      x (tensor): Input tensor
-      filter (int): Number of filters for the convolution
-      c (int): Convolution kernel size
-      s (int): Strides or upsampling size
-      pooling (bool): If True, use upsampling; if False, use strides
-      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
-
-  Returns
-  -------
-      tensor: Output tensor
-  """
-  # Conv1DT layer over last index (freq. filter bins) with convolution kernel size c and relu activation
-  # if pooling == True:  use s max pooling;
-  #            == False: use s strides
-  # if dropout > 0: dropout rate after activation;
-  #            ==0: batch normalisation before activation;
-  #            < 0: nothing
-  if pooling:
-    x = Conv1DTranspose(filter, c, strides=1, padding="same", data_format="channels_first")(x)
-  else:
-    x = Conv1DTranspose(filter, c, strides=s, padding="same", data_format="channels_first")(x)
-  if dropout == 0.0:
-    x = BatchNormalization()(x)
-  x = Activation('relu')(x)
-  if dropout > 0.0:
-    x = Dropout(dropout)(x)
-  if pooling:
-    x = UpSampling1D(s)(x)
-  return x
-
-# Convolutional autoencoder via functional API
-class ConvAutoEnc(Model):
-  """Convolutional autoencoder model for MRS spectra.
-
-  This class implements a convolutional autoencoder using 1D convolutions
-  over the frequency dimension of MRS spectra.
-
-  Attributes
-  ----------
-      encoder (keras.Model): Encoder network
-      decoder (keras.Model): Decoder network
-  """
-
-  def __init__(self, n_specs, n_freqs, filter, latent, pooling, dropout, name='ConvAutoEnc'):
-    """Initialize a convolutional autoencoder.
-
-    Parameters
-    ----------
-        n_specs (int): Number of spectra (acquisitions x datatype)
-        n_freqs (int): Number of frequency bins in spectra
-        filter (int): Number of filters on input conv layer (others computed from this)
-        latent (int): Size of latent representation
-        pooling (bool): Use pooling or strides for up/downsampling
-        dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
-        name (str, optional): Model name. Defaults to 'ConvAutoEnc'
-    """
-    # n_specs: number of spectra (acquisisions x datatype)
-    # n_freqs: number of frequency bins in spectra
-    # filter: numbner of filters on input conv layer (others computed from this)
-    # latent: size of latent representation
-    # pooling: Pooling or strides for up/downsampling?
-    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
-    # FIXME: could parameterise kernel size(s) and strides and also depth of network
-    super().__init__(name=name)
-
-    # Input
-    encoder_input = keras.Input(shape=(n_specs, n_freqs), name="spectra_input")
-
-    # Encoder
-    x = _enc_conv_layer(encoder_input, filter,   7, 2, pooling, dropout)
-    x = _enc_conv_layer(x, filter,   7, 2, pooling, dropout)
-    x = _enc_conv_layer(x, 2*filter, 5, 2, pooling, dropout)
-    x = _enc_conv_layer(x, 2*filter, 5, 2, pooling, dropout)
-    x = _enc_conv_layer(x, 2*filter, 3, 1, pooling, dropout)
-    x = _enc_conv_layer(x, 2*filter, 3, 1, pooling, dropout)
-    x = Flatten()(x)
-    encoder_output = Dense(latent, name="latent")(x) # Latent representation size
-
-    # Decoder
-    n_channels = 2*filter
-    if n_freqs < 16:
-      raise ValueError(f"n_freqs ({n_freqs}) must be >= 16 for this architecture")
-    n_signal = n_freqs // 16 # Divide by strides in encoder (2^4)
-    x = Dense(n_channels * n_signal)(encoder_output)
-    x = Reshape(target_shape=(n_channels, n_signal))(x)
-    # Decoder Layers: filter, convolution_kernel, strides, pooling, dropout
-    x = _dec_convt_layer(x, 2*filter, 3, 1, pooling, dropout)
-    x = _dec_convt_layer(x, 2*filter, 3, 1, pooling, dropout)
-    x = _dec_convt_layer(x, 2*filter, 5, 2, pooling, dropout)
-    x = _dec_convt_layer(x, 2*filter, 5, 2, pooling, dropout)
-    x = _dec_convt_layer(x, filter,   7, 2, pooling, dropout)
-    x = _dec_convt_layer(x, filter,   7, 2, pooling, dropout)
-    # Final, no activation
-    decoder_output = Conv1D(n_specs, 7, activation=None, padding='same', data_format="channels_first", name="decoder_output")(x)
-
-    # Create models
-    self.encoder = keras.Model(inputs=encoder_input, outputs=encoder_output, name='Encoder')
-    self.decoder = keras.Model(inputs=encoder_output, outputs=decoder_output, name='Decoder')
-
-    # Build the full model
-    self.build((None,n_specs,n_freqs))
-
-  def call(self,x):
-    """Forward pass through the autoencoder.
-
-    Parameters
-    ----------
-        x (tensor): Input spectra tensor
-
-    Returns
-    -------
-        tensor: Reconstructed spectra tensor
-    """
-    x = self.encoder(x)
-    x = self.decoder(x)
-    return x
 
 # Helper to construct dense layer
 def _dense_layer(x, units, activation, dropout, name=None):
@@ -498,23 +328,7 @@ class Autoencoder:
       else:
         raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
     elif p[0] == "ae":
-      if p[1] == "cnn":
-        # ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO]
-        #    FILTER: size of initial filter on conv input; other filter sizes computed from it
-        #    LATENT: size of latent representation
-        #    pool|stride: use max-pooling/up-sampling or strides for reduction/increase
-        #    DO: Dropout if > 0.0; 0.0, BatchNormalisation; negative, no regulariser
-        filter = int(p[2])
-        latent = int(p[3])
-        if p[4] == "pool":
-          pooling = True
-        elif p[4] == "stride":
-          pooling = False
-        else:
-          raise RuntimeError("2nd arg must be pool|stride")
-        dropout = float(p[5])
-        self.ae = ConvAutoEnc(n_specs,n_freqs,filter,latent,pooling,dropout)
-      elif p[1] == "fc":
+      if p[1] == "fc":
         # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
         #    LIN: dense layers in encoder
         #    LOUT: dense layers in decoder

@@ -167,11 +167,19 @@ class Train:
         if k not in val_res:
           val_res[k] = []
         val_res[k].append(val_score[k])
+      # Check if clean spectra are available (different from noisy spectra)
+      clean_spectra_train = None
+      clean_spectra_val = None
+      if len(data) == 3:
+        clean_spectra_train = data[1][train_sel]
+        clean_spectra_val = data[1][val_sel]
       _, info, err = analyse_model(model, data[0][train_sel], data[-1][train_sel], fold_folder, 'train',
-                                   norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
+                                   norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                                   clean_spectra=clean_spectra_train)
       train_res['error'][val_fold] = err
       _, info, err = analyse_model(model, data[0][val_sel], data[-1][val_sel], fold_folder, 'validation',
-                                   norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
+                                   norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                                   clean_spectra=clean_spectra_val)
       val_res['error'][val_fold] = err
       for dpi in image_dpi:
         if os.path.exists(os.path.join(fold_folder,"architecture@"+str(dpi)+".png")):
@@ -472,8 +480,13 @@ class NoValidation(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
+    # Check if clean spectra are available (different from noisy spectra)
+    clean_spectra = None
+    if len(data) == 3:
+      clean_spectra = data[1]
     analyse_model(model, data[0], data[-1], folder, 'train',
-                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi)
+                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                  clean_spectra=clean_spectra)
 
 class Split(Train):
   """Train/validation split strategy.
@@ -549,11 +562,19 @@ class Split(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
-    # data = [d_noise, d_conc, d_clean]
+    # data = [d_noise, d_clean, d_conc] - concentrations are always last
+    # Check if clean spectra are available (different from noisy spectra)
+    clean_spectra_train = None
+    clean_spectra_val = None
+    if len(data) == 3:
+      clean_spectra_train = data[1][train_sel]
+      clean_spectra_val = data[1][val_sel]
     analyse_model(model, data[0][train_sel], data[-1][train_sel], folder, 'train',
-                 norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
+                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                  clean_spectra=clean_spectra_train)
     analyse_model(model, data[0][val_sel], data[-1][val_sel], folder, 'validation',
-                  norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
+                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                  clean_spectra=clean_spectra_val)
 
 class DuplexSplit(Train):
   """Duplex split strategy for train/validation splitting.
@@ -673,10 +694,19 @@ class DuplexSplit(Train):
                 train_dataset_name=train_dataset_name)
     model.save(folder)
     # Analyse model with training/test datasets
+    # data = [d_noise, d_clean, d_conc] - concentrations are always last
+    # Check if clean spectra are available (different from noisy spectra)
+    clean_spectra_train = None
+    clean_spectra_val = None
+    if len(data) == 3:
+      clean_spectra_train = data[1][train_sel]
+      clean_spectra_val = data[1][val_sel]
     analyse_model(model, data[0][train_sel], data[-1][train_sel], folder, 'train',
-                  norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
+                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                  clean_spectra=clean_spectra_train)
     analyse_model(model, data[0][val_sel], data[-1][val_sel], folder, 'validation',
-                  norm='max', verbose=verbose, image_dpi=image_dpi,screen_dpi=screen_dpi)
+                  norm='max', verbose=verbose, image_dpi=image_dpi, screen_dpi=screen_dpi,
+                  clean_spectra=clean_spectra_val)
 
 class KFold(Train):
   """K-fold cross-validation strategy.

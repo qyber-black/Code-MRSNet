@@ -26,7 +26,7 @@ from mrsnet.cfg import Cfg
 
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
-                  verbose=0, image_dpi=[300], screen_dpi=96, create_plots=True):
+                  verbose=0, image_dpi=[300], screen_dpi=96, create_plots=True, clean_spectra=None):
   """Analyze model performance and generate reports.
 
   Performs comprehensive analysis of model performance including error metrics,
@@ -47,6 +47,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       image_dpi (list, optional): DPI for saved images. Defaults to [300]
       screen_dpi (int, optional): DPI for screen display. Defaults to 96
       create_plots (bool, optional): Whether to create and save plots. Defaults to True
+      clean_spectra (numpy.ndarray, optional): Clean spectra ground truth for dual-output analysis. Defaults to None
 
   Returns
   -------
@@ -69,12 +70,6 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   if model.output != "concentrations":
     raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
-
-  # Note: For AutoencoderQuantifier models (output="concentrations"), we only analyze
-  # concentration predictions. To analyze spectrum reconstruction, you would need to:
-  # 1. Set model.output="spectra" temporarily, or
-  # 2. Call model.predict() with appropriate parameters to get spectrum outputs, or
-  # 3. Add a separate analysis method for dual-output models
 
   if norm == 'max':
     for i in range(pre.shape[0]):
@@ -103,6 +98,27 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   else:
     info = None
     error = None
+
+  # Check if this is a dual-output model (caeq_fc) that can also output spectra
+  # Only analyze spectra reconstruction if we have clean spectra ground truth
+  if hasattr(model, 'aeq') and model.model.startswith('caeq_') and clean_spectra is not None:
+    # Dual-output model: analyze both concentration and spectra reconstruction
+    if verbose > 0:
+      print(f"# Analyzing dual-output model: {model.model}")
+
+    # Temporarily change model output to get spectra predictions
+    original_output = model.output
+    model.output = "spectra"
+    spectra_pred = model.predict(inp, verbose=verbose)
+
+    # Analyze spectra reconstruction using clean spectra ground truth
+    spectra_info, spectra_error = _analyse_spectra_error(model, spectra_pred, inp, clean_spectra,
+                                                        folder, prefix+"_spectra", id, norm,
+                                                        verbose, image_dpi, screen_dpi, create_plots)
+
+    # Restore original output type
+    model.output = original_output
+
   # Store/print quantification results
   if save_conc:
     with open(os.path.join(folder, prefix+'_quantify.csv'), "w") as out_file:

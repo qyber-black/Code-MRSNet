@@ -253,7 +253,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_cnn_[FILTER]_[LATENT]_[pool|stride]_[DO], ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP] - see models in mrsnet for details.')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP] - see models in mrsnet for details.')
   p.add_argument('-a', '--autoencoder', type=str,
                  help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
@@ -684,10 +684,10 @@ def train(args):
                   print("Training on clean dataset")
           model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
                                         args.acquisitions, args.datatype, args.norm)
-          d_noise, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
-                                       acquisitions=args.acquisitions, datatype=args.datatype,
-                                       high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                       export_concentrations=False, verbose=args.verbose)
+          d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+                                            acquisitions=args.acquisitions, datatype=args.datatype,
+                                            high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                            export_concentrations=False, verbose=args.verbose)
           if ds_noisy.noise_added:
               d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
                                            acquisitions=args.acquisitions, datatype=args.datatype,
@@ -695,11 +695,6 @@ def train(args):
                                            export_concentrations=False, verbose=args.verbose)
           else:
               d_clean = d_noise
-
-          _, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
-                                      acquisitions=args.acquisitions, datatype=args.datatype,
-                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                      verbose=args.verbose)
 
           data = [d_noise, d_clean, d_conc]  # output last
           data_name = ds_noisy.name + "_" + ds_rest

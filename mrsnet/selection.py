@@ -211,7 +211,7 @@ class Select:
       # AEQ-FC model fully parameterised
       # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
       model_str = 'aeq_fc'
-      self.error_type = 'spectra'
+      self.error_type = 'concentrations'
       for marg in ["UNITS", "LAYERS", "ACT", "ACT-LAST", "DO"]:
         model_str += "_" + str(args['model_' + marg])
         del args['model_' + marg]
