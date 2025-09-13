@@ -20,42 +20,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, LeakyReLU
+from tensorflow.keras.layers import BatchNormalization, Dense, Dropout, Flatten
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
+from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops, reshape_spectra_data
 
-from .cnn import TimeHistory
-
-
-# Helper to construct dense layer
-def _dense_layer(m, units, activation, dropout):
-  """Construct a dense layer with optional batch normalization and dropout.
-
-  Parameters
-  ----------
-      m (keras.Sequential): Sequential model to add layers to
-      units (int): Number of units in the dense layer
-      activation (str): Activation function name
-      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
-  """
-  # Dense layer over last index (freq. bins) using given activation
-  # if dropout > 0: dropout rate after activation;
-  #            ==0: batch normalisation before activation;
-  #            < 0: nothing
-  m.add(Dense(units))
-  if dropout == 0.0:
-    m.add(BatchNormalization())
-  if activation[0:9] == "leakyrelu":
-    m.add(LeakyReLU(alpha=activation[9:]))
-  elif activation != "None":
-    m.add(Activation(activation))
-  # if None: create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
-  if dropout > 0.0:
-    m.add(Dropout(dropout))
 
 # Helper to construct dense layer
 def _dense_layer(m,units, activation, dropout, name=None):
@@ -74,9 +46,9 @@ def _dense_layer(m,units, activation, dropout, name=None):
       tensor: Output tensor
   """
   if activation == "None":
-    x = layers.Dense(units,name=name)(m)
+    x = Dense(units,name=name)(m)
   else:
-    x = layers.Dense(units, activation=activation, name=name)(m)
+    x = Dense(units, activation=activation, name=name)(m)
   if dropout == 0.0:
     x = BatchNormalization()(x)
   elif dropout > 0.0:

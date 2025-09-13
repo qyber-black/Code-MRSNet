@@ -38,9 +38,8 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
 from mrsnet.cfg import Cfg
+from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops
-
-from .cnn import TimeHistory
 
 
 # Helper to construct convolutional encoder layer

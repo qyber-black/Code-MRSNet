@@ -334,6 +334,7 @@ def simulate(args):
   Args:
       args: Parsed command-line arguments
   """
+  # FIXME: Add our own custom simulator
   # Simulate sub-command
   import mrsnet.basis as basis
   import mrsnet.dataset as dataset

@@ -462,7 +462,7 @@ class Select:
         val_p = [val_data['total']['abserror']['mean']]      # total MAE
 
         # FIXME: Store additional metrics for potential future use, for single and cross-validation below:
-        #        Currently we only use MAE for compatibility, but we could extend this to include other metrics like R^2, std (stability: 1/(std + 1e-6)), generalization (1/(|train_mae-val_mae| + 1e-6)) etc. based on the JSON error file data.
+        #        Currently we only use MAE, but we could extend this to include other metrics like R^2, std (stability: 1/(std + 1e-6)), generalization (1/(|train_mae-val_mae| + 1e-6)) etc. based on the JSON error file data.
 
       else:
         # Cross-validation case
