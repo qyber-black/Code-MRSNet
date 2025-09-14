@@ -544,7 +544,19 @@ def compare(args):
                         sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
     # Analyse with given concentrations
     from mrsnet.compare import compare_basis
-    compare_basis(ds, basis, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'])
+    # Decide output directory for comparison artifacts
+    out_dir = None
+    try:
+      # Prefer dataset folder if joblib, else use dataset path
+      if os.path.isdir(args.dataset):
+        out_dir = args.dataset
+      else:
+        out_dir = os.path.dirname(args.dataset)
+    except Exception:
+      out_dir = None
+    # Construct a clear save prefix
+    save_prefix = f"{basis.source}_{basis.manufacturer}_{basis.omega}_{basis.linewidth}_{basis.pulse_sequence}_{basis.sample_rate}_{basis.samples}"
+    compare_basis(ds, basis, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'], out_dir=out_dir, save_prefix=save_prefix)
   else:
     if args.verbose > 0:
       print("Nothing to compare, as no concentrations available/found")
