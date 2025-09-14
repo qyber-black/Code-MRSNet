@@ -980,6 +980,7 @@ class SelectGPO(Select):
       print(f"## Best: Model {best_model_idx} avg = {best_avg_performance:.8f} {Xdata[best_data_idx,:]!s}  of {unique_models} models")
 
     # If using Optuna, initialise study and inject existing observations
+    optuna_sampler_type = None  # Track which Optuna sampler was used
     if not use_gpyopt:
       try:
         import datetime
@@ -996,6 +997,7 @@ class SelectGPO(Select):
               independent_sampler=None,  # Use full GP for all parameters
               warn_independent_sampling=True
             )
+          optuna_sampler_type = "GPSampler"
           # Note: Optuna GPSampler uses Expected Improvement (EI) by default
           # and optimizes acquisition function internally (similar to GPyOpt's L-BFGS)
           if self.verbose > 0:
@@ -1012,6 +1014,7 @@ class SelectGPO(Select):
               n_startup_trials=min(20, max(5, len(var_keys) * 2)),
               n_ei_candidates=100
             )
+          optuna_sampler_type = "TPESampler"
           if self.verbose > 0:
             print("# WARNING: Using Optuna TPESampler instead of GPSampler")
             print("#   TPESampler uses Tree-structured Parzen Estimator with multivariate modeling")
@@ -1293,7 +1296,33 @@ class SelectGPO(Select):
       print(f"#   Total iterations: {current_iter}")
       print(f"#   Models evaluated: {unique_models}")
       print(f"#   Best performance: {best_avg_performance:.8f}")
-      print("#   Strategy: Original GPyOpt alternating sequential/thompson_sampling evaluators")
+      # Print model selection strategy used
+      if use_gpyopt:
+        print("#   Model selection strategy: GPyOpt with alternating evaluators")
+        print("#     - Startup phase: random sampling")
+        print("#     - Optimization phase: alternating between 'sequential' (exploitation) and 'thompson_sampling' (exploration)")
+      else:
+        print("#   Model selection strategy: Optuna with Bayesian Optimization")
+        if optuna_sampler_type == "GPSampler":
+          print("#     - Sampler: GPSampler (Gaussian Process)")
+          print("#     - Acquisition function: Expected Improvement (EI) with L-BFGS optimization")
+          print("#     - Startup trials: max(5, len(var_keys)), EI candidates: 200")
+        elif optuna_sampler_type == "TPESampler":
+          print("#     - Sampler: TPESampler (Tree-structured Parzen Estimator)")
+          print("#     - Multivariate modeling: enabled with grouping")
+          print("#     - Startup trials: min(20, max(5, len(var_keys) * 2)), EI candidates: 100")
+        else:
+          print("#     - Sampler: Unknown (fallback occurred)")
+      # Print special model switches (Cfg.dev flags)
+      cfg_flags = []
+      if Cfg.dev('selectgpo_optimise_noload'):
+        cfg_flags.append("selectgpo_optimise_noload (no loading existing samples)")
+      if Cfg.dev('selectgpo_no_search'):
+        cfg_flags.append("selectgpo_no_search (no search, use existing results only)")
+      if cfg_flags:
+        print("#   Special model switches:")
+        for flag in cfg_flags:
+          print(f"#     - {flag}")
 
     # GPO convergence
     fig, ax = plt.subplots(1,2)
