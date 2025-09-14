@@ -69,6 +69,7 @@ def main():
   add_arguments_default(p_compare)
   add_arguments_compare(p_compare)
   add_arguments_fft(p_compare)
+  add_arguments_noise_mc(p_compare)
   p_compare.set_defaults(func=compare)
 
   # Train
@@ -107,6 +108,15 @@ def main():
   add_arguments_default(p_benchmark)
   add_arguments_benchmark(p_benchmark)
   p_benchmark.set_defaults(func=benchmark)
+
+  # Sim-to-real benchmark comparison
+  p_sim2real = subparsers.add_parser('sim2real', help='Analyse sim-to-real gap across benchmark series.',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  add_arguments_default(p_sim2real)
+  add_arguments_basis(p_sim2real)
+  add_arguments_fft(p_sim2real)
+  add_arguments_noise_mc(p_sim2real)
+  p_sim2real.set_defaults(func=sim2real)
 
   args = parser.parse_args()
   if hasattr(args,"metabolites"):
@@ -212,7 +222,7 @@ def add_arguments_compare(p):
                  help='List of metabolites to use, as defined in mrsnet.molecules: '+str(molecules.NAMES)+'.')
   su_b = Cfg.get_su_bases()
   p.add_argument('--source', type=lambda s : s.lower(),
-                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', *su_b], default='lcmodel',
+                 choices=['lcmodel', 'fid-a', 'fid-a-2d', 'pygamma', *su_b], default='fid-a-2l',
                  help='Data source for the basis spectra (fid-a* requires Matlab).')
   p.add_argument('--manufacturer', type=lambda s : s.lower(),
                  choices=['siemens', 'ge', 'philips'], default='siemens',
@@ -281,6 +291,19 @@ def add_arguments_benchmark(p):
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='default',
                  help='Concentration normalisation: sum or max equal to 1; default means to use quantifier norm; none uses raw output)')
+
+def add_arguments_noise_mc(p):
+  """Add noise Monte Carlo comparison arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
+  p.add_argument('--noise_mc_trials', type=int, default=100,
+                 help='Number of Monte Carlo trials with ADC noise on reference spectra (0 disables).')
+  p.add_argument('--noise_sigma', type=float, default=0.03,
+                 help='Maximum sigma for simulated ADC noise per trial (uniform in [0, sigma]).')
+  p.add_argument('--noise_mu', type=float, default=0.0,
+                 help='Maximum mu for simulated ADC noise per trial (uniform in [0, mu]).')
 
 def gen_basis(args):
   """Generate basis set for MRS spectra.
@@ -555,8 +578,9 @@ def compare(args):
     except Exception:
       out_dir = None
     # Construct a clear save prefix
-    save_prefix = f"{basis.source}_{basis.manufacturer}_{basis.omega}_{basis.linewidth}_{basis.pulse_sequence}_{basis.sample_rate}_{basis.samples}"
-    compare_basis(ds, basis, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'], out_dir=out_dir, save_prefix=save_prefix)
+    save_prefix = f"{basis.source}_{basis.manufacturer}_{basis.omega}_{basis.linewidth}_{basis.pulse_sequence}_{args.sample_rate}_{args.samples}"
+    compare_basis(ds, basis, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'], out_dir=out_dir, save_prefix=save_prefix,
+                  noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu)
   else:
     if args.verbose > 0:
       print("Nothing to compare, as no concentrations available/found")
@@ -1042,6 +1066,72 @@ def benchmark(args):
                   show_conc=True, save_conc=True,
                   verbose=args.verbose, prefix="benchmark_all_"+args.norm,
                   image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'], norm=args.norm)
+
+def sim2real(args):
+  """Analyse sim-to-real gap across benchmark series using basis-to-dataset comparison.
+
+  For each benchmark sequence/variant, load experimental spectra, construct a matching basis
+  from provided args, and run basis-to-dataset comparison. Save per-series plots/metrics and
+  also combine all series into one dataset and analyse it in the same way.
+  """
+  import json as _json
+
+  import mrsnet.basis as basis
+  import mrsnet.dataset as dataset
+  from mrsnet.compare import compare_basis
+
+  with open(os.path.join(Cfg.val['path_benchmark'],"benchmark_sequences.json")) as f:
+    benchmark_seqs = _json.load(f)
+
+  # Coerce args possibly given as lists (from add_arguments_basis)
+  src = args.source[0] if isinstance(args.source, list) else args.source
+  man = args.manufacturer[0] if isinstance(args.manufacturer, list) else args.manufacturer
+  omg = args.omega[0] if isinstance(args.omega, list) else args.omega
+  lw = args.linewidth[0] if isinstance(args.linewidth, list) else args.linewidth
+  ps = args.pulse_sequence[0] if isinstance(args.pulse_sequence, list) else args.pulse_sequence
+
+  # Prepare basis per args
+  ba = basis.Basis(metabolites=sorted(['Cr','GABA','Glu','Gln','NAA']),
+                   source=src, manufacturer=man,
+                   omega=omg, linewidth=lw,
+                   pulse_sequence=ps,
+                   sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+
+  # Combined dataset across all benchmark series
+  combined = dataset.Dataset("Sim2Real All")
+  combined.metabolites = ba.metabolites
+  combined.pulse_sequence = ba.pulse_sequence
+
+  # Output base folder for this basis
+  basis_tag = f"{src}_{man}_{omg}_{lw}_{ps}_{args.sample_rate}_{args.samples}"
+  out_base = os.path.join(Cfg.val['path_sim2real'], basis_tag)
+  os.makedirs(out_base, exist_ok=True)
+
+  for b_id in benchmark_seqs.keys():
+    for variant in benchmark_seqs[b_id]:
+      if args.verbose > 0:
+        print(f"# Sim2Real: {b_id} / {variant}")
+      bm = dataset.Dataset(b_id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], b_id, variant),
+                                             concentrations=os.path.join(Cfg.val['path_benchmark'], b_id, 'concentrations.json'),
+                                             metabolites=ba.metabolites,
+                                             verbose=args.verbose)
+      # Store results in path_sim2real/basis_tag, include series and variant in filenames
+      out_dir = out_base
+      save_prefix = f"{b_id}_{variant}"
+      _ = compare_basis(bm, ba, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
+                         out_dir=out_dir, save_prefix=save_prefix,
+                         noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu)
+
+      # Append to combined dataset
+      for s, c in zip(bm.spectra, bm.concentrations, strict=False):
+        combined.spectra.append(s)
+        combined.concentrations.append(c)
+
+  # Analyse combined dataset like a single series
+  if len(combined.spectra) > 0 and len(combined.concentrations) == len(combined.spectra):
+    _ = compare_basis(combined, ba, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
+                      out_dir=out_base, save_prefix="all",
+                      noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu)
 
 def get_std_name(name):
   """Get standard name from path.

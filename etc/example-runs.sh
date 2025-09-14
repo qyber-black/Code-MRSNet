@@ -21,3 +21,6 @@ MRSNET_DEV=selectgpo_no_search ./mrsnet.py select -d ./data/sim-spectra-megapres
 
 # Model selection for cnn with reduce para search space
 ./mrsnet.py select -d ./data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/10000-1 -e 40 -k 0.8 --method gpo ./data/model-cnn/selection-spec/cnn-para-reduced.json -v -r 500
+
+# sim2real example
+python3 mrsnet.py sim2real --source fid-a-2d --linewidth 2.0 --noise_mc_trials 100 --noise_sigma 0.03 -v

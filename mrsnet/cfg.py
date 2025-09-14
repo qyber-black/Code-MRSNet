@@ -61,6 +61,7 @@ class Cfg:
     'path_simulation': None,  # Save path for simulation, searched first
     'path_model': None,       # Save path for model, searched first
     'path_benchmark': None,   # Save path for benchmark, searched first
+    'path_sim2real': None,    # Save path for sim-to-real comparison outputs
     'search_basis': [],       # Basis path list for searching
     'search_simulation': [],  # Simulation path list for searching
     'search_model': [],       # Model path list for searching
@@ -146,7 +147,8 @@ class Cfg:
       "path_basis": "basis",
       "path_simulation": "sim-spectra",
       "path_model": "model",
-      "path_benchmark": "benchmark"
+      "path_benchmark": "benchmark",
+      "path_sim2real": "sim2real"
     }
     for p in paths:
       if Cfg.val[p] is None:
