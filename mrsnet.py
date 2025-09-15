@@ -630,8 +630,15 @@ def train(args):
     from mrsnet.autoencoder import Autoencoder
     if args.verbose > 0:
       print(f"# Loading dataset {name} : {ds_rest}")
-    # Load noisy dataset first
-    ds_noisy = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],name,ds_rest))
+    # Load noisy dataset first, searching across configured simulation paths
+    ds_noisy = None
+    for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+      dn = os.path.join(spath, name, ds_rest)
+      if os.path.isdir(dn):
+        ds_noisy = dataset.Dataset.load(dn)
+        break
+    if ds_noisy is None:
+      raise RuntimeError(f"Dataset {args.dataset} not found")
     if args.model[0:3] == 'ae_':
       # If we train the autoencoder, not the quantifier, load clean dataset, if
       # dataset loaded was actualy noisy; otherwise we loaded clean dataset and
@@ -639,8 +646,15 @@ def train(args):
       if ds_noisy.noise_added:
         if args.verbose > 2:
           print("Noisy dataset loaded")
-        ds_clean = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],
-                                                     name,ds_rest), force_clean=True)
+        # Find clean version in same dataset folder using search paths
+        ds_clean = None
+        for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+          dn = os.path.join(spath, name, ds_rest)
+          if os.path.isdir(dn):
+            ds_clean = dataset.Dataset.load(dn, force_clean=True)
+            break
+        if ds_clean is None:
+          raise RuntimeError(f"Clean dataset for {args.dataset} not found")
         if args.verbose > 2:
           print("Clean dataset loaded")
       else:
@@ -702,8 +716,15 @@ def train(args):
       from mrsnet.ae_quantifier import AutoencoderQuantifier
       if args.verbose > 0:
           print(f"# Loading dataset {name} : {ds_rest}")
-      # Load noisy dataset first
-      ds_noisy = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'], name, ds_rest))
+      # Load noisy dataset first, searching across configured simulation paths
+      ds_noisy = None
+      for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+        dn = os.path.join(spath, name, ds_rest)
+        if os.path.isdir(dn):
+          ds_noisy = dataset.Dataset.load(dn)
+          break
+      if ds_noisy is None:
+        raise RuntimeError(f"Dataset {args.dataset} not found")
       if args.model[0:4] == 'caeq':
           # If we train the autoencoder, not the quantifier, load clean dataset, if
           # dataset loaded was actualy noisy; otherwise we loaded clean dataset and
@@ -711,8 +732,14 @@ def train(args):
           if ds_noisy.noise_added:
               if args.verbose > 2:
                   print("Noisy dataset loaded")
-              ds_clean = dataset.Dataset.load(os.path.join(Cfg.val['path_simulation'],
-                                                           name, ds_rest), force_clean=True)
+              ds_clean = None
+              for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+                  dn = os.path.join(spath, name, ds_rest)
+                  if os.path.isdir(dn):
+                      ds_clean = dataset.Dataset.load(dn, force_clean=True)
+                      break
+              if ds_clean is None:
+                  raise RuntimeError(f"Clean dataset for {args.dataset} not found")
               if args.verbose > 2:
                   print("Clean dataset loaded")
           else:
