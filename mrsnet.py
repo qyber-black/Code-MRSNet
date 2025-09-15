@@ -632,6 +632,10 @@ def train(args):
       print(f"# Loading dataset {name} : {ds_rest}")
     # Load noisy dataset first, searching across configured simulation paths
     ds_noisy = None
+    try:
+      ds_noisy = dataset.Dataset.load(args.dataset)
+    except Exception:
+      ds_noisy = None
     for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
       dn = os.path.join(spath, name, ds_rest)
       if os.path.isdir(dn):
@@ -648,6 +652,10 @@ def train(args):
           print("Noisy dataset loaded")
         # Find clean version in same dataset folder using search paths
         ds_clean = None
+        try:
+          ds_clean = dataset.Dataset.load(args.dataset)
+        except Exception:
+          ds_clean = None
         for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
           dn = os.path.join(spath, name, ds_rest)
           if os.path.isdir(dn):
@@ -718,6 +726,10 @@ def train(args):
           print(f"# Loading dataset {name} : {ds_rest}")
       # Load noisy dataset first, searching across configured simulation paths
       ds_noisy = None
+      try:
+        ds_noisy = dataset.Dataset.load(args.dataset)
+      except Exception:
+        ds_noisy = None
       for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
         dn = os.path.join(spath, name, ds_rest)
         if os.path.isdir(dn):
@@ -733,6 +745,10 @@ def train(args):
               if args.verbose > 2:
                   print("Noisy dataset loaded")
               ds_clean = None
+              try:
+                ds_clean = dataset.Dataset.load(args.dataset)
+              except Exception:
+                ds_clean = None
               for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
                   dn = os.path.join(spath, name, ds_rest)
                   if os.path.isdir(dn):

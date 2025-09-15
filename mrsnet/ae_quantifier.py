@@ -46,7 +46,7 @@ def _dense_layer(m,units, activation, dropout, name=None):
       tensor: Output tensor
   """
   if activation == "None":
-    x = Dense(units,name=name)(m)
+    x = Dense(units, name=name)(m)
   else:
     x = Dense(units, activation=activation, name=name)(m)
   if dropout == 0.0:
