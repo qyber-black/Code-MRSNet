@@ -634,53 +634,45 @@ def train(args):
     ds_noisy = None
     try:
       ds_noisy = dataset.Dataset.load(args.dataset)
+      ds_noisy_path = args.dataset
     except Exception:
       ds_noisy = None
-    for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
-      dn = os.path.join(spath, name, ds_rest)
-      if os.path.isdir(dn):
-        ds_noisy = dataset.Dataset.load(dn)
-        break
+    if ds_noisy is None:
+      for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+        dn = os.path.join(spath, name, ds_rest)
+        if os.path.isdir(dn):
+          ds_noisy = dataset.Dataset.load(dn)
+          ds_noisy_path = dn
+          break
     if ds_noisy is None:
       raise RuntimeError(f"Dataset {args.dataset} not found")
     if args.model[0:3] == 'ae_':
       # If we train the autoencoder, not the quantifier, load clean dataset, if
       # dataset loaded was actualy noisy; otherwise we loaded clean dataset and
       # use it as input and output for the autoencoder
-      if ds_noisy.noise_added:
-        if args.verbose > 2:
-          print("Noisy dataset loaded")
-        # Find clean version in same dataset folder using search paths
+      # Find clean version in same dataset folder using search paths
+      ds_clean = None
+      try:
+        ds_clean = dataset.Dataset.load(ds_noisy_path, force_clean=True)
+      except Exception:
         ds_clean = None
-        try:
-          ds_clean = dataset.Dataset.load(args.dataset)
-        except Exception:
-          ds_clean = None
-        for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
-          dn = os.path.join(spath, name, ds_rest)
-          if os.path.isdir(dn):
-            ds_clean = dataset.Dataset.load(dn, force_clean=True)
-            break
-        if ds_clean is None:
-          raise RuntimeError(f"Clean dataset for {args.dataset} not found")
-        if args.verbose > 2:
-          print("Clean dataset loaded")
-      else:
-        if args.verbose > 0:
-          print("Training on clean dataset")
       model = Autoencoder(args.model, args.metabolites, ds_noisy.pulse_sequence,
                           args.acquisitions, args.datatype, args.norm)
       d_noise, _ = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                    acquisitions=args.acquisitions, datatype=args.datatype,
                                    high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                                    export_concentrations=False, verbose=args.verbose)
-      if ds_noisy.noise_added:
+      if ds_clean is None:
+        print("WARNING: Training on clean dataset")
+        import numpy as np
+        d_clean = np.copy(d_noise)
+      else:
+        if args.verbose > 0:
+          print("# Loaded clean dataset")
         d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
                                      acquisitions=args.acquisitions, datatype=args.datatype,
                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                                      export_concentrations=False, verbose=args.verbose)
-      else:
-        d_clean = d_noise
       data = [d_noise, d_clean] # output last
       data_name = ds_noisy.name+"_"+ds_rest
     else:
@@ -688,7 +680,6 @@ def train(args):
       # needs to exist already and we just load it.
       #
       # Load the autoencoder model
-      print(args.autoencoder)
       id = get_std_name(args.autoencoder)
       name = []
       for k in range(0,len(id)):
@@ -729,47 +720,40 @@ def train(args):
       ds_noisy = None
       try:
         ds_noisy = dataset.Dataset.load(args.dataset)
+        ds_noisy_path = args.dataset
       except Exception:
         ds_noisy = None
-      for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
-        dn = os.path.join(spath, name, ds_rest)
-        if os.path.isdir(dn):
-          ds_noisy = dataset.Dataset.load(dn)
-          break
       if ds_noisy is None:
-        raise RuntimeError(f"Dataset {args.dataset} not found")
-      if ds_noisy.noise_added:
-        ds_clean = None
-        try:
-          ds_clean = dataset.Dataset.load(args.dataset)
-        except Exception:
-          ds_clean = None
         for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
           dn = os.path.join(spath, name, ds_rest)
           if os.path.isdir(dn):
-            ds_clean = dataset.Dataset.load(dn, force_clean=True)
+            ds_noisy = dataset.Dataset.load(dn)
+            ds_noisy_path = dn
             break
-        if ds_clean is None:
-          raise RuntimeError(f"Clean dataset for {args.dataset} not found")
-        if args.verbose > 2:
-          print("Clean dataset loaded")
-      else:
-        if args.verbose > 0:
-          print("Training on clean dataset")
+      if ds_noisy is None:
+        raise RuntimeError(f"Dataset {args.dataset} not found")
+      ds_clean = None
+      try:
+        ds_clean = dataset.Dataset.load(ds_noisy_path, force_clean=True)
+      except Exception:
+        ds_clean = None
       model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
                                     args.acquisitions, args.datatype, args.norm)
       d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
                                         acquisitions=args.acquisitions, datatype=args.datatype,
                                         high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
                                         export_concentrations=True, verbose=args.verbose)
-      if ds_noisy.noise_added:
-        d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
-                                      acquisitions=args.acquisitions, datatype=args.datatype,
-                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                      export_concentrations=False, verbose=args.verbose)
+      if ds_clean is None:
+        print("WARNING: Training on clean dataset")
+        import numpy as np
+        d_clean = np.copy(d_noise)
       else:
-        d_clean = d_noise
-
+        if args.verbose > 0:
+          print("# Loaded clean dataset")
+        d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
+                                     acquisitions=args.acquisitions, datatype=args.datatype,
+                                     high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                     export_concentrations=False, verbose=args.verbose)
       data = [d_noise, d_clean, d_conc]  # output last
       data_name = ds_noisy.name + "_" + ds_rest
   else:

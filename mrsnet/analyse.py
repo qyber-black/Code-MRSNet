@@ -101,7 +101,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
   # Check if this is a dual-output model (caeq_fc) that can also output spectra
   # Only analyze spectra reconstruction if we have clean spectra ground truth
-  if hasattr(model, 'aeq') and model.model.startswith('caeq_') and clean_spectra is not None:
+  if hasattr(model, 'caeq') and model.model.startswith('caeq_') and clean_spectra is not None:
     # Dual-output model: analyze both concentration and spectra reconstruction
     if verbose > 0:
       print(f"# Analyzing dual-output model: {model.model}")
@@ -113,7 +113,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
 
     # Analyze spectra reconstruction using clean spectra ground truth
     _, _, _ = _analyse_spectra_error(model, spectra_pred, inp, clean_spectra,
-                                     folder, prefix+"_spectra", id, norm,
+                                     folder, prefix, id, norm,
                                      verbose, image_dpi, screen_dpi, create_plots)
 
     # Restore original output type
@@ -457,7 +457,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
 
   # Plot and compare spectra
   if create_plots:
-    path = os.path.join(folder, prefix)
+    path = os.path.join(folder, prefix+"_spectra")
     if not os.path.exists(path):
       os.makedirs(path)
     if verbose > 0:

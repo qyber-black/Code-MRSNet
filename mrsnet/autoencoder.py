@@ -44,7 +44,6 @@ from mrsnet.train import calculate_flops
 # Global load context for subclassed model deserialization
 _FCAE_LOAD_CTX = None
 
-# Helper to construct dense layer
 def _dense_layer(x, units, activation, dropout, name=None):
   """Construct a dense layer with optional batch normalization and dropout using functional API.
 
@@ -74,13 +73,12 @@ def _dense_layer(x, units, activation, dropout, name=None):
     except ValueError as err:
       raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
   elif activation != "None":
+    # If None, create layer without activation function
     x = Activation(activation)(x)
-  # If None: Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
   if dropout > 0.0:
     x = Dropout(dropout)(x)
   return x
 
-#  Fully connected autoencoder via functional API
 @register_keras_serializable(package="mrsnet", name="FCAutoEnc")
 class FCAutoEnc(Model):
   """Fully connected autoencoder model for MRS spectra.
@@ -108,12 +106,6 @@ class FCAutoEnc(Model):
         dropout (float): Dropout rate
         name (str, optional): Model name. Defaults to 'FCAutoEnc'
     """
-    # n_specs: number of spectra (acquisisions x datatype)
-    # n_freqs: number of frequency bins in spectra
-    # layers_enc: number of layers in encoder
-    # layers_dec: number of layers in encoder
-    # activation: activation function (relu, sigmoid, tanh)
-    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
     self.n_specs = n_specs
     super().__init__(name=name, **kwargs)
 
@@ -191,7 +183,6 @@ class FCAutoEnc(Model):
     x = self.decoder(x)
     return x
 
-#  Encoder-quantifier where the encoder comes from an autoencoder
 @register_keras_serializable(package="mrsnet", name="EncQuant")
 class EncQuant(Model):
   """Encoder-quantifier model for concentration prediction.
@@ -216,33 +207,24 @@ class EncQuant(Model):
         dp (float): Dropout rate
         name (str, optional): Model name. Defaults to 'EncQuant'
     """
-    # encoder: pre-trained encoder model
-    # n_specs: number of spectra (acquisisions x datatype)
-    # n_freqs: number of frequency bins in spectra
-    # output_conc: number of output concentrations
-    # units: number of units in first dense quantifier layer
-    # layers: number of dense layers in quantifier (excluding last)
-    # act: activation of internal dense layers
-    # act_last: activation of output layer
     self.n_specs = n_specs
     super().__init__(name=name, **kwargs)
 
     # Encoder
     self.encoder = encoder
-    self.encoder.trainable = False # FIXME: maybe we want to continue training part/all of it anyway; needs testing
+    self.encoder.trainable = False # FIXME: we cold continue training the encoder when the quantifier is trained
 
     # Quantifier
-    q_in = keras.Input(shape=encoder.output_shape[1:], name="q_in)
+    q_in = keras.Input(shape=encoder.output_shape[1:], name="q_in")
     x = Flatten()(q_in)
     for _l in range(0, layers-1):
       x = _dense_layer(x, units, act, dp)
       units //= 2
-    # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    q_out = _dense_layer(x, output_conc, act_last, -1, name="q_out") #The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
+    q_out = _dense_layer(x, output_conc, act_last, -1, name="q_out")
 
     self.quantifier = keras.Model(inputs=q_in, outputs=q_out, name='Quantifier')
 
-    self.build((None, n_specs, n_freqs)) # Build encoder - quantifier
+    self.build((None, n_specs, n_freqs))
 
   def call(self,x):
     """Forward pass through the encoder-quantifier.
@@ -350,14 +332,13 @@ class Autoencoder:
         ae_shape (tuple): Shape of input data (n_specs, n_freqs)
         output_conc (int, optional): Number of output concentrations. Defaults to None
     """
-    # Autoencoder only; for quantifier use convert_to_quantifier
     n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
     n_freqs = ae_shape[1] # number of frequency bins in spectras
     p = self.model.split("_")
     if p[0] == "aeq":
       # Construct actual encoder-quantifier architecture
       if p[1] == "fc":
-        # Convert trained autoencoder to trainable quantifier
+        # Consrtuct quantifier from trained (auto)encoder
         # aeq_fc_UNITS_LAYERS_ACT_ACT-LAST_DO
         units = int(p[2])
         layers = int(p[3])
@@ -462,14 +443,6 @@ class Autoencoder:
     # (batch, acquisition x datatype, frequency) where the 2nd index is effectively
     # echo acquisition-dataypte signal as separate with a separate 1D network
     # (for now we do not have any operations crossing the channels, I think).
-    #
-    # FIXME: Something to consider:
-    # Instead, we could also reshape it to (batch x acquisition x datatype, frequency)
-    # meaning each signal, idependent of acquistion and datatype, is handled
-    # the same with the same network. We only have a collection of 1D signals for
-    # the autoencoder - for quantification then this would need some more complex
-    # reshaping as there we will have to consider the signals across acquisitons and
-    # datatypes.
 
     # Input spectra (for autoencoder and quantifier)
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
@@ -660,14 +633,6 @@ class Autoencoder:
     # (batch, acquisition x datatype, frequency) where the 2nd index is effectively
     # echo acquisition-dataypte signal as separate with a separate 1D network
     # (for now we do not have any operations crossing the channels, I think).
-    #
-    # FIXME: Something to consider: (also train_ae)
-    # Instead, we could also reshape it to (batch x acquisition x datatype, frequency)
-    # meaning each signal, idependent of acquistion and datatype, is handled
-    # the same with the same network. We only have a collection of 1D signals for
-    # the autoencoder - for quantification then this would need some more complex
-    # reshaping as there we will have to consider the signals across acquisitons and
-    # datatypes.
 
     # Input spectra (for autoencoder and quantifier)
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)

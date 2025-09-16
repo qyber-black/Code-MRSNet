@@ -34,7 +34,6 @@ from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops, reshape_spectra_data
 
 
-# Helper to construct dense layer
 def _dense_layer(m,units, activation, dropout, name=None):
   """Construct a dense layer using functional API.
 
@@ -62,7 +61,6 @@ def _dense_layer(m,units, activation, dropout, name=None):
     x = x
   return x
 
-#  Fully connected autoencoder via functional API
 @register_keras_serializable(package="mrsnet", name="FCAutoEncQuant")
 class FCAutoEncQuant(Model):
   """Fully connected autoencoder-quantifier model.
@@ -91,12 +89,6 @@ class FCAutoEncQuant(Model):
         dp (float): Dropout rate for quantifier
         name (str, optional): Model name. Defaults to 'FCAutoEncQuant'
     """
-    # n_specs: number of spectra (acquisitions x datatype)
-    # n_freqs: number of frequency bins in spectra
-    # layers_enc: number of layers in encoder
-    # layers_dec: number of layers in encoder
-    # activation: activation function (relu, sigmoid, tanh)
-    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
     self.n_specs = n_specs
     super().__init__(name=name)
 
@@ -125,13 +117,11 @@ class FCAutoEncQuant(Model):
     for _l in range(0, layers-1):
       x = _dense_layer(x, unit, act, dp)
       unit //= 2
-    # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
     q_out = _dense_layer(x, output_conc, act_last, -1, "q")
 
     self.model = keras.Model(inputs=e_in, outputs=[ae_out,q_out],name="CAEQ")
     self.model.build((None, n_specs, n_freqs))
 
-# Autoencoder model
 class AutoencoderQuantifier:
   """Autoencoder-quantifier model for MRSNet.
 
@@ -171,6 +161,7 @@ class AutoencoderQuantifier:
     self.acquisitions = acquisitions
     self.datatype = datatype
     self.norm = norm
+
     # Input spectra data (constant!)
     self.low_ppm = -1.0
     self.high_ppm = -4.5
@@ -203,7 +194,6 @@ class AutoencoderQuantifier:
         ae_shape (tuple): Shape of input data (n_specs, n_freqs)
         output_conc (int, optional): Number of output concentrations. Defaults to None
     """
-    # Autoencoder only; for quantifier use convert_to_quantifier
     n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
     n_freqs = ae_shape[1] # number of frequency bins in spectras
     p = self.model.split("_")
@@ -224,7 +214,9 @@ class AutoencoderQuantifier:
         dp = float(p[11])
         self.caeq = FCAutoEncQuant(n_specs,n_freqs,lin,lout,activation,activation_last,dropout,output_conc,unit,layers,act,act_last,dp).model
       else:
-        raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
+        raise RuntimeError(f"Unknown autoencoder-quantifier architecture: {self.model}")
+    else:
+      raise RuntimeError(f"Unknown architecture: {self.model}")
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
             image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -306,14 +298,6 @@ class AutoencoderQuantifier:
     # (batch, acquisition x datatype, frequency) where the 2nd index is effectively
     # echo acquisition-dataypte signal as separate with a separate 1D network
     # (for now we do not have any operations crossing the channels, I think).
-    #
-    # FIXME: Something to consider: (also train_ae)
-    # Instead, we could also reshape it to (batch x acquisition x datatype, frequency)
-    # meaning each signal, idependent of acquistion and datatype, is handled
-    # the same with the same network. We only have a collection of 1D signals for
-    # the autoencoder - for quantification then this would need some more complex
-    # reshaping as there we will have to consider the signals across acquisitons and
-    # datatypes.
 
     # Input spectra (for autoencoder and quantifier)
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
@@ -393,7 +377,7 @@ class AutoencoderQuantifier:
     for dpi in image_dpi:
       try:
         plot_model(self.caeq,
-                   to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
+                   to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
                    show_shapes=True,
                    show_dtype=True,
                    show_layer_names=True,
@@ -403,7 +387,7 @@ class AutoencoderQuantifier:
       except Exception as e:
         try:
           plot_model(self.caeq,
-                     to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.svg'),
+                     to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
                      show_shapes=True,
                      show_dtype=True,
                      show_layer_names=True,
@@ -469,7 +453,7 @@ class AutoencoderQuantifier:
       print(f"Q_LOSS    :  {d_score[2]:.12f} {v_score[2]:.12f}")
       print(f"AE_MAE    :  {d_score[3]:.12f} {v_score[3]:.12f}")
       print(f"Q_MAE     :  {d_score[4]:.12f} {v_score[4]:.12f}")
-    self._save_results(folder, "cae_quantifier", history.history, d_score, v_score, "TOTAL_LOSS", image_dpi, screen_dpi, verbose)
+    self._save_results(folder, "caeq", history.history, d_score, v_score, "TOTAL_LOSS", image_dpi, screen_dpi, verbose)
 
     d_res = {"TOTAL_LOSS": d_score[2], "MAE": d_score[4]}
     v_res = {"TOTAL_LOSS": v_score[2], "MAE": v_score[4]}
