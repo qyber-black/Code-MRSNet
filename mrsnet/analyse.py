@@ -112,9 +112,9 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
     spectra_pred = model.predict(inp, verbose=verbose)
 
     # Analyze spectra reconstruction using clean spectra ground truth
-    spectra_info, spectra_error = _analyse_spectra_error(model, spectra_pred, inp, clean_spectra,
-                                                        folder, prefix+"_spectra", id, norm,
-                                                        verbose, image_dpi, screen_dpi, create_plots)
+    _, _, _ = _analyse_spectra_error(model, spectra_pred, inp, clean_spectra,
+                                     folder, prefix+"_spectra", id, norm,
+                                     verbose, image_dpi, screen_dpi, create_plots)
 
     # Restore original output type
     model.output = original_output
@@ -457,7 +457,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
 
   # Plot and compare spectra
   if create_plots:
-    path = os.path.join(folder, prefix + "_spectra")
+    path = os.path.join(folder, prefix)
     if not os.path.exists(path):
       os.makedirs(path)
     if verbose > 0:
@@ -534,9 +534,5 @@ def _plot_predicted_spectra(model, prefix, s, inp, pre, out):
       axs[r,2].legend(loc='best')
 
       r += 1
-
-  # Clean up any temporary matplotlib objects
-  plt.clf()
-  plt.cla()
 
   return fig

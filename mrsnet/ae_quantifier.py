@@ -91,7 +91,7 @@ class FCAutoEncQuant(Model):
         dp (float): Dropout rate for quantifier
         name (str, optional): Model name. Defaults to 'FCAutoEncQuant'
     """
-    # n_specs: number of spectra (acquisisions x datatype)
+    # n_specs: number of spectra (acquisitions x datatype)
     # n_freqs: number of frequency bins in spectra
     # layers_enc: number of layers in encoder
     # layers_dec: number of layers in encoder
@@ -101,36 +101,35 @@ class FCAutoEncQuant(Model):
     super().__init__(name=name)
 
     # Encoder
-    encoder_input = keras.Input(shape=(n_specs,n_freqs),  name = "spectra_input")
+    e_in = keras.Input(shape=(n_specs,n_freqs),  name = "spectra_input")
     units = n_freqs
-    x = _dense_layer(encoder_input, units, activation, dropout)
-    units //=2
+    x = _dense_layer(e_in, units, activation, dropout)
+    units //= 2
     for _l in range(0,layers_enc-2):
       x = _dense_layer(x, units, activation, dropout)
       units //= 2
 
-    encoder_output = _dense_layer(x, units, activation, -1) # no regulariser at latent representation
+    e_out = _dense_layer(x, units, activation, -1) # no regulariser at latent representation
 
     # Decoder
     units = n_freqs // (2 ** (layers_dec-1))
-    x = _dense_layer(encoder_output, units, activation, -1)
+    x = _dense_layer(e_out, units, activation, -1)
     units = n_freqs // (2 ** (layers_dec-2))
     for _l in range(0, layers_dec-2):
       x = _dense_layer(x, units, activation, -1)
       units *= 2
-    decoder_output = _dense_layer(x, units, activation_last, -1, "decoder_output")
+    ae_out = _dense_layer(x, units, activation_last, -1, "ae")
 
     #Quantifier
-    x = Flatten()(encoder_output)
+    x = Flatten()(e_out)
     for _l in range(0, layers-1):
       x = _dense_layer(x, unit, act, dp)
       unit //= 2
     # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    quantifier_output = _dense_layer(x, output_conc, act_last, -1, "quantifier_output")
+    q_out = _dense_layer(x, output_conc, act_last, -1, "q")
 
-    self.model = keras.Model(inputs=encoder_input, outputs=[decoder_output,quantifier_output],name="AEQ")
+    self.model = keras.Model(inputs=e_in, outputs=[ae_out,q_out],name="CAEQ")
     self.model.build((None, n_specs, n_freqs))
-    #self.model.summary()
 
 # Autoencoder model
 class AutoencoderQuantifier:
@@ -151,7 +150,7 @@ class AutoencoderQuantifier:
       high_ppm (float): Upper PPM bound for input data
       fft_samples (int): Number of FFT samples
       train_dataset_name (str): Name of training dataset
-      aeq (keras.Model): The actual autoencoder-quantifier model
+      caeq (keras.Model): The actual autoencoder-quantifier model
   """
 
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype,norm):
@@ -178,7 +177,7 @@ class AutoencoderQuantifier:
     self.fft_samples = 2048
 
     self.train_dataset_name = None
-    self.aeq = None
+    self.caeq = None
 
   def __str__(self):
     """Return the model architecture string.
@@ -193,7 +192,7 @@ class AutoencoderQuantifier:
 
   def reset(self):
     """Reset the model to initial state."""
-    self.aeq = None
+    self.caeq = None
     self.train_dataset_name = None
 
   def _construct(self, ae_shape, output_conc=None):
@@ -212,8 +211,7 @@ class AutoencoderQuantifier:
       # Construct actual encoder-quantifier architecture
       if p[1] == "fc":
         # Convert trained autoencoder to trainable quantifier
-        # aeq_fc_UNITS_LAYERS_ACT[_ACT-LAST]
-        # FIXME: more arguments - DO (dropout/BatchNorm/Noting), etc.
+        # caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP]
         lin = int(p[2])
         lout = int(p[3])
         activation = p[4]
@@ -224,13 +222,12 @@ class AutoencoderQuantifier:
         act = p[9]
         act_last = p[10]
         dp = float(p[11])
-        self.aeq = FCAutoEncQuant(n_specs,n_freqs,lin,lout,activation,activation_last,dropout,output_conc,unit,layers,act,act_last,dp).model
-        #For example: FCAEQ = FCAutoEncQuant(2, 2048, 5, 7, "tanh", "tanh", 0.3, 5, 256, 4, "tanh", "tanh", 0.3)
+        self.caeq = FCAutoEncQuant(n_specs,n_freqs,lin,lout,activation,activation_last,dropout,output_conc,unit,layers,act,act_last,dp).model
       else:
         raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
-              image_dpi=[300], screen_dpi=96, train_dataset_name=""):
+            image_dpi=[300], screen_dpi=96, train_dataset_name=""):
       """Train the autoencoder-quantifier model.
 
       Parameters
@@ -269,12 +266,12 @@ class AutoencoderQuantifier:
         os.makedirs(folder)
 
       if self.model[0:4] == "caeq":
-        return self._train_aeq(d_data, v_data, epochs, batch_size, folder, verbose,
-                               image_dpi, screen_dpi, train_dataset_name, devices)
+        return self._train_caeq(d_data, v_data, epochs, batch_size, folder, verbose,
+                                image_dpi, screen_dpi, train_dataset_name, devices)
       raise RuntimeError(f"Unknown autoencoder model {self.model}")
 
-  def _train_aeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
-                image_dpi, screen_dpi, train_dataset_name, devices):
+  def _train_caeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
+                  image_dpi, screen_dpi, train_dataset_name, devices):
     """Train the autoencoder-quantifier model.
 
     Parameters
@@ -332,29 +329,30 @@ class AutoencoderQuantifier:
     train_data_target = tf.data.Dataset.from_tensor_slices((d_spectra_out, d_conc))
 
     if v_data is not None:
-        v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
-        v_spectra_in = reshape_spectra_data(v_spectra_in)
+      v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
+      v_spectra_in = reshape_spectra_data(v_spectra_in)
 
-        v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
-        v_spectra_out = reshape_spectra_data(v_spectra_out)
-        v_conc = tf.convert_to_tensor(v_data[-1], dtype=tf.float32)
-        val_data_spectra = tf.data.Dataset.from_tensor_slices(v_spectra_in)
-        val_data_target = tf.data.Dataset.from_tensor_slices((v_spectra_out, v_conc))
+      v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
+      v_spectra_out = reshape_spectra_data(v_spectra_out)
+      v_conc = tf.convert_to_tensor(v_data[-1], dtype=tf.float32)
+      val_data_spectra = tf.data.Dataset.from_tensor_slices(v_spectra_in)
+      val_data_target = tf.data.Dataset.from_tensor_slices((v_spectra_out, v_conc))
 
     else:
-        val_data_spectra = None
-        val_data_target = None
+      val_data_spectra = None
+      val_data_target = None
     if verbose > 0:
-        print("  Spectra In:",d_spectra_in.shape,"[spectrum, acquisition x datatype, frequency]")
-        print("  Spectra Out:", d_spectra_out.shape, "[spectrum, acquisition x datatype, frequency]")
-        print("  Concentrations Out:",d_conc.shape,"[spectrum, metabolite_concentration]")
+      print("  Spectra In:",d_spectra_in.shape,"[spectrum, acquisition x datatype, frequency]")
+      print("  Spectra Out:", d_spectra_out.shape, "[spectrum, acquisition x datatype, frequency]")
+      print("  Concentrations Out:",d_conc.shape,"[spectrum, metabolite_concentration]")
 
     # Autoencoder Quantification Network training
     if verbose > 0:
       print(f"# Train Autoencoder Quantification Network {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
-    loss = keras.losses.Huber(name='huber_loss')
+    loss_huber = keras.losses.Huber(name='huber_loss')
+    loss_mae = keras.losses.MeanAbsoluteError(name='mae_loss')
 
     if len(devices) > 1:
       # Multi-GPU training
@@ -367,9 +365,12 @@ class AutoencoderQuantifier:
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
                                           epsilon=Cfg.val['epsilon'])
-        self.aeq.compile(loss=[loss,loss],
-                        optimizer=optimiser,
-                        metrics=['mae'])
+        self.caeq.compile(loss=[loss_huber,loss_mae],
+                          optimizer=optimiser,
+                          metrics={
+                            'ae': ['mae'],
+                            'q': ['mae']
+                          })
     else:
       # Single GPU / CPU training
       dev_multiplier = 1
@@ -379,58 +380,61 @@ class AutoencoderQuantifier:
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
                                         epsilon=Cfg.val['epsilon'])
-      self.aeq.compile(loss=[loss,loss],
-                      optimizer=optimiser,
-                      metrics=['mae'])
+      self.caeq.compile(loss=[loss_huber,loss_mae],
+                        optimizer=optimiser,
+                        metrics={
+                          'ae': ['mae'],
+                          'q': ['mae']
+                        })
 
     # Calculate FLOPs
-    self.flops = calculate_flops(self.aeq, d_spectra_in.shape[1:])
+    self.flops = calculate_flops(self.caeq, d_spectra_in.shape[1:])
 
     for dpi in image_dpi:
+      try:
+        plot_model(self.caeq,
+                   to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
+      except Exception as e:
         try:
-            plot_model(self.aeq,
-                      to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
-                      show_shapes=True,
-                      show_dtype=True,
-                      show_layer_names=True,
-                      rankdir='TB',
-                      expand_nested=True,
-                      dpi=dpi)
-        except Exception as e:
-            try:
-                plot_model(self.aeq,
-                          to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.svg'),
-                          show_shapes=True,
-                          show_dtype=True,
-                          show_layer_names=True,
-                          rankdir='TB',
-                          expand_nested=True,
-                          dpi=dpi)
-                if verbose > 0:
-                    print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
-            except Exception as e2:
-                if verbose > 0:
-                    print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
+          plot_model(self.caeq,
+                     to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
+          if verbose > 0:
+            print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
+        except Exception as e2:
+          if verbose > 0:
+            print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
 
     if verbose > 0:
-        self.aeq.summary()
+      self.caeq.summary()
 
 
     timer = TimeHistory(epochs)
     callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                                 min_delta=1e-8,
-                                                 patience=25,
-                                                 mode='min',
-                                                 verbose=(verbose > 0),
-                                                 restore_best_weights=True),
+                                               min_delta=1e-8,
+                                               patience=25,
+                                               mode='min',
+                                               verbose=(verbose > 0),
+                                               restore_best_weights=True),
                  timer]
 
     # Dataset options
     train_data=tf.data.Dataset.zip((train_data_spectra,train_data_target))
     if v_data is not None:
-        val_data=tf.data.Dataset.zip((val_data_spectra, val_data_target))
+      val_data=tf.data.Dataset.zip((val_data_spectra, val_data_target))
     else:
-        val_data=None
+      val_data=None
 
     # Dataset options
     # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
@@ -439,36 +443,36 @@ class AutoencoderQuantifier:
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
-    history = self.aeq.fit(train_data,
-                          validation_data=val_data,
-                          epochs=epochs,
-                          verbose=(verbose > 0)*2,
-                          shuffle=True,
-                          callbacks=callbacks)
+    history = self.caeq.fit(train_data,
+                            validation_data=val_data,
+                            epochs=epochs,
+                            verbose=(verbose > 0)*2,
+                            shuffle=True,
+                            callbacks=callbacks)
     le = len(history.history['loss'])
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
     if verbose > 0:
       print("# Evaluating Quantifier")
-    d_score = self.aeq.evaluate(d_spectra_in, (d_spectra_out,d_conc), verbose=(verbose > 0)*2)
+    d_score = self.caeq.evaluate(d_spectra_in, (d_spectra_out,d_conc), verbose=(verbose > 0)*2)
     if v_data is not None:
-      v_score = self.aeq.evaluate(v_spectra_in, (v_spectra_out,v_conc), verbose=(verbose > 0)*2)
+      v_score = self.caeq.evaluate(v_spectra_in, (v_spectra_out,v_conc), verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan,np.nan,np.nan,np.nan])
     if verbose > 0:
       print( "             Train          Validation")
-      print(f"TOTAL_HUBER_LOSS:  {d_score[0]:.12f} {v_score[0]:.12f}")
-      print(f"AE_LOSS       :  {d_score[1]:.12f} {v_score[1]:.12f}")
-      print(f"Q_LOSS       :  {d_score[2]:.12f} {v_score[2]:.12f}")
-      print(f"AE_MAE       :  {d_score[3]:.12f} {v_score[3]:.12f}")
-      print(f"Q_MAE       :  {d_score[4]:.12f} {v_score[4]:.12f}")
-    self._save_results(folder, "cae_quantifier", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
+      print(f"TOTAL_LOSS:  {d_score[0]:.12f} {v_score[0]:.12f}")
+      print(f"AE_LOSS   :  {d_score[1]:.12f} {v_score[1]:.12f}")
+      print(f"Q_LOSS    :  {d_score[2]:.12f} {v_score[2]:.12f}")
+      print(f"AE_MAE    :  {d_score[3]:.12f} {v_score[3]:.12f}")
+      print(f"Q_MAE     :  {d_score[4]:.12f} {v_score[4]:.12f}")
+    self._save_results(folder, "cae_quantifier", history.history, d_score, v_score, "TOTAL_LOSS", image_dpi, screen_dpi, verbose)
 
-    d_res = {loss:d_score[2],"MAE":d_score[4]}
-    v_res = {loss:v_score[2],"MAE":v_score[4]}
+    d_res = {"TOTAL_LOSS": d_score[2], "MAE": d_score[4]}
+    v_res = {"TOTAL_LOSS": v_score[2], "MAE": v_score[4]}
 
     return d_res, v_res
 
@@ -496,9 +500,9 @@ class AutoencoderQuantifier:
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
     data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
     if self.output == "concentrations":
-        return np.array(self.aeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
+      return np.array(self.caeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
     if self.output == "spectra":
-        return np.array(tf.reshape(self.aeq.predict(data, verbose=(verbose > 0) * 2)[0], out_shape), dtype=np.float64)
+      return np.array(tf.reshape(self.caeq.predict(data, verbose=(verbose > 0) * 2)[0], out_shape), dtype=np.float64)
     raise RuntimeError(f"Unknown output {self.output}")
 
   def save(self, folder):
@@ -509,13 +513,13 @@ class AutoencoderQuantifier:
         folder (str): Directory to save the model
     """
     os.makedirs(folder, exist_ok=True)
-    self.aeq.save(os.path.join(folder, "model.keras"))
+    self.caeq.save(os.path.join(folder, "model.keras"))
 
     # Calculate model metrics from summary
     # Capture model summary output
     old_stdout = sys.stdout
     sys.stdout = buffer = io.StringIO()
-    self.aeq.summary()
+    self.caeq.summary()
     sys.stdout = old_stdout
     summary_output = buffer.getvalue()
     # Parse parameter counts from summary
@@ -563,88 +567,78 @@ class AutoencoderQuantifier:
 
   @staticmethod
   def load(path):
-      """Load a saved model from disk.
+    """Load a saved model from disk.
 
-      Parameters
-      ----------
-          path (str): Directory containing the saved model
+    Parameters
+    ----------
+        path (str): Directory containing the saved model
 
-      Returns
-      -------
-          AutoencoderQuantifier: Loaded model instance
-      """
-      with open(os.path.join(path, "mrsnet.json")) as f:
-          data = json.load(f)
-      model = AutoencoderQuantifier(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
-                          data['datatype'], data['norm'])
-      model.output = data['output']
-      model.train_dataset_name = data['train_dataset_name']
-      model.aeq = load_model(os.path.join(path, "model.keras"),
-                             custom_objects={
-                               "FCAutoEncQuant": FCAutoEncQuant
-                             })
-      return model
+    Returns
+    -------
+        AutoencoderQuantifier: Loaded model instance
+    """
+    with open(os.path.join(path, "mrsnet.json")) as f:
+        data = json.load(f)
+    model = AutoencoderQuantifier(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
+                        data['datatype'], data['norm'])
+    model.output = data['output']
+    model.train_dataset_name = data['train_dataset_name']
+    model.caeq = load_model(os.path.join(path, "model.keras"),
+                            custom_objects={
+                              "FCAutoEncQuant": FCAutoEncQuant
+                            })
+    return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
-      """Save training results to files.
+    """Save training results to files.
 
-      Parameters
-      ----------
-          folder (str): Output directory
-          prefix (str): File prefix for saved files
-          history (dict): Training history
-          d_score (list): Training scores
-          v_score (list): Validation scores
-          loss (str): Loss function name
-          image_dpi (list): Image DPI settings
-          screen_dpi (int): Screen DPI setting
-          verbose (int): Verbosity level
-      """
-      keys = sorted(history.keys())
-      # History data
-      with open(os.path.join(folder, prefix + '_history.csv'), "w") as out_file:
-          writer = csv.writer(out_file, delimiter=",")
-          if self.model[0:4] == "caeq":
-              writer.writerows([[self.model + " " + prefix.upper() + " Training Results", "", "", "", ""],
-                                [""],
-                                ["", "Train", "Validation"],
-                                ["TOTAL_LOSS", d_score[0], v_score[0]],
-                                ["AE_LOSS",d_score[1], v_score[1]],
-                                ["AEQ_LOSS", d_score[2], v_score[2]],
-                                ["AE_MAE",d_score[3], v_score[3]],
-                                ["AEQ_MAE", d_score[4], v_score[4]],
-                                [""],
-                                ["History"]])
-          else:
-              writer.writerows(
-                  [[self.model + " " + prefix.upper() + " Training Results"],
-                   [""],
-                   ["", "Train", "Validation"],
-                   [loss.name.upper(), d_score[0], v_score[0]],
-                   ["MAE", d_score[1], v_score[1]],
-                   [""],
-                   ["History"]])
-          writer.writerow(keys)
-          writer.writerows(zip(*[history[key] for key in keys], strict=False))
-      # Plot
-      fig, axes = plt.subplots(1, 3)
-      fig.suptitle(f"{self.model} {prefix.upper()} Training Results")
-      for key in keys:
-          if loss in key or 'loss' in key:
-              axes[0].semilogy(history[key], label=key)
-              axes[0].set_ylabel(loss.name.upper())
-              axes[0].legend(loc='upper right')
-          if 'mae' in key:
-              axes[1].semilogy(history[key], label=key)
-              axes[1].set_ylabel('MAE')
-              axes[1].legend(loc='upper right')
-          if 'time' in key:
-              axes[2].plot(history[key], label=key)
-              axes[2].set_ylabel('Time (ms)')
-              axes[2].legend(loc='upper right')
-      for dpi in image_dpi:
-          plt.savefig(os.path.join(folder, prefix + '_history@' + str(dpi) + '.png'), dpi=dpi)
-      if verbose > 1:
-          fig.set_dpi(screen_dpi)
-          plt.show(block=True)
-      plt.close()
+    Parameters
+    ----------
+        folder (str): Output directory
+        prefix (str): File prefix for saved files
+        history (dict): Training history
+        d_score (list): Training scores
+        v_score (list): Validation scores
+        loss (str): Loss function name
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        verbose (int): Verbosity level
+    """
+    keys = sorted(history.keys())
+    # History data
+    with open(os.path.join(folder, prefix + '_history.csv'), "w") as out_file:
+      writer = csv.writer(out_file, delimiter=",")
+      writer.writerows([[self.model + " " + prefix.upper() + " Training Results", "", "", "", ""],
+                        [""],
+                        ["", "Train", "Validation"],
+                        ["TOTAL_LOSS", d_score[0], v_score[0]],
+                        ["AE_LOSS",d_score[1], v_score[1]],
+                        ["Q_LOSS", d_score[2], v_score[2]],
+                        ["AE_MAE",d_score[3], v_score[3]],
+                        ["Q_MAE", d_score[4], v_score[4]],
+                        [""],
+                        ["History"]])
+      writer.writerow(keys)
+      writer.writerows(zip(*[history[key] for key in keys], strict=False))
+    # Plot
+    fig, axes = plt.subplots(1, 3)
+    fig.suptitle(f"{self.model} {prefix.upper()} Training Results")
+    for key in keys:
+      if loss in key or 'loss' in key:
+        axes[0].semilogy(history[key], label=key)
+        axes[0].set_ylabel(loss.upper())
+        axes[0].legend(loc='upper right')
+      if 'mae' in key:
+        axes[1].semilogy(history[key], label=key)
+        axes[1].set_ylabel('MAE')
+        axes[1].legend(loc='upper right')
+      if 'time' in key:
+        axes[2].plot(history[key], label=key)
+        axes[2].set_ylabel('Time (ms)')
+        axes[2].legend(loc='upper right')
+    for dpi in image_dpi:
+      plt.savefig(os.path.join(folder, prefix + '_history@' + str(dpi) + '.png'), dpi=dpi)
+    if verbose > 1:
+      fig.set_dpi(screen_dpi)
+      plt.show(block=True)
+    plt.close()

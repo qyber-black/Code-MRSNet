@@ -724,7 +724,7 @@ def train(args):
   elif args.model[0:4] == 'caeq':
       from mrsnet.ae_quantifier import AutoencoderQuantifier
       if args.verbose > 0:
-          print(f"# Loading dataset {name} : {ds_rest}")
+        print(f"# Loading dataset {name} : {ds_rest}")
       # Load noisy dataset first, searching across configured simulation paths
       ds_noisy = None
       try:
@@ -738,46 +738,40 @@ def train(args):
           break
       if ds_noisy is None:
         raise RuntimeError(f"Dataset {args.dataset} not found")
-      if args.model[0:4] == 'caeq':
-          # If we train the autoencoder, not the quantifier, load clean dataset, if
-          # dataset loaded was actualy noisy; otherwise we loaded clean dataset and
-          # use it as input and output for the autoencoder
-          if ds_noisy.noise_added:
-              if args.verbose > 2:
-                  print("Noisy dataset loaded")
-              ds_clean = None
-              try:
-                ds_clean = dataset.Dataset.load(args.dataset)
-              except Exception:
-                ds_clean = None
-              for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
-                  dn = os.path.join(spath, name, ds_rest)
-                  if os.path.isdir(dn):
-                      ds_clean = dataset.Dataset.load(dn, force_clean=True)
-                      break
-              if ds_clean is None:
-                  raise RuntimeError(f"Clean dataset for {args.dataset} not found")
-              if args.verbose > 2:
-                  print("Clean dataset loaded")
-          else:
-              if args.verbose > 0:
-                  print("Training on clean dataset")
-          model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
-                                        args.acquisitions, args.datatype, args.norm)
-          d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
-                                            acquisitions=args.acquisitions, datatype=args.datatype,
-                                            high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                            export_concentrations=False, verbose=args.verbose)
-          if ds_noisy.noise_added:
-              d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
-                                           acquisitions=args.acquisitions, datatype=args.datatype,
-                                           high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                           export_concentrations=False, verbose=args.verbose)
-          else:
-              d_clean = d_noise
+      if ds_noisy.noise_added:
+        ds_clean = None
+        try:
+          ds_clean = dataset.Dataset.load(args.dataset)
+        except Exception:
+          ds_clean = None
+        for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+          dn = os.path.join(spath, name, ds_rest)
+          if os.path.isdir(dn):
+            ds_clean = dataset.Dataset.load(dn, force_clean=True)
+            break
+        if ds_clean is None:
+          raise RuntimeError(f"Clean dataset for {args.dataset} not found")
+        if args.verbose > 2:
+          print("Clean dataset loaded")
+      else:
+        if args.verbose > 0:
+          print("Training on clean dataset")
+      model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
+                                    args.acquisitions, args.datatype, args.norm)
+      d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+                                        acquisitions=args.acquisitions, datatype=args.datatype,
+                                        high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                        export_concentrations=True, verbose=args.verbose)
+      if ds_noisy.noise_added:
+        d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
+                                      acquisitions=args.acquisitions, datatype=args.datatype,
+                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                      export_concentrations=False, verbose=args.verbose)
+      else:
+        d_clean = d_noise
 
-          data = [d_noise, d_clean, d_conc]  # output last
-          data_name = ds_noisy.name + "_" + ds_rest
+      data = [d_noise, d_clean, d_conc]  # output last
+      data_name = ds_noisy.name + "_" + ds_rest
   else:
     raise RuntimeError(f"Unknown model {args.model}")
   if args.verbose > 0:

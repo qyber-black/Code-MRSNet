@@ -534,7 +534,7 @@ class Split(Train):
     idx = np.arange(0,data_dim)
     if shuffle:
       if verbose > 0:
-        print("  Suffle data")
+        print("  Shuffle data")
       rng = np.random.default_rng()
       rng.shuffle(idx)
     # Split
@@ -749,7 +749,7 @@ class KFold(Train):
     idx = np.arange(0,data_dim)
     if shuffle:
       if verbose > 0:
-        print("  Suffle data")
+        print("  Shuffle data")
       rng = np.random.default_rng()
       rng.shuffle(idx)
     # Venetian blinds splitting into buckets

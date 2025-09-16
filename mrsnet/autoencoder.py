@@ -69,10 +69,10 @@ def _dense_layer(x, units, activation, dropout, name=None):
     x = BatchNormalization()(x)
   if activation.startswith("leakyrelu") and len(activation) > 9:
     try:
-        alpha = float(activation[9:])
-        x = LeakyReLU(alpha=alpha)(x)
+      alpha = float(activation[9:])
+      x = LeakyReLU(alpha=alpha)(x)
     except ValueError as err:
-        raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
+      raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
   elif activation != "None":
     x = Activation(activation)(x)
   # If None: Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
@@ -232,15 +232,15 @@ class EncQuant(Model):
     self.encoder.trainable = False # FIXME: maybe we want to continue training part/all of it anyway; needs testing
 
     # Quantifier
-    quantifier_input = keras.Input(shape=encoder.output_shape[1:], name="quantifier_input")
-    x = Flatten()(quantifier_input)
+    q_in = keras.Input(shape=encoder.output_shape[1:], name="q_in)
+    x = Flatten()(q_in)
     for _l in range(0, layers-1):
       x = _dense_layer(x, units, act, dp)
       units //= 2
     # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    quantifier_output = _dense_layer(x, output_conc, act_last, -1, name="quantifier_output") #The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
+    q_out = _dense_layer(x, output_conc, act_last, -1, name="q_out") #The folder will be look like aeq_fc_384_2_tanh_None_0.3, more straightforward
 
-    self.quantifier = keras.Model(inputs=quantifier_input, outputs=quantifier_output, name='Quantifier')
+    self.quantifier = keras.Model(inputs=q_in, outputs=q_out, name='Quantifier')
 
     self.build((None, n_specs, n_freqs)) # Build encoder - quantifier
 
@@ -358,8 +358,7 @@ class Autoencoder:
       # Construct actual encoder-quantifier architecture
       if p[1] == "fc":
         # Convert trained autoencoder to trainable quantifier
-        # aeq_fc_UNITS_LAYERS_ACT[_ACT-LAST]
-        # FIXME: more arguments - DO (dropout/BatchNorm/Noting), etc.
+        # aeq_fc_UNITS_LAYERS_ACT_ACT-LAST_DO
         units = int(p[2])
         layers = int(p[3])
         act = p[4]
@@ -370,10 +369,11 @@ class Autoencoder:
         raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
     elif p[0] == "ae":
       if p[1] == "fc":
-        # ae_fc_[LIN]_[LOUT]_[ACT]_[DO]
+        # ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]
         #    LIN: dense layers in encoder
         #    LOUT: dense layers in decoder
         #    ACT: activation function (relu, sigmoid, tanh, ...)
+        #    ACT-LAST: last activation function (relu, sigmoid, tanh, ...)
         #    DO: Dropout if > 0.0; 0.0, BatchNormalisation; negative, no regulariser
         lin = int(p[2])
         lout = int(p[3])
@@ -602,7 +602,7 @@ class Autoencoder:
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.ae.fit(train_data,
@@ -730,39 +730,39 @@ class Autoencoder:
     for dpi in image_dpi:
       try:
         plot_model(self.ae.encoder,
-                  to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
-                  show_shapes=True,
-                  show_dtype=True,
-                  show_layer_names=True,
-                  rankdir='TB',
-                  expand_nested=True,
-                  dpi=dpi)
+                   to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
         plot_model(self.ae.quantifier,
-                  to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
-                  show_shapes=True,
-                  show_dtype=True,
-                  show_layer_names=True,
-                  rankdir='TB',
-                  expand_nested=True,
-                  dpi=dpi)
+                   to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
       except Exception as e:
         try:
           plot_model(self.ae.encoder,
-                    to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.svg'),
-                    show_shapes=True,
-                    show_dtype=True,
-                    show_layer_names=True,
-                    rankdir='TB',
-                    expand_nested=True,
-                    dpi=dpi)
+                     to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
           plot_model(self.ae.quantifier,
-                    to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.svg'),
-                    show_shapes=True,
-                    show_dtype=True,
-                    show_layer_names=True,
-                    rankdir='TB',
-                    expand_nested=True,
-                    dpi=dpi)
+                     to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
           if verbose > 0:
             print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
         except Exception as e2:
@@ -789,7 +789,7 @@ class Autoencoder:
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
     train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
 
     # Train
     history = self.ae.fit(train_data,
@@ -894,21 +894,21 @@ class Autoencoder:
 
     with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
-          'model': self.model,
-          'autoencoder_model': self.autoencoder_model if hasattr(self,'autoencoder_model') else None,
-          'autoencoder_train_dataset_name': self.autoencoder_train_dataset_name if hasattr(self,'autoencoder_train_dataset_name')
-                                            else None,
-          'metabolites': self.metabolites,
-          'pulse_sequence': self.pulse_sequence,
-          'acquisitions': self.acquisitions,
-          'datatype': self.datatype,
-          'norm': self.norm,
-          'train_dataset_name': self.train_dataset_name,
-          'output': self.output,
-          'trainable_params': trainable_params,
-          'non_trainable_params': non_trainable_params,
-          'total_params': trainable_params + non_trainable_params,
-          'flops': flops
+            'model': self.model,
+            'autoencoder_model': self.autoencoder_model if hasattr(self,'autoencoder_model') else None,
+            'autoencoder_train_dataset_name': self.autoencoder_train_dataset_name if hasattr(self,'autoencoder_train_dataset_name')
+                                              else None,
+            'metabolites': self.metabolites,
+            'pulse_sequence': self.pulse_sequence,
+            'acquisitions': self.acquisitions,
+            'datatype': self.datatype,
+            'norm': self.norm,
+            'train_dataset_name': self.train_dataset_name,
+            'output': self.output,
+            'trainable_params': trainable_params,
+            'non_trainable_params': non_trainable_params,
+            'total_params': trainable_params + non_trainable_params,
+            'flops': flops
         }, indent=2, sort_keys=True), file=f)
 
   @staticmethod
@@ -951,11 +951,11 @@ class Autoencoder:
       }
     try:
       model.ae = load_model(os.path.join(path, "model.keras"),
-                          custom_objects={
-                            "FCAutoEnc": FCAutoEnc,
-                            "EncQuant": EncQuant
-                          },
-                          safe_mode=False)
+                            custom_objects={
+                               "FCAutoEnc": FCAutoEnc,
+                               "EncQuant": EncQuant
+                             },
+                            safe_mode=False)
     finally:
       _FCAE_LOAD_CTX = None
     return model
@@ -988,14 +988,14 @@ class Autoencoder:
                         [""],
                         ["History"]])
       else:
-          writer.writerows(
-              [[self.model + " " + prefix.upper() + " Training Results"],
-               [""],
-               ["", "Train", "Validation"],
-               [loss_name.upper(), d_score[0], v_score[0]],
-               ["MAE", d_score[1], v_score[1]],
-               [""],
-               ["History"]])
+        writer.writerows(
+            [[self.model + " " + prefix.upper() + " Training Results"],
+             [""],
+             ["", "Train", "Validation"],
+             [loss_name.upper(), d_score[0], v_score[0]],
+             ["MAE", d_score[1], v_score[1]],
+             [""],
+             ["History"]])
       writer.writerow(keys)
       writer.writerows(zip(*[history[key] for key in keys], strict=False))
     # Plot
