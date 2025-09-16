@@ -103,11 +103,10 @@ class FCAutoEncQuant(Model):
 
     e_out = _dense_layer(x, units, activation, -1) # no regulariser at latent representation
 
-    # Decoder
-    units = n_freqs // (2 ** (layers_dec-1))
-    x = _dense_layer(e_out, units, activation, -1)
-    units = n_freqs // (2 ** (layers_dec-2))
-    for _l in range(0, layers_dec-2):
+    # Decoder (mirror FCAutoEnc to avoid negative exponents for small layer counts)
+    units = n_freqs // (2 ** (layers_dec - 1))
+    x = e_out
+    for _l in range(0, layers_dec - 1):
       x = _dense_layer(x, units, activation, -1)
       units *= 2
     ae_out = _dense_layer(x, units, activation_last, -1, "ae")
@@ -455,8 +454,8 @@ class AutoencoderQuantifier:
       print(f"Q_MAE     :  {d_score[4]:.12f} {v_score[4]:.12f}")
     self._save_results(folder, "caeq", history.history, d_score, v_score, "TOTAL_LOSS", image_dpi, screen_dpi, verbose)
 
-    d_res = {"TOTAL_LOSS": d_score[2], "MAE": d_score[4]}
-    v_res = {"TOTAL_LOSS": v_score[2], "MAE": v_score[4]}
+    d_res = {"TOTAL_LOSS": d_score[0], "AE_LOSS": d_score[1], "Q_LOSS": d_score[2], "AE_MAE": d_score[3], "Q_MAE": d_score[4]}
+    v_res = {"TOTAL_LOSS": v_score[0], "AE_LOSS": v_score[1], "Q_LOSS": v_score[2], "AE_MAE": v_score[3], "Q_MAE": v_score[4]}
 
     return d_res, v_res
 
@@ -506,26 +505,48 @@ class AutoencoderQuantifier:
     self.caeq.summary()
     sys.stdout = old_stdout
     summary_output = buffer.getvalue()
-    # Parse parameter counts from summary
-    trainable_params = 0
-    non_trainable_params = 0
+    # Parse parameter counts from summary with robust fallbacks
+    total_params = None
+    trainable_params = None
+    non_trainable_params = None
     for line in summary_output.split('\n'):
       if 'Total params:' in line:
         # Extract total params
         total_match = line.split('Total params:')[1].split()[0].replace(',', '')
-        total_params = int(total_match)
+        try:
+          total_params = int(total_match)
+        except Exception:
+          total_params = None
       elif 'Trainable params:' in line:
         # Extract trainable params
         trainable_match = line.split('Trainable params:')[1].split()[0].replace(',', '')
-        trainable_params = int(trainable_match)
+        try:
+          trainable_params = int(trainable_match)
+        except Exception:
+          trainable_params = None
       elif 'Non-trainable params:' in line:
         # Extract non-trainable params
         non_trainable_match = line.split('Non-trainable params:')[1].split()[0].replace(',', '')
-        non_trainable_params = int(non_trainable_match)
-    # If we couldn't parse trainable/non-trainable separately, use total
-    if trainable_params == 0 and non_trainable_params == 0:
-      trainable_params = total_params
-      non_trainable_params = 0
+        try:
+          non_trainable_params = int(non_trainable_match)
+        except Exception:
+          non_trainable_params = None
+    # Fallbacks using model APIs
+    if total_params is None:
+      try:
+        total_params = int(self.caeq.count_params())
+      except Exception:
+        total_params = 0
+    if trainable_params is None:
+      try:
+        trainable_params = int(np.sum([tf.size(v).numpy() for v in self.caeq.trainable_variables]))
+      except Exception:
+        trainable_params = 0
+    if non_trainable_params is None:
+      try:
+        non_trainable_params = int(np.sum([tf.size(v).numpy() for v in self.caeq.non_trainable_variables]))
+      except Exception:
+        non_trainable_params = max(0, total_params - trainable_params)
 
     # Calculate FLOPs if possible
     if hasattr(self, 'flops'):
@@ -570,7 +591,8 @@ class AutoencoderQuantifier:
     model.caeq = load_model(os.path.join(path, "model.keras"),
                             custom_objects={
                               "FCAutoEncQuant": FCAutoEncQuant
-                            })
+                            },
+                            safe_mode=False)
     return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):

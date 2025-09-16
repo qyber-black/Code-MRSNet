@@ -420,26 +420,48 @@ class CNN:
     sys.stdout = old_stdout
     summary_output = buffer.getvalue()
 
-    # Parse parameter counts from summary
-    trainable_params = 0
-    non_trainable_params = 0
+    # Parse parameter counts from summary with robust fallbacks
+    total_params = None
+    trainable_params = None
+    non_trainable_params = None
     for line in summary_output.split('\n'):
       if 'Total params:' in line:
         # Extract total params
         total_match = line.split('Total params:')[1].split()[0].replace(',', '')
-        total_params = int(total_match)
+        try:
+          total_params = int(total_match)
+        except Exception:
+          total_params = None
       elif 'Trainable params:' in line:
         # Extract trainable params
         trainable_match = line.split('Trainable params:')[1].split()[0].replace(',', '')
-        trainable_params = int(trainable_match)
+        try:
+          trainable_params = int(trainable_match)
+        except Exception:
+          trainable_params = None
       elif 'Non-trainable params:' in line:
         # Extract non-trainable params
         non_trainable_match = line.split('Non-trainable params:')[1].split()[0].replace(',', '')
-        non_trainable_params = int(non_trainable_match)
-    # If we couldn't parse trainable/non-trainable separately, use total
-    if trainable_params == 0 and non_trainable_params == 0:
-      trainable_params = total_params
-      non_trainable_params = 0
+        try:
+          non_trainable_params = int(non_trainable_match)
+        except Exception:
+          non_trainable_params = None
+    # Fallbacks using model APIs
+    if total_params is None:
+      try:
+        total_params = int(self.cnn_arch.count_params())
+      except Exception:
+        total_params = 0
+    if trainable_params is None:
+      try:
+        trainable_params = int(np.sum([tf.size(v).numpy() for v in self.cnn_arch.trainable_variables]))
+      except Exception:
+        trainable_params = 0
+    if non_trainable_params is None:
+      try:
+        non_trainable_params = int(np.sum([tf.size(v).numpy() for v in self.cnn_arch.non_trainable_variables]))
+      except Exception:
+        non_trainable_params = max(0, total_params - trainable_params)
 
     # Calculate FLOPs if possible
     if hasattr(self, 'flops'):
