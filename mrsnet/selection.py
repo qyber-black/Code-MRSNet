@@ -991,7 +991,6 @@ class SelectGPO(Select):
           from optuna.samplers import GPSampler  # Gaussian Process sampler
           # GPSampler configuration to match GPyOpt behavior
           sampler = GPSampler(
-              warm_starting_trial=None,  # No warm starting
               n_startup_trials=max(5, len(var_keys)),  # More startup trials like GPyOpt
               n_ei_candidates=200,  # More candidates for better acquisition optimization
               independent_sampler=None,  # Use full GP for all parameters
@@ -1021,6 +1020,7 @@ class SelectGPO(Select):
             print(f"#   Startup trials: {min(20, max(5, len(var_keys) * 2))}, EI candidates: 100")
             if "torch" in str(gps_error).lower():
               print("#   GPSampler requires PyTorch - install with: pip install torch")
+            print(gps_error)
       except Exception as e:
         raise RuntimeError("Optuna is required for SelectGPO with NumPy 2; please install optuna") from e
       # Minimization of validation error

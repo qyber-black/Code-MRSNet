@@ -305,14 +305,30 @@ class CNN:
     self.flops = calculate_flops(self.cnn_arch, d_inp.shape[1:])
 
     for dpi in image_dpi:
-      plot_model(self.cnn_arch,
-                 to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
-                 show_shapes=True,
-                 show_dtype=True,
-                 show_layer_names=True,
-                 rankdir='TB',
-                 expand_nested=True,
-                 dpi=dpi)
+      try:
+        plot_model(self.cnn_arch,
+                   to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
+      except Exception as e:
+        try:
+          plot_model(self.cnn_arch,
+                     to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
+          if verbose > 0:
+            print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
+        except Exception as e2:
+          if verbose > 0:
+            print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
     if verbose > 0:
       self.cnn_arch.summary()
 

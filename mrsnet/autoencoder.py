@@ -22,20 +22,27 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (
-    Activation,
-    BatchNormalization,
-    Dense,
-    Dropout,
-    Flatten,
-    LeakyReLU,
-  )
+  Activation,
+  BatchNormalization,
+  Dense,
+  Dropout,
+  Flatten,
+  LeakyReLU,
+)
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
+
+try:
+  from keras.saving import register_keras_serializable
+except Exception:
+  from tensorflow.keras.utils import register_keras_serializable
 
 from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops
 
+# Global load context for subclassed model deserialization
+_FCAE_LOAD_CTX = None
 
 # Helper to construct dense layer
 def _dense_layer(x, units, activation, dropout, name=None):
@@ -74,6 +81,7 @@ def _dense_layer(x, units, activation, dropout, name=None):
   return x
 
 #  Fully connected autoencoder via functional API
+@register_keras_serializable(package="mrsnet", name="FCAutoEnc")
 class FCAutoEnc(Model):
   """Fully connected autoencoder model for MRS spectra.
 
@@ -86,7 +94,7 @@ class FCAutoEnc(Model):
       decoder (keras.Model): Decoder network
   """
 
-  def __init__(self,n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last ,dropout, name='FCAutoEnc'):
+  def __init__(self, n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last, dropout, name='FCAutoEnc', **kwargs):
     """Initialize a fully connected autoencoder.
 
     Parameters
@@ -107,7 +115,7 @@ class FCAutoEnc(Model):
     # activation: activation function (relu, sigmoid, tanh)
     # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
     self.n_specs = n_specs
-    super().__init__(name=name)
+    super().__init__(name=name, **kwargs)
 
     # Input
     encoder_input = keras.Input(shape=(n_specs, n_freqs), name="spectra_input")
@@ -136,6 +144,38 @@ class FCAutoEnc(Model):
     # Build the full model
     self.build((None, n_specs, n_freqs)) # Build encoder and decoder
 
+  @classmethod
+  def from_config(cls, config):
+    """Create FCAutoEnc instance from configuration during model deserialization.
+
+    This method is called by Keras during model loading to reconstruct the
+    FCAutoEnc instance from saved configuration. It relies on a global load
+    context (_FCAE_LOAD_CTX) that provides the necessary hyperparameters.
+
+    Parameters
+    ----------
+        config (dict): Configuration dictionary containing model metadata
+
+    Returns
+    -------
+        FCAutoEnc: New FCAutoEnc instance with parameters from load context
+
+    Raises
+    ------
+        TypeError: If no load context is available during deserialization
+    """
+    # Use hyperparameters provided by loader context
+    global _FCAE_LOAD_CTX
+    ctx = _FCAE_LOAD_CTX
+    if ctx is None:
+      raise TypeError("FCAutoEnc cannot be deserialized without load context")
+    return cls(
+      ctx['n_specs'], ctx['n_freqs'],
+      ctx['layers_enc'], ctx['layers_dec'],
+      ctx['activation'], ctx['activation_last'], ctx['dropout'],
+      name=config.get('name','FCAutoEnc')
+    )
+
   def call(self,x):
     """Forward pass through the autoencoder.
 
@@ -152,6 +192,7 @@ class FCAutoEnc(Model):
     return x
 
 #  Encoder-quantifier where the encoder comes from an autoencoder
+@register_keras_serializable(package="mrsnet", name="EncQuant")
 class EncQuant(Model):
   """Encoder-quantifier model for concentration prediction.
 
@@ -159,7 +200,7 @@ class EncQuant(Model):
   for predicting metabolite concentrations from MRS spectra.
   """
 
-  def __init__(self, encoder, n_specs, n_freqs, output_conc, units, layers, act, act_last, dp, name='EncQuant'):
+  def __init__(self, encoder, n_specs, n_freqs, output_conc, units, layers, act, act_last, dp, name='EncQuant', **kwargs):
     """Initialize encoder-quantifier model.
 
     Parameters
@@ -184,7 +225,7 @@ class EncQuant(Model):
     # act: activation of internal dense layers
     # act_last: activation of output layer
     self.n_specs = n_specs
-    super().__init__(name=name)
+    super().__init__(name=name, **kwargs)
 
     # Encoder
     self.encoder = encoder
@@ -499,22 +540,47 @@ class Autoencoder:
     self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
 
     for dpi in image_dpi:
-      plot_model(self.ae.encoder,
-                 to_file=os.path.join(folder,'architecture-encoder@'+str(dpi)+'.png'),
-                 show_shapes=True,
-                 show_dtype=True,
-                 show_layer_names=True,
-                 rankdir='TB',
-                 expand_nested=True,
-                 dpi=dpi)
-      plot_model(self.ae.decoder,
-                 to_file=os.path.join(folder,'architecture-decoder@'+str(dpi)+'.png'),
-                 show_shapes=True,
-                 show_dtype=True,
-                 show_layer_names=True,
-                 rankdir='TB',
-                 expand_nested=True,
-                 dpi=dpi)
+      try:
+        plot_model(self.ae.encoder,
+                   to_file=os.path.join(folder,'architecture-encoder@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
+        plot_model(self.ae.decoder,
+                   to_file=os.path.join(folder,'architecture-decoder@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
+      except Exception as e:
+        try:
+          # Fallback to SVG if PNG generation via dot fails
+          plot_model(self.ae.encoder,
+                     to_file=os.path.join(folder,'architecture-encoder@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
+          plot_model(self.ae.decoder,
+                     to_file=os.path.join(folder,'architecture-decoder@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
+          if verbose > 0:
+            print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
+        except Exception as e2:
+          if verbose > 0:
+            print("# WARNING: Skipping model architecture plots (Graphviz error):", e2)
     if verbose > 0:
       self.ae.summary()
       self.ae.encoder.summary()
@@ -662,22 +728,46 @@ class Autoencoder:
     self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
 
     for dpi in image_dpi:
-      plot_model(self.ae.encoder,
-                to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
-                show_shapes=True,
-                show_dtype=True,
-                show_layer_names=True,
-                rankdir='TB',
-                expand_nested=True,
-                dpi=dpi)
-      plot_model(self.ae.quantifier,
-                to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
-                show_shapes=True,
-                show_dtype=True,
-                show_layer_names=True,
-                rankdir='TB',
-                expand_nested=True,
-                dpi=dpi)
+      try:
+        plot_model(self.ae.encoder,
+                  to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.png'),
+                  show_shapes=True,
+                  show_dtype=True,
+                  show_layer_names=True,
+                  rankdir='TB',
+                  expand_nested=True,
+                  dpi=dpi)
+        plot_model(self.ae.quantifier,
+                  to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.png'),
+                  show_shapes=True,
+                  show_dtype=True,
+                  show_layer_names=True,
+                  rankdir='TB',
+                  expand_nested=True,
+                  dpi=dpi)
+      except Exception as e:
+        try:
+          plot_model(self.ae.encoder,
+                    to_file=os.path.join(folder,'architecture-encoder-frozen@'+str(dpi)+'.svg'),
+                    show_shapes=True,
+                    show_dtype=True,
+                    show_layer_names=True,
+                    rankdir='TB',
+                    expand_nested=True,
+                    dpi=dpi)
+          plot_model(self.ae.quantifier,
+                    to_file=os.path.join(folder,'architecture-quantifier@'+str(dpi)+'.svg'),
+                    show_shapes=True,
+                    show_dtype=True,
+                    show_layer_names=True,
+                    rankdir='TB',
+                    expand_nested=True,
+                    dpi=dpi)
+          if verbose > 0:
+            print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
+        except Exception as e2:
+          if verbose > 0:
+            print("# WARNING: Skipping model architecture plots (Graphviz error):", e2)
     if verbose > 0:
       self.ae.summary()
       self.ae.encoder.summary()
@@ -839,10 +929,38 @@ class Autoencoder:
                         data['datatype'], data['norm'])
     model.output = data['output']
     model.train_dataset_name = data['train_dataset_name']
-    model.ae = load_model(os.path.join(path, "model.keras"))
+    # Provide deserialization context for subclassed models saved via SavedModel
+    global _FCAE_LOAD_CTX
+    # Infer AE architecture hyperparameters from model string and input build shape
+    p = model.model.split("_")
+    if p[0] == "ae" and p[1] == "fc":
+      # We do not know n_specs/n_freqs at this point; they are present in SavedModel build_config
+      # Keras will call from_config first; we will set n_specs/n_freqs from build_config via fallback below.
+      # For now, set placeholders; we will patch after loading once we see input shape.
+      # However, we can infer n_specs from acquisitions x datatype and n_freqs from model.fft_samples
+      n_specs = len(model.acquisitions) * len(model.datatype)
+      n_freqs = model.fft_samples
+      _FCAE_LOAD_CTX = {
+        'n_specs': n_specs,
+        'n_freqs': n_freqs,
+        'layers_enc': int(p[2]),
+        'layers_dec': int(p[3]),
+        'activation': p[4],
+        'activation_last': p[5],
+        'dropout': float(p[6])
+      }
+    try:
+      model.ae = load_model(os.path.join(path, "model.keras"),
+                          custom_objects={
+                            "FCAutoEnc": FCAutoEnc,
+                            "EncQuant": EncQuant
+                          },
+                          safe_mode=False)
+    finally:
+      _FCAE_LOAD_CTX = None
     return model
 
-  def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
+  def _save_results(self, folder, prefix, history, d_score, v_score, loss_name, image_dpi, screen_dpi, verbose):
     """Save training results to files.
 
     Parameters
@@ -852,7 +970,7 @@ class Autoencoder:
         history (dict): Training history
         d_score (list): Training scores
         v_score (list): Validation scores
-        loss (str): Loss function name
+        loss_name (str): Loss function name
         image_dpi (list): Image DPI settings
         screen_dpi (int): Screen DPI setting
         verbose (int): Verbosity level
@@ -865,7 +983,7 @@ class Autoencoder:
         writer.writerows([[self.model+" "+prefix.upper()+" Training Results", "", "", "", "", "Loaded AE: " + self.ae_path],
                         [""],
                         ["",     "Train",    "Validation"],
-                        [loss.name.upper(),  d_score[0], v_score[0]],
+                        [loss_name.upper(),  d_score[0], v_score[0]],
                         ["MAE",  d_score[1], v_score[1]],
                         [""],
                         ["History"]])
@@ -874,7 +992,7 @@ class Autoencoder:
               [[self.model + " " + prefix.upper() + " Training Results"],
                [""],
                ["", "Train", "Validation"],
-               [loss.name.upper(), d_score[0], v_score[0]],
+               [loss_name.upper(), d_score[0], v_score[0]],
                ["MAE", d_score[1], v_score[1]],
                [""],
                ["History"]])
@@ -884,9 +1002,9 @@ class Autoencoder:
     fig, axes = plt.subplots(1, 3)
     fig.suptitle(f"{self.model} {prefix.upper()} Training Results")
     for key in keys:
-      if loss in key or 'loss' in key:
+      if loss_name in key or 'loss' in key:
         axes[0].semilogy(history[key], label=key)
-        axes[0].set_ylabel(loss.name.upper())
+        axes[0].set_ylabel(loss_name.upper())
         axes[0].legend(loc='upper right')
       if 'mae' in key:
         axes[1].semilogy(history[key], label=key)

@@ -688,6 +688,7 @@ def train(args):
       # needs to exist already and we just load it.
       #
       # Load the autoencoder model
+      print(args.autoencoder)
       id = get_std_name(args.autoencoder)
       name = []
       for k in range(0,len(id)):
@@ -699,8 +700,8 @@ def train(args):
           trainer = id[k+9]
           rest = id[k+10] if len(id) > k+10 else '' # Folds
           break
-        if len(name) == 0:
-          raise RuntimeError("Cannot get model name from model argument")
+      if len(name) == 0:
+        raise RuntimeError("Cannot get model name from model argument")
       if args.verbose > 0:
         print(f"# Loading autoencoder model {name} : {batchsize} : {epochs} {train_model} : {trainer} : {rest}")
       folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)

@@ -24,6 +24,11 @@ from tensorflow.keras.layers import BatchNormalization, Dense, Dropout, Flatten
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
+try:
+  from keras.saving import register_keras_serializable
+except Exception:
+  from tensorflow.keras.utils import register_keras_serializable
+
 from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops, reshape_spectra_data
@@ -58,6 +63,7 @@ def _dense_layer(m,units, activation, dropout, name=None):
   return x
 
 #  Fully connected autoencoder via functional API
+@register_keras_serializable(package="mrsnet", name="FCAutoEncQuant")
 class FCAutoEncQuant(Model):
   """Fully connected autoencoder-quantifier model.
 
@@ -381,14 +387,30 @@ class AutoencoderQuantifier:
     self.flops = calculate_flops(self.aeq, d_spectra_in.shape[1:])
 
     for dpi in image_dpi:
-        plot_model(self.aeq,
-                  to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
-                  show_shapes=True,
-                  show_dtype=True,
-                  show_layer_names=True,
-                  rankdir='TB',
-                  expand_nested=True,
-                  dpi=dpi)
+        try:
+            plot_model(self.aeq,
+                      to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
+                      show_shapes=True,
+                      show_dtype=True,
+                      show_layer_names=True,
+                      rankdir='TB',
+                      expand_nested=True,
+                      dpi=dpi)
+        except Exception as e:
+            try:
+                plot_model(self.aeq,
+                          to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.svg'),
+                          show_shapes=True,
+                          show_dtype=True,
+                          show_layer_names=True,
+                          rankdir='TB',
+                          expand_nested=True,
+                          dpi=dpi)
+                if verbose > 0:
+                    print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
+            except Exception as e2:
+                if verbose > 0:
+                    print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
 
     if verbose > 0:
         self.aeq.summary()
@@ -557,7 +579,10 @@ class AutoencoderQuantifier:
                           data['datatype'], data['norm'])
       model.output = data['output']
       model.train_dataset_name = data['train_dataset_name']
-      model.aeq = load_model(os.path.join(path, "model.keras"))
+      model.aeq = load_model(os.path.join(path, "model.keras"),
+                             custom_objects={
+                               "FCAutoEncQuant": FCAutoEncQuant
+                             })
       return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
