@@ -992,7 +992,6 @@ class SelectGPO(Select):
           # GPSampler configuration to match GPyOpt behavior
           sampler = GPSampler(
               n_startup_trials=max(5, len(var_keys)),  # More startup trials like GPyOpt
-              n_ei_candidates=200,  # More candidates for better acquisition optimization
               independent_sampler=None,  # Use full GP for all parameters
               warn_independent_sampling=True
             )

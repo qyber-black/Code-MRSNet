@@ -26,7 +26,7 @@ https://langbein.org/mrsnet-paper/
 * Tested on Linux and may not work on any other platform without some adjustments.
   Standard packages for Linux are:
   * Git and git-lfs for git with submodules and LFS support.
-  * Python 3.11+ (this version has been tested with Python 3.13).
+  * Python 3.12+ (this version has been tested with Python 3.13).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
     `sudo apt update && sudo apt install git git-lfs python3.11 python3.11-venv`
