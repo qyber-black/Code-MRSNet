@@ -999,9 +999,9 @@ class SelectGPO(Select):
           # Note: Optuna GPSampler uses Expected Improvement (EI) by default
           # and optimizes acquisition function internally (similar to GPyOpt's L-BFGS)
           if self.verbose > 0:
-            print("# Using Optuna GPSampler (Gaussian Process Bayesian Optimization)")
-            print(f"#   Startup trials: {max(5, len(var_keys))}, EI candidates: 200")
-            print("#   Acquisition: Expected Improvement (EI) with L-BFGS optimization")
+            print( "# Using Optuna GPSampler (Gaussian Process Bayesian Optimization)")
+            print(f"#   Startup trials: {max(5, len(var_keys))}")
+            print( "#   Acquisition: Expected Improvement (EI) with L-BFGS optimization")
         except Exception as gps_error:
           from optuna.samplers import TPESampler
           # Enhanced TPESampler as fallback
