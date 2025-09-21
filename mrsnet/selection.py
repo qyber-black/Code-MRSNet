@@ -507,6 +507,18 @@ class Select:
     n_models = len(self.val_performance)
     n_folds = len(self.val_performance[0]) if n_models > 0 else 0
 
+    # If there are no models, write a minimal summary and skip plotting
+    if n_models == 0:
+      with open(os.path.join(folder,"model_summary.json"), "w") as f:
+        summary = {
+          'total_models': 0,
+          'n_folds': 0,
+          'best_model': None,
+          'performance_stats': {}
+        }
+        json.dump(summary, f, indent=2)
+      return folder
+
     # Calculate metrics for each model
     model_metrics = []
     for i in range(n_models):
@@ -641,32 +653,40 @@ class Select:
                   for p in range(0,len(sorted_models))]
     val_error = [sorted_models[p]['val_mean'] for p in range(0,len(sorted_models))]
     train_error = [sorted_models[p]['train_mean'] for p in range(0,len(sorted_models))]
-    top_n = np.min([len(sorted_models),50])
-    top_n = np.max(np.argwhere(np.array(val_error[:top_n]) < 999999.0)) # Don't plot failed
-    Y = np.arange(2*len(val_error),1,-2)  # noqa: N806
-    ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
-            label="Val. Error", color="#4878D0", zorder=1)
-    ax.barh(y=Y[:top_n]-0.75, width=train_error[:top_n], height=0.6, left=0, align='center',
-            label="Train Error", color="#A1C9F4", zorder=0)
-    ax.scatter(y=[Y[:top_n]]*len(self.val_performance[0]),
-               x=[sorted_models[p]['val_folds'][q]
-                  for q in range(0,len(self.val_performance[0])) for p in range(0,top_n)],
-               color="#000000", s=5.0, zorder=2)
-    ax.scatter(y=[Y[:top_n]-0.75]*len(self.train_performance[0]),
-               x=[sorted_models[p]['train_folds'][q]
-                  for q in range(0,len(self.train_performance[0])) for p in range(0,top_n)],
-               color="#000000", s=5.0, zorder=2)
-    plt.yticks(Y[:top_n], parameters[:top_n])
-    ax.legend(loc="upper right", frameon=True)
-    ax.set(xlim=(0,np.max([np.max([sorted_models[p]['val_folds'] for p in range(0,top_n)]),
-                           np.max([sorted_models[p]['train_folds'] for p in range(0,top_n)])])),
-           ylabel="", xlabel="Mean Absolute Concentration Error")
-    fig.tight_layout()
-    for dpi in self.image_dpi:
-      plt.savefig(os.path.join(folder,"errors@"+str(dpi)+".png"), dpi=dpi)
-    if self.verbose > 1:
-      fig.set_dpi(self.screen_dpi)
-      plt.show(block=True)
+    top_n0 = np.min([len(sorted_models),50])
+    valid_mask = np.array(val_error[:top_n0]) < 999999.0
+    top_n = int(np.sum(valid_mask))  # number of valid models to plot
+    if top_n > 0:
+      Y = np.arange(2*len(val_error),1,-2)  # noqa: N806
+      ax.barh(y=Y[:top_n], width=val_error[:top_n], height=0.9, left=0, align='center',
+              label="Val. Error", color="#4878D0", zorder=1)
+      ax.barh(y=Y[:top_n]-0.75, width=train_error[:top_n], height=0.6, left=0, align='center',
+              label="Train Error", color="#A1C9F4", zorder=0)
+      ax.scatter(y=[Y[:top_n]]*len(self.val_performance[0]),
+                 x=[sorted_models[p]['val_folds'][q]
+                    for q in range(0,len(self.val_performance[0])) for p in range(0,top_n)],
+                 color="#000000", s=5.0, zorder=2)
+      ax.scatter(y=[Y[:top_n]-0.75]*len(self.train_performance[0]),
+                 x=[sorted_models[p]['train_folds'][q]
+                    for q in range(0,len(self.train_performance[0])) for p in range(0,top_n)],
+                 color="#000000", s=5.0, zorder=2)
+      plt.yticks(Y[:top_n], parameters[:top_n])
+      ax.legend(loc="upper right", frameon=True)
+      # Safe x-axis limit computation
+      try:
+        val_fold_max = max(max(m['val_folds']) for m in sorted_models[:top_n])
+        train_fold_max = max(max(m['train_folds']) for m in sorted_models[:top_n])
+        x_axis_max = float(max(val_fold_max, train_fold_max))
+      except ValueError:
+        # Fallback in case folds are unexpectedly empty
+        x_axis_max = float(max(max(val_error[:top_n]), max(train_error[:top_n])))
+      ax.set(xlim=(0,x_axis_max), ylabel="", xlabel="Mean Absolute Concentration Error")
+      fig.tight_layout()
+      for dpi in self.image_dpi:
+        plt.savefig(os.path.join(folder,"errors@"+str(dpi)+".png"), dpi=dpi)
+      if self.verbose > 1:
+        fig.set_dpi(self.screen_dpi)
+        plt.show(block=True)
     plt.close()
     # Plot distributions across single-parameter groups
     x_max=1
@@ -675,39 +695,40 @@ class Select:
       if m > x_max:
         x_max = m
     X = np.arange(1,x_max+1)  # noqa: N806
-    fig, ax = plt.subplots(len(var_keys),1)
-    if len(var_keys) == 1:
-      ax = [ax]
-    for k in range(0,len(var_keys)):
-      group_id = var_keys[k]
-      key_vals = sorted(list(set([str(self.key_vals[p][group_id])  # noqa: C403, C414
-                                  for p in range(0,len(self.val_performance))])))
-      key_vals = [str(v) for v in key_vals]
-      for ki in range(0,len(key_vals)):
-        val_per = [sorted_models[p]['val_mean']
-                    for p in range(0,len(sorted_models))
-                      if key_vals[ki] == str(self.key_vals[sorted_models[p]['iteration']][group_id])]
-        train_per = [sorted_models[p]['train_mean']
-                     for p in range(0,len(sorted_models))
-                       if key_vals[ki] == str(self.key_vals[sorted_models[p]['iteration']][group_id])]
-        offset=0.1
-        bp=ax[k].boxplot(x=val_per,positions=[X[ki]-offset],patch_artist=True,labels=["Val. Err"],zorder=0)
-        bp['boxes'][0].set_facecolor("#4878D0")
-        ax[k].scatter(x=[X[ki]-offset]*len(val_per), y=val_per, color="#000000", s=5.0, zorder=2)
-        bp=ax[k].boxplot(x=train_per,positions=[X[ki]+offset],patch_artist=True,labels=["Train Err"],zorder=1)
-        bp['boxes'][0].set_facecolor("#A1C9F4")
-        ax[k].scatter(x=[X[ki]+offset]*len(train_per), y=train_per, color="#000000", s=5.0, zorder=2)
-      ax[k].set_xlim(X[0]-1,X[-1]+1)
-      ax[k].set_ylabel("WDE")
-      ax[k].set_xticks(X)
-      ax[k].set_xticklabels([group_id+": "+v+" (val.,train)" for v in key_vals]+[""]*(x_max-len(key_vals)))
-    fig.tight_layout()
-    for dpi in self.image_dpi:
-      plt.savefig(os.path.join(folder,"error-dists@"+str(dpi)+".png"), dpi=dpi)
-    if self.verbose > 1:
-      fig.set_dpi(self.screen_dpi)
-      plt.show(block=True)
-    plt.close()
+    if len(var_keys) > 0:
+      fig, ax = plt.subplots(len(var_keys),1)
+      if len(var_keys) == 1:
+        ax = [ax]
+      for k in range(0,len(var_keys)):
+        group_id = var_keys[k]
+        key_vals = sorted(list(set([str(self.key_vals[p][group_id])  # noqa: C403, C414
+                                    for p in range(0,len(self.val_performance))])))
+        key_vals = [str(v) for v in key_vals]
+        for ki in range(0,len(key_vals)):
+          val_per = [sorted_models[p]['val_mean']
+                      for p in range(0,len(sorted_models))
+                        if key_vals[ki] == str(self.key_vals[sorted_models[p]['iteration']][group_id])]
+          train_per = [sorted_models[p]['train_mean']
+                       for p in range(0,len(sorted_models))
+                         if key_vals[ki] == str(self.key_vals[sorted_models[p]['iteration']][group_id])]
+          offset=0.1
+          bp=ax[k].boxplot(x=val_per,positions=[X[ki]-offset],patch_artist=True,labels=["Val. Err"],zorder=0)
+          bp['boxes'][0].set_facecolor("#4878D0")
+          ax[k].scatter(x=[X[ki]-offset]*len(val_per), y=val_per, color="#000000", s=5.0, zorder=2)
+          bp=ax[k].boxplot(x=train_per,positions=[X[ki]+offset],patch_artist=True,labels=["Train Err"],zorder=1)
+          bp['boxes'][0].set_facecolor("#A1C9F4")
+          ax[k].scatter(x=[X[ki]+offset]*len(train_per), y=train_per, color="#000000", s=5.0, zorder=2)
+        ax[k].set_xlim(X[0]-1,X[-1]+1)
+        ax[k].set_ylabel("WDE")
+        ax[k].set_xticks(X)
+        ax[k].set_xticklabels([group_id+": "+v+" (val.,train)" for v in key_vals]+[""]*(x_max-len(key_vals)))
+      fig.tight_layout()
+      for dpi in self.image_dpi:
+        plt.savefig(os.path.join(folder,"error-dists@"+str(dpi)+".png"), dpi=dpi)
+      if self.verbose > 1:
+        fig.set_dpi(self.screen_dpi)
+        plt.show(block=True)
+      plt.close()
     return folder
 
 class SelectGrid(Select):

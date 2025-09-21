@@ -13,7 +13,7 @@ set -euo pipefail
 METABS="Cr-GABA-Gln-Glu-NAA"
 DATASET=./data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/$METABS/megapress/sobol/1.0-adc_normal-0.0-0.03/100000-1
 EPOCHS=1000
-SPLIT=5
+SPLIT=0
 
 BATCH=16
 NORM=sum
@@ -64,7 +64,5 @@ run() {
 }
 
 run cnn_-1_-3_9_9_5_3_0.0_0.3_256_512_2048_sigmoid edit_off-edit_on imaginary-real
-run cnn_-1_-3_9_7_3_3_0.0_0.3_512_512_2048_sigmoid edit_off-edit_on real
-run cnn_-1_-3_7_9_5_3_0.0_0.3_512_512_2048_sigmoid edit_off-edit_on imaginary-real
 
 run cnn_medium_sigmoid_pool edit_off-edit_on real
