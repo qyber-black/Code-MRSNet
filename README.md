@@ -29,7 +29,7 @@ https://langbein.org/mrsnet-paper/
   * Python 3.12+ (this version has been tested with Python 3.13).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
-    `sudo apt update && sudo apt install git git-lfs python3.11 python3.11-venv`
+    `sudo apt update && sudo apt install git git-lfs python3.13 python3.13-venv`
 * For all standard python packages used, see `requirements.txt`. These will be
   installed with the commands below, but here are some extra notes on potential
   issues.
@@ -77,15 +77,14 @@ https://langbein.org/mrsnet-paper/
    ```
    pip3 install -r requirements.txt
    ```
-   Of course, you can and probably shoudl install these in a virtual environment to avoid
-   conflicts. Note that the requirements may need additional libraries, etc. to be
-   installed on you system that pip does not add (see note above). Potentially
-   you may have to set this up in a virtual environment or use the
-   `--break-system-packages` options (on your own risk of breaking something else).
-   Optionally you may want to install pygamma manually (see prerequisites above). In
-   general dependency issues of python packages failing to installed can be addressed
-   by commenting them out of `requirements.txt`, but it may mean that certain MRSNet
-   functionality may not work.
+  Of course, you can and probably should install these in a virtual environment to avoid
+  conflicts. Note that the requirements may need additional system libraries that pip does
+  not install (see note above). Potentially you may have to set this up in a virtual
+  environment or use the `--break-system-packages` option (at your own risk of breaking
+  something else). Optionally you may want to install PyGamma manually (see prerequisites
+  above). In general, dependency issues of Python packages failing to install can be
+  addressed by commenting them out in `requirements.txt`, but it may mean that certain
+  MRSNet functionality will not work.
 
 To update to the latest version (of your selected branch), run `git pull` and
 step 3 and 4 above in the project folder. To switch to another version or branch
@@ -103,6 +102,7 @@ sub-commands available are:
 * select:             Model selection on dataset.
 * quantify:           Quantify spectra in dicoms.
 * benchmark:          Run benchmark on model.
+* sim2real:           Analyse sim-to-real gap across benchmark series.
 
 Generally it is best to run `mrsnet.py` from the base-folder of the git
 repository. The folder locations in data are determined by the real location of
@@ -135,9 +135,9 @@ The additional git submodules containing the data are
 * [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-mrs-megapress-spectra) -
   Swansea benchmark phantom datasets collected at Swansea University's 3T Siemens scanner (in `data/benchmark`);
 * [Data - MRSNet - Models - Dist](https://qyber.black/mrs/data-mrsnet-model-dist) -
-  Best performing trained models for MRSNet (in `data/models-dist`);
+  Best performing trained models for MRSNet (in `data/model-dist`);
 * [Data - MRSNet - Basis Spectra - Dist](https://qyber.black/mrs/data-mrsnet-basis) -
-  Standard basis sets used ofr MEGAPRESS simulation (in `data/basis-dist`).
+  Standard basis sets used for MEGAPRESS simulation (in `data/basis-dist`).
 * [Code - QDicom Utilities](https://qyber.black/ca/code-qdicom-utilities) -
   Library to read dicoms.
 
@@ -150,7 +150,7 @@ publications, etc. that you can also use for your own analysis:
   large repository. It contains the complete analysis data for the CNN models.
 * [Data - MRSNet - Simulated Spectra - MEGAPRESS](https://qyber.black/mrs/data-mrsnet-simulated-spectra-megapress):
   contains a range of simulated MEGAPRESS spectra with our simulators using the basis datasets in
-  `data/basis-dist`. These datases have been used in the papers for training and testing the
+  `data/basis-dist`. These datasets have been used in the papers for training and testing the
   models. You may use these to train your own models, etc. You can clone this into
   `data/sim-spectra-megapress`. Note, this is a very large repository.
 
@@ -292,6 +292,6 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2024.
+Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2025.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
-[[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/qyber-black/code-mrsnet)
+[[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)

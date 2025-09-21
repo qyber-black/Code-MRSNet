@@ -428,28 +428,39 @@ The MRSNet API follows a consistent pattern across all modules:
 ### Basic Usage
 
 ```python
-import mrsnet
+from mrsnet.cfg import Cfg
+from mrsnet.dataset import Dataset
+from mrsnet.cnn import CNN
+from mrsnet.train import KFold
 
-# Initialize configuration
-mrsnet.cfg.Cfg.init('/path/to/mrsnet')
+# Initialize configuration (give absolute path to mrsnet.py to resolve paths)
+Cfg.init('/absolute/path/to/repo/mrsnet.py')
 
 # Load dataset
-from mrsnet.dataset import Dataset
 ds = Dataset.load('/path/to/dataset')
 
 # Train CNN model
-from mrsnet.cnn import CNN
 model = CNN('cnn_small_softmax', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
             'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum')
 
 # Train with K-fold cross-validation
-from mrsnet.train import KFold
 trainer = KFold(k=5)
-trainer.train(model, data, epochs=100, batch_size=16,
-              path_model='/path/to/models', verbose=1)
 
-# Quantify spectra
-predictions = model.predict(spectra_data)
+# Export tensors for training from the dataset
+inp, out = ds.export(metabolites=['Cr','GABA','Glu','Gln','NAA'],
+                     high_ppm=-4.5, low_ppm=-1.0, n_fft_pts=2048,
+                     norm='sum', acquisitions=['edit_off','difference'],
+                     datatype='magnitude', normalise=True, export_concentrations=True)
+
+# Package into [train_inp, train_out] for trainer.train()
+data = [inp, out]
+
+trainer.train(model, data, epochs=100, batch_size=16,
+              path_model='/path/to/models', train_dataset_name=ds.name,
+              image_dpi=[300], screen_dpi=96, shuffle=True, verbose=1)
+
+# Quantify spectra (numpy array shaped like ds.export input)
+predictions = model.predict(inp, reshape=True)
 ```
 
 ### Command Line Usage
@@ -466,28 +477,33 @@ python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m cnn_small_soft
 
 # Quantify DICOM spectra
 python mrsnet.py quantify -d /path/to/dicoms -m /path/to/model
+
+# Sim-to-real analysis
+python mrsnet.py sim2real --source fid-a-2d --manufacturer siemens \
+  --omega 123.23 --linewidth 2.0 --pulse_sequence megapress \
+  --sample_rate 2000 --samples 4096
 ```
 
 ## Dependencies
 
-- Python 3.11+ (tested up to Python 3.13)
+- Python 3.12+ (tested with Python 3.13)
 - TensorFlow 2.20
 - NumPy 2.3.3
 - SciPy 1.16.1
 - Matplotlib 3.10
 - Seaborn 0.13.2
-- scikit-learn 1.7.2
 - joblib 1.4.2
 - tqdm 4.66.4
 - sobol_seq 0.2.0
-- PyTorch 2.8.0
-- Optuna 4.5.0
+- Optuna 4.5.0 (used for GPO fallback)
 - pydicom 2.4.4
-- pygad 3.3.1
+- pygad 3.3.1 (for GA selection)
 - lmfit 1.3.2
-- pyfftw 0.15.0
-- GPyOpt (optional, commented out in requirements.txt)
-- PyGamma (optional, commented out in requirements.txt)
+- pyfftw 0.15.0 (optional; enables FFTW usage if configured)
+- scikit-learn 1.7.2 (may be pulled indirectly; not used directly in core)
+- torch 2.8.0 (optional; improves Optuna GPSampler)
+- GPy and GPyOpt (optional; commented out in requirements.txt)
+- PyGamma (optional; commented out in requirements.txt)
 
 ## License
 
