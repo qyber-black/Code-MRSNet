@@ -25,6 +25,43 @@ from scipy.stats import linregress
 from mrsnet.cfg import Cfg
 
 
+def _sns_histplot_safe(ax, data, kde=False, bins='auto', color=None):
+  """Robust wrapper around seaborn.histplot to handle zero-range data.
+
+  If the data range is zero (all values identical) numpy's bin edge
+  computation can fail. This helper detects that case and draws a
+  single-bin histogram with a small finite bin width.
+  """
+  d = np.asarray(data)
+  # Filter to finite values only
+  d = d[np.isfinite(d)]
+  if d.size == 0:
+    ax.text(0.5, 0.5, "No data", ha='center', va='center', transform=ax.transAxes)
+    return
+  vmin = np.min(d)
+  vmax = np.max(d)
+  data_range = vmax - vmin
+  # Treat extremely small ranges as zero-range
+  rel_scale = max(1.0, abs(vmin), abs(vmax))
+  if (not np.isfinite(data_range)) or (data_range <= 0) or (data_range / rel_scale < 1e-12):
+    # Create a small symmetric bin around the value(s)
+    base = 0.5 * (vmin + vmax)
+    scale = max(1e-9, abs(base) * 1e-6, data_range * 0.5)
+    binrange = (base - scale, base + scale)
+    sns.histplot(d, ax=ax, kde=False, bins=1, binrange=binrange, color=color)
+    ax.set_xlim(binrange)
+    return
+  try:
+    sns.histplot(d, ax=ax, kde=kde, bins=bins, color=color)
+  except ValueError:
+    # Fallback: expand bin range and use a small number of bins
+    scale = max(1e-9, abs(vmin) * 1e-6, data_range * 0.5)
+    binrange = (vmin - scale, vmax + scale)
+    safe_bins = 5 if isinstance(bins, str) else min(max(1, int(bins)), 10)
+    sns.histplot(d, ax=ax, kde=False, bins=safe_bins, binrange=binrange, color=color)
+    ax.set_xlim(binrange)
+
+
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
                   verbose=0, image_dpi=[300], screen_dpi=96, create_plots=True, clean_spectra=None):
   """Analyze model performance and generate reports.
@@ -240,7 +277,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
       axes[0,l].set_xlim([0,1])
       axes[0,l].set_ylim([0,1])
 
-      sns.histplot(error[:,l], kde=True, ax=axes[1,l])
+      _sns_histplot_safe(axes[1,l], error[:,l], kde=True)
       axes[1,l].set_xlabel("Error")
       if l == 0:
         axes[1,l].set_ylabel("Count")
@@ -299,7 +336,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
     axes[0,len(model.metabolites)].set_xlabel("True")
     axes[0,len(model.metabolites)].set_xlim([0,1])
     axes[0,len(model.metabolites)].set_ylim([0,1])
-    sns.histplot(error, kde=True, ax=axes[1,len(model.metabolites)])
+    _sns_histplot_safe(axes[1,len(model.metabolites)], error, kde=True)
     axes[1,len(model.metabolites)].set_xlabel("Error")
 
     for f in glob.glob(os.path.join(folder, prefix + '_concentration_errors@*.png')):
@@ -392,7 +429,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
           if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
             sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
             d = d[sel]
-          sns.histplot(d.flatten(), ax=axes[ac,dt])
+          _sns_histplot_safe(axes[ac,dt], d.flatten())
           axes[ac,dt].set_title(f"Error Dist. Signal {model.acquisitions[ac]}-{model.datatype[dt]}")
           axes[ac,dt].set_xlabel("Error")
           if ac == 0:
@@ -430,7 +467,7 @@ def _analyse_spectra_error(model, pre, inp, out, folder, prefix, id, norm, verbo
       if Cfg.val['analysis_spectra_error_dist_sampling'] < 100:
         sel = np.random.randint(0,d.shape[0],size=d.shape[0]*Cfg.val['analysis_spectra_error_dist_sampling']//100)
         d = d[sel]
-      sns.histplot(d, ax=axes[0,pre.shape[2]])
+      _sns_histplot_safe(axes[0,pre.shape[2]], d)
       axes[0,pre.shape[2]].set_title("Total Error Dist.")
       axes[0,pre.shape[2]].set_xlabel("Error")
 

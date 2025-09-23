@@ -14,6 +14,7 @@ METABS="Cr-GABA-Gln-Glu-NAA"
 DATASET=./data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/$METABS/megapress/sobol/1.0-adc_normal-0.0-0.03/100000-1
 EPOCHS=1000
 SPLIT=0
+FOLD=NoValidation-1
 
 BATCH=16
 NORM=sum
@@ -24,9 +25,10 @@ exists_model() {
   local MODEL="$1"     # cnn_...
   local ACQ_DIR="$2"   # e.g., edit_off-edit_on
   local DT_DIR="$3"    # e.g., imaginary-real
-  for BASE in ./data/model-cnn; do
-    local TARGET="$BASE/$MODEL/$METABS/$PULSE/$ACQ_DIR/$DT_DIR/$NORM/$BATCH/$EPOCHS/fid-a-2d_2000_4096_siemens_123.23_2.0_Cr-GABA-Gln-Glu-NAA_megapress_sobol_1.0-adc_normal-0.0-0.03_10000-1"
-    if [ -d "$TARGET/KFold_5-1" ]; then
+  local DS="`echo $DATASET | cut -d / -f 4- | sed 's|/|_|g'`"
+  for BASE in ./data/model ./data/model-dist ./data/model-cnn data/model-ae; do
+    local TARGET="$BASE/$MODEL/$METABS/$PULSE/$ACQ_DIR/$DT_DIR/$NORM/$BATCH/$EPOCHS/$DS"
+    if [ -d "$TARGET/$FOLD" ]; then
       echo "[FOUND] $TARGET"
       return 0
     fi
