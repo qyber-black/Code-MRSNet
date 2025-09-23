@@ -127,6 +127,29 @@ class Select:
     -------
         model_path if found, None if not found
     """
+    # Helper to check if an aeq model at a given folder matches the requested encoder
+    def _aeq_matches_requested_encoder(folder_path: str) -> bool:
+      # Only applies to aeq_* models; others always match
+      try:
+        if not str(args.get('model','')).startswith('aeq_'):
+          return True
+        # Must have an autoencoder spec in args
+        if 'autoencoder' not in args:
+          return False
+        # Load quantifier metadata (mrsnet.json may be in folder or folder/tf_model)
+        meta = self._load_mrsnet_json(folder_path)
+        if meta is None:
+          return False
+        # Expected encoder spec from selection 'autoencoder' argument
+        exp_model, exp_train_ds = self._parse_autoencoder_spec(args['autoencoder'])
+        if exp_model is None or exp_train_ds is None:
+          return False
+        # Compare against stored encoder info in the quantifier
+        return (meta.get('autoencoder_model') == exp_model and
+                meta.get('autoencoder_train_dataset_name') == exp_train_ds)
+      except Exception:
+        return False
+
     for search_path in [path_model, *self.search_model]:
       base_path = os.path.join(search_path, model_name, args['batchsize'], str(self.epochs), train_model)
 
@@ -145,10 +168,20 @@ class Select:
               except Exception:  # noqa: S110
                 pass
             if repeat_id > 0 and fn == trainer+"-"+str(repeat_id):
-              if (os.path.exists(os.path.join(base_path, fn, fold, f"train_{self.error_type}_errors.json")) and
-                  os.path.exists(os.path.join(base_path, fn, fold, f"validation_{self.error_type}_errors.json"))):
-                if repeat_id > selected_id:
-                  selected_id = repeat_id
+              # Folder containing model and results (with optional fold)
+              fold_path = os.path.join(base_path, fn, fold) if len(fold) > 0 else os.path.join(base_path, fn)
+              # Consider folder valid if it either has model.keras or both error JSON files
+              has_model = os.path.exists(os.path.join(fold_path, "model.keras"))
+              has_metrics = (os.path.exists(os.path.join(fold_path, f"train_{self.error_type}_errors.json")) and
+                             os.path.exists(os.path.join(fold_path, f"validation_{self.error_type}_errors.json")))
+              if has_model or has_metrics:
+                # For aeq_* ensure encoder matches selection
+                if _aeq_matches_requested_encoder(fold_path):
+                  if repeat_id > selected_id:
+                    selected_id = repeat_id
+                else:
+                  if self.verbose > 2:
+                    print(f"# WARNING: {fold_path} - encoder mismatch for aeq model")
               else:
                 if self.verbose > 0:
                   print(f"# WARNING: {ffn} - broken/incomplete model")
@@ -210,7 +243,10 @@ class Select:
       # AEQ-FC model fully parameterised
       # aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO]
       model_str = 'aeq_fc'
-      self.error_type = 'concentrations'
+      self.error_type = 'concentration'
+      # Require autoencoder reference for encoder-quantifier models
+      if 'autoencoder' not in args:
+        raise RuntimeError("AEQ model selection requires 'autoencoder' parameter specifying encoder model path suffix")
       for marg in ["UNITS", "LAYERS", "ACT", "ACT-LAST", "DO"]:
         model_str += "_" + str(args['model_' + marg])
         del args['model_' + marg]
@@ -484,6 +520,46 @@ class Select:
         print(e)
       return None, None
     return val_p, train_p
+
+  def _load_mrsnet_json(self, folder):
+    """Load mrsnet.json from a model folder, supporting legacy tf_model layout.
+
+    Tries folder/mrsnet.json first, then folder/tf_model/mrsnet.json. Returns dict or None.
+    """
+    try:
+      fn = os.path.join(folder, "mrsnet.json")
+      if os.path.isfile(fn):
+        with open(fn) as f:
+          return json.load(f)
+      fn2 = os.path.join(folder, "tf_model", "mrsnet.json")
+      if os.path.isfile(fn2):
+        with open(fn2) as f:
+          return json.load(f)
+    except Exception:
+      return None
+    return None
+
+  def _parse_autoencoder_spec(self, ae_spec):
+    """Parse selection 'autoencoder' suffix to expected (model, train_dataset_name).
+
+    Accepts absolute or suffix paths. Extracts the first segment starting with 'ae_' or 'aeq_'
+    and returns (model_name, train_dataset_name). Returns (None, None) if parsing fails.
+    """
+    try:
+      parts = _get_std_name(ae_spec)
+      # Find index of model segment
+      idx = -1
+      for i, p in enumerate(parts):
+        if p.startswith('ae_') or p.startswith('aeq_'):
+          idx = i
+          break
+      if idx < 0 or len(parts) < idx + 9:
+        return None, None
+      model_name = parts[idx]
+      train_ds = parts[idx+8]
+      return model_name, train_ds
+    except Exception:
+      return None, None
 
   def _save_performance(self, collection_name, var_keys, fix_keys):
     """Save comprehensive model selection performance results to CSV file.
