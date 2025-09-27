@@ -18,8 +18,19 @@ QNet consists of two deep learning modules:
 
 MODIFICATIONS FOR MRSNET:
 * QNet-specific architecture with IF Extraction Module and MM Signal Prediction Module
-* Custom StackedConvolutionalBlock layer
+* Custom StackedConvolutionalBlock layer for SCB implementation
 * LLS (Linear Least Squares) module for metabolite concentration estimation
+* Configurable architecture parameters:
+  - if_scb_filters: IF extraction SCB filters (default: [16, 32, 64])
+  - mm_scb_filters: MM prediction SCB filters (default: [16, 32, 64, 128, 256, 256])
+  - kernel_size: SCB kernel size (default: 3)
+  - if_fc_units: IF module FC layer units (default: 128)
+  - mm_fc_units: MM module FC layer units (default: 512)
+  - n_if_factors: Number of imperfection factors per metabolite (default: 3)
+* Model string parsing with configurable parameters:
+  - 'qnet' or 'qnet_default': default parameters
+  - 'qnet_original': original paper parameters (512 frequency points)
+  - 'qnet_[FREQS]_[METABOLITES]_[IF_FILTERS]_[MM_FILTERS]_[IF_FC]_[MM_FC]': custom configuration
 """
 
 import csv
@@ -101,14 +112,21 @@ class QNetModel(Model):
     modules and a linear least squares component.
     """
 
-    def __init__(self, n_freqs, n_metabolites, n_if_factors=3, name='QNetModel', **kwargs):
+    def __init__(self, n_freqs, n_metabolites, n_if_factors=3,
+                 if_scb_filters=None, mm_scb_filters=None, kernel_size=3,
+                 if_fc_units=128, mm_fc_units=512, name='QNetModel', **kwargs):
         """Initialize QNet model.
 
         Parameters
         ----------
             n_freqs (int): Number of frequency points in spectrum
             n_metabolites (int): Number of metabolites to quantify
-            n_if_factors (int): Number of imperfection factors (default 3: phase, freq, linewidth)
+            n_if_factors (int): Number of imperfection factors per metabolite (default 3: phase, freq, linewidth)
+            if_scb_filters (list): List of filters for IF extraction SCBs
+            mm_scb_filters (list): List of filters for MM prediction SCBs
+            kernel_size (int): Kernel size for all SCBs
+            if_fc_units (int): FC layer units for IF module
+            mm_fc_units (int): FC layer units for MM module
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
@@ -116,55 +134,95 @@ class QNetModel(Model):
         self.n_metabolites = n_metabolites
         self.n_if_factors = n_if_factors
 
-        # Input layer
+        # Set default filter lists if not provided (original paper architecture)
+        if if_scb_filters is None:
+            if_scb_filters = [16, 32, 64]
+        if mm_scb_filters is None:
+            mm_scb_filters = [16, 32, 64, 128, 256, 256]
+
+        self.if_scb_filters = if_scb_filters
+        self.mm_scb_filters = mm_scb_filters
+        self.kernel_size = kernel_size
+        self.if_fc_units = if_fc_units
+        self.mm_fc_units = mm_fc_units
+
+        # Input layer - QNet expects 1D spectrum input
         self.input_layer = Input(shape=(n_freqs,), name='spectrum_input')
 
-        # Transpose input for Conv1D layers
-        # Input is (batch, n_acquisitions * n_datatypes, n_freqs) -> (batch, n_freqs, n_acquisitions * n_datatypes)
-        self.input_transpose = tf.keras.layers.Lambda(lambda x: tf.transpose(x, [0, 2, 1]), name='input_transpose')
+        # Reshape input for Conv1D layers: (batch, freqs) -> (batch, freqs, 1)
+        self.input_reshape = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, -1), name='input_reshape')
 
-        # IF Extraction Module: 3 SCBs + 2 FCLs
-        self.if_scb1 = StackedConvolutionalBlock(16, name='if_scb1')
-        self.if_scb2 = StackedConvolutionalBlock(32, name='if_scb2')
-        self.if_scb3 = StackedConvolutionalBlock(64, name='if_scb3')
+        # IF Extraction Module: Dynamic SCBs + 2 FCLs
+        self.if_scbs = []
+        for i, filters in enumerate(self.if_scb_filters):
+            scb = StackedConvolutionalBlock(filters, kernel_size=self.kernel_size, name=f'if_scb{i+1}')
+            self.if_scbs.append(scb)
         self.if_flatten = Flatten(name='if_flatten')
-        self.if_fc1 = Dense(128, activation='relu', name='if_fc1')
+        self.if_fc1 = Dense(self.if_fc_units, activation='relu', name='if_fc1')
         self.if_fc2 = Dense(n_metabolites * n_if_factors, name='if_output')
 
-        # MM Signal Prediction Module: 6 SCBs + 2 FCLs
-        self.mm_scb1 = StackedConvolutionalBlock(16, name='mm_scb1')
-        self.mm_scb2 = StackedConvolutionalBlock(32, name='mm_scb2')
-        self.mm_scb3 = StackedConvolutionalBlock(64, name='mm_scb3')
-        self.mm_scb4 = StackedConvolutionalBlock(128, name='mm_scb4')
-        self.mm_scb5 = StackedConvolutionalBlock(256, name='mm_scb5')
-        self.mm_scb6 = StackedConvolutionalBlock(256, name='mm_scb6')
+        # MM Signal Prediction Module: Dynamic SCBs + 2 FCLs
+        self.mm_scbs = []
+        for i, filters in enumerate(self.mm_scb_filters):
+            scb = StackedConvolutionalBlock(filters, kernel_size=self.kernel_size, name=f'mm_scb{i+1}')
+            self.mm_scbs.append(scb)
         self.mm_flatten = Flatten(name='mm_flatten')
-        self.mm_fc1 = Dense(512, activation='relu', name='mm_fc1')
+        self.mm_fc1 = Dense(self.mm_fc_units, activation='relu', name='mm_fc1')
         self.mm_fc2 = Dense(n_freqs, name='mm_output')
 
         # Build the model
         self.build((None, n_freqs))
 
+    def build(self, input_shape):
+        """Build the model with the given input shape.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+        """
+        # Create a dummy input to build all layers
+        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+
+        # Forward pass to build all layers
+        x = self.input_reshape(dummy_input)
+
+        # Build IF extraction branch
+        if_x = x
+        for scb in self.if_scbs:
+            if_x = scb(if_x)
+        if_x = self.if_flatten(if_x)
+        if_x = self.if_fc1(if_x)
+        if_factors = self.if_fc2(if_x)
+
+        # Build MM signal prediction branch
+        mm_x = x
+        for scb in self.mm_scbs:
+            mm_x = scb(mm_x)
+        mm_x = self.mm_flatten(mm_x)
+        mm_x = self.mm_fc1(mm_x)
+        mm_signal = self.mm_fc2(mm_x)
+
+        # Mark as built
+        self.built = True
+        self._build_input_shape = input_shape
+
     def call(self, inputs):
         """Forward pass through QNet."""
-        # Transpose input for Conv1D layers
-        x = self.input_transpose(inputs)
+        # Reshape input for Conv1D layers: (batch, freqs) -> (batch, freqs, 1)
+        x = self.input_reshape(inputs)
 
         # IF Extraction branch
-        if_x = self.if_scb1(x)
-        if_x = self.if_scb2(if_x)
-        if_x = self.if_scb3(if_x)
+        if_x = x
+        for scb in self.if_scbs:
+            if_x = scb(if_x)
         if_x = self.if_flatten(if_x)
         if_x = self.if_fc1(if_x)
         if_factors = self.if_fc2(if_x)
 
         # MM Signal Prediction branch
-        mm_x = self.mm_scb1(x)
-        mm_x = self.mm_scb2(mm_x)
-        mm_x = self.mm_scb3(mm_x)
-        mm_x = self.mm_scb4(mm_x)
-        mm_x = self.mm_scb5(mm_x)
-        mm_x = self.mm_scb6(mm_x)
+        mm_x = x
+        for scb in self.mm_scbs:
+            mm_x = scb(mm_x)
         mm_x = self.mm_flatten(mm_x)
         mm_x = self.mm_fc1(mm_x)
         mm_signal = self.mm_fc2(mm_x)
@@ -180,7 +238,12 @@ class QNetModel(Model):
         config.update({
             'n_freqs': self.n_freqs,
             'n_metabolites': self.n_metabolites,
-            'n_if_factors': self.n_if_factors
+            'n_if_factors': self.n_if_factors,
+            'if_scb_filters': self.if_scb_filters,
+            'mm_scb_filters': self.mm_scb_filters,
+            'kernel_size': self.kernel_size,
+            'if_fc_units': self.if_fc_units,
+            'mm_fc_units': self.mm_fc_units
         })
         return config
 
@@ -208,17 +271,25 @@ class QNet:
         qnet_arch (keras.Model): The actual QNet model
     """
 
-    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
+    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm,
+                 if_scb_filters=None, mm_scb_filters=None, kernel_size=3,
+                 if_fc_units=128, mm_fc_units=512, n_if_factors=3):
         """Initialize a QNet model.
 
         Parameters
         ----------
-            model (str): Model architecture identifier (e.g., 'qnet_default')
+            model (str): Model architecture identifier (e.g., 'qnet_default', 'qnet_original')
             metabolites (list): List of metabolite names to predict
             pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
             acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
             datatype (list): List of data types (e.g., ['magnitude', 'phase'])
             norm (str): Normalization method (e.g., 'sum', 'max')
+            if_scb_filters (list): List of filters for IF extraction SCBs
+            mm_scb_filters (list): List of filters for MM prediction SCBs
+            kernel_size (int): Kernel size for all SCBs
+            if_fc_units (int): FC layer units for IF module
+            mm_fc_units (int): FC layer units for MM module
+            n_if_factors (int): Number of imperfection factors per metabolite
         """
         self.model = model
         self.metabolites = metabolites
@@ -227,6 +298,14 @@ class QNet:
         self.datatype = datatype
         self.norm = norm
         self.output = "concentrations"
+
+        # Architecture parameters
+        self.if_scb_filters = if_scb_filters
+        self.mm_scb_filters = mm_scb_filters
+        self.kernel_size = kernel_size
+        self.if_fc_units = if_fc_units
+        self.mm_fc_units = mm_fc_units
+        self.n_if_factors = n_if_factors
 
         # Input spectra data (constant!)
         self.low_ppm = -1.0
@@ -260,6 +339,80 @@ class QNet:
         self.train_dataset_name = None
         self.basis_set = None
 
+    def _parse_model_config(self, input_shape):
+        """Parse model string to extract configuration parameters.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+
+        Returns
+        -------
+            tuple: (if_scb_filters, mm_scb_filters, kernel_size, if_fc_units, mm_fc_units, n_if_factors)
+        """
+        vals = self.model.split("_")
+        if vals[0] != 'qnet':
+            raise RuntimeError(f"Unknown model {vals[0]}")
+
+        # Default parameters (original paper architecture)
+        default_if_scb_filters = [16, 32, 64]
+        default_mm_scb_filters = [16, 32, 64, 128, 256, 256]
+        default_kernel_size = 3
+        default_if_fc_units = 128
+        default_mm_fc_units = 512
+        default_n_if_factors = 3
+
+        if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
+            # qnet or qnet_default: use default parameters
+            if_scb_filters = default_if_scb_filters
+            mm_scb_filters = default_mm_scb_filters
+            kernel_size = default_kernel_size
+            if_fc_units = default_if_fc_units
+            mm_fc_units = default_mm_fc_units
+            n_if_factors = default_n_if_factors
+        elif len(vals) == 2 and vals[1] == 'original':
+            # qnet_original: use original paper parameters (512 frequency points)
+            if_scb_filters = default_if_scb_filters
+            mm_scb_filters = default_mm_scb_filters
+            kernel_size = default_kernel_size
+            if_fc_units = default_if_fc_units
+            mm_fc_units = default_mm_fc_units
+            n_if_factors = default_n_if_factors
+        else:
+            # Custom configuration: qnet_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS]
+            # Parse IF SCB filters (comma-separated list)
+            if len(vals) > 1 and vals[1]:
+                if_scb_filters = [int(x) for x in vals[1].split(',')]
+            else:
+                if_scb_filters = default_if_scb_filters
+
+            # Parse MM SCB filters (comma-separated list)
+            if len(vals) > 2 and vals[2]:
+                mm_scb_filters = [int(x) for x in vals[2].split(',')]
+            else:
+                mm_scb_filters = default_mm_scb_filters
+
+            kernel_size = int(vals[3]) if len(vals) > 3 else default_kernel_size
+            if_fc_units = int(vals[4]) if len(vals) > 4 else default_if_fc_units
+            mm_fc_units = int(vals[5]) if len(vals) > 5 else default_mm_fc_units
+            n_if_factors = int(vals[6]) if len(vals) > 6 else default_n_if_factors
+
+        # Override with instance parameters if provided
+        if self.if_scb_filters is not None:  # If provided
+            if_scb_filters = self.if_scb_filters
+        if self.mm_scb_filters is not None:  # If provided
+            mm_scb_filters = self.mm_scb_filters
+        if self.kernel_size != 3:  # If not default
+            kernel_size = self.kernel_size
+        if self.if_fc_units != 128:  # If not default
+            if_fc_units = self.if_fc_units
+        if self.mm_fc_units != 512:  # If not default
+            mm_fc_units = self.mm_fc_units
+        if self.n_if_factors != 3:  # If not default
+            n_if_factors = self.n_if_factors
+
+        return if_scb_filters, mm_scb_filters, kernel_size, if_fc_units, mm_fc_units, n_if_factors
+
     def _construct(self, input_shape, output_shape):
         """Construct the QNet architecture using functional API.
 
@@ -268,26 +421,25 @@ class QNet:
             input_shape (tuple): Input tensor shape
             output_shape (tuple): Output tensor shape
         """
-        vals = self.model.split("_")
-        if vals[0] != 'qnet':
-            raise RuntimeError(f"Unknown model {vals[0]}")
+        # Parse model configuration
+        if_scb_filters, mm_scb_filters, kernel_size, if_fc_units, mm_fc_units, n_if_factors = self._parse_model_config(input_shape)
 
-        # Parse model parameters
-        if len(vals) == 1:
-            # Default QNet configuration
-            n_freqs = input_shape[-1]
-            n_metabolites = len(self.metabolites)
-        elif len(vals) == 2 and vals[1] == 'default':
-            # qnet_default configuration
-            n_freqs = input_shape[-1]
-            n_metabolites = len(self.metabolites)
-        else:
-            # Custom QNet configuration: qnet_[FREQS]_[METABOLITES]
-            n_freqs = int(vals[1]) if len(vals) > 1 else input_shape[-1]
-            n_metabolites = int(vals[2]) if len(vals) > 2 else len(self.metabolites)
+        # Get framework-determined parameters
+        n_freqs = input_shape[-1]
+        n_metabolites = len(self.metabolites)
 
-        # Create QNet model
-        self.qnet_arch = QNetModel(n_freqs, n_metabolites, name=self.model)
+        # Create the QNet model with parsed parameters
+        self.qnet_arch = QNetModel(
+            n_freqs=n_freqs,
+            n_metabolites=n_metabolites,
+            n_if_factors=n_if_factors,
+            if_scb_filters=if_scb_filters,
+            mm_scb_filters=mm_scb_filters,
+            kernel_size=kernel_size,
+            if_fc_units=if_fc_units,
+            mm_fc_units=mm_fc_units,
+            name=self.model
+        )
 
         # Create a wrapper model for training that outputs concentrations directly
         # This is a simplified approach - in practice, you'd implement the full LLS
@@ -304,8 +456,8 @@ class QNet:
             keras.Model: Training model that outputs metabolite concentrations
         """
         # Get the input shape from the QNet model
-        # The QNet model expects (n_acquisitions * n_datatypes, n_freqs) input
-        input_shape = (len(self.acquisitions) * len(self.datatype), self.fft_samples)
+        # The QNet model expects (n_freqs,) input
+        input_shape = (self.qnet_arch.n_freqs,)
 
         # Create input layer
         inputs = Input(shape=input_shape, name='spectrum_input')

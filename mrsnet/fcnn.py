@@ -14,9 +14,19 @@ The FoundationalCNN is a 7-layer CNN model designed for MRS metabolite
 quantification using CReLU activation and convolutional layers.
 
 MODIFICATIONS FOR MRSNET:
-* FoundationalCNN-specific 7-layer CNN architecture
+* FoundationalCNN-specific 7-layer CNN architecture (5 conv + 2 FC layers)
 * Custom CReLU activation layer for concatenated ReLU
-* Maintained original 7-layer structure with CReLU activation
+* Output includes macromolecule scaling factor (n_metabolites + 1 neurons)
+* Configurable architecture parameters:
+  - conv_filters: Number of filters per conv layer (default: [32,64,128,256,512])
+  - kernel_size: Convolutional kernel size (default: 3)
+  - pool_size: MaxPooling size (default: 2)
+  - fc_units: First FC layer units (default: 1024)
+  - dropout_rate: Dropout rate (default: 0.5)
+* Model string parsing with configurable parameters:
+  - 'fcnn' or 'fcnn_default': default parameters
+  - 'fcnn_original': original paper parameters
+  - 'fcnn_[FREQS]_[METABOLITES]_[FILTERS]_[KERNEL]_[FC_UNITS]': custom configuration
 """
 
 import csv
@@ -24,15 +34,20 @@ import io
 import json
 import os
 import sys
-from time import time_ns
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.layers import (
-    Activation, BatchNormalization, Conv1D, Dense, Dropout,
-    Flatten, Input, MaxPooling1D, ReLU, Concatenate
+    Concatenate,
+    Conv1D,
+    Dense,
+    Dropout,
+    Flatten,
+    Input,
+    MaxPooling1D,
+    ReLU,
 )
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
@@ -78,89 +93,112 @@ class FoundationalCNNModel(Model):
 
     This implements the 7-layer CNN architecture from the MICCAI 2018 paper
     with CReLU activation and convolutional layers for metabolite quantification.
+    Output includes metabolite concentrations plus macromolecule scaling factor.
     """
 
-    def __init__(self, n_freqs, n_metabolites, name='FoundationalCNNModel', **kwargs):
+    def __init__(self, n_freqs, n_metabolites, conv_filters=None, kernel_size=3,
+                 pool_size=2, fc_units=1024, dropout_rate=0.5, name='FoundationalCNNModel', **kwargs):
         """Initialize FoundationalCNN model.
 
         Parameters
         ----------
             n_freqs (int): Number of frequency points in spectrum
             n_metabolites (int): Number of metabolites to quantify
+            conv_filters (list, optional): Number of filters for each conv layer.
+                Default: [32, 64, 128, 256, 512] (original paper architecture)
+            kernel_size (int): Convolutional kernel size. Default: 3
+            pool_size (int): MaxPooling size. Default: 2
+            fc_units (int): Number of units in first FC layer. Default: 1024
+            dropout_rate (float): Dropout rate. Default: 0.5
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
         self.n_freqs = n_freqs
         self.n_metabolites = n_metabolites
 
+        # Set default conv_filters if not provided (original paper architecture)
+        if conv_filters is None:
+            conv_filters = [32, 64, 128, 256, 512]
+        self.conv_filters = conv_filters
+        self.kernel_size = kernel_size
+        self.pool_size = pool_size
+        self.fc_units = fc_units
+        self.dropout_rate = dropout_rate
+
         # Input layer - 2 channels (real and imaginary parts)
         self.input_layer = Input(shape=(n_freqs, 2), name='spectrum_input')
 
-        # Layer 1: Conv1D + CReLU + MaxPool
-        self.conv1 = Conv1D(32, kernel_size=3, padding='same', name='conv1')
-        self.crelu1 = CReLU(name='crelu1')
-        self.pool1 = MaxPooling1D(pool_size=2, name='pool1')
+        # Create convolutional layers dynamically based on conv_filters
+        self.conv_layers = []
+        self.crelu_layers = []
+        self.pool_layers = []
 
-        # Layer 2: Conv1D + CReLU + MaxPool
-        self.conv2 = Conv1D(64, kernel_size=3, padding='same', name='conv2')
-        self.crelu2 = CReLU(name='crelu2')
-        self.pool2 = MaxPooling1D(pool_size=2, name='pool2')
+        for i, filters in enumerate(self.conv_filters):
+            conv_layer = Conv1D(filters, kernel_size=self.kernel_size,
+                              padding='same', name=f'conv{i+1}')
+            crelu_layer = CReLU(name=f'crelu{i+1}')
+            pool_layer = MaxPooling1D(pool_size=self.pool_size, name=f'pool{i+1}')
 
-        # Layer 3: Conv1D + CReLU + MaxPool
-        self.conv3 = Conv1D(128, kernel_size=3, padding='same', name='conv3')
-        self.crelu3 = CReLU(name='crelu3')
-        self.pool3 = MaxPooling1D(pool_size=2, name='pool3')
-
-        # Layer 4: Conv1D + CReLU + MaxPool
-        self.conv4 = Conv1D(256, kernel_size=3, padding='same', name='conv4')
-        self.crelu4 = CReLU(name='crelu4')
-        self.pool4 = MaxPooling1D(pool_size=2, name='pool4')
-
-        # Layer 5: Conv1D + CReLU + MaxPool
-        self.conv5 = Conv1D(512, kernel_size=3, padding='same', name='conv5')
-        self.crelu5 = CReLU(name='crelu5')
-        self.pool5 = MaxPooling1D(pool_size=2, name='pool5')
+            self.conv_layers.append(conv_layer)
+            self.crelu_layers.append(crelu_layer)
+            self.pool_layers.append(pool_layer)
 
         # Flatten for fully connected layers
         self.flatten = Flatten(name='flatten')
 
         # Layer 6: Fully Connected
-        self.fc1 = Dense(1024, activation='relu', name='fc1')
-        self.dropout1 = Dropout(0.5, name='dropout1')
+        self.fc1 = Dense(self.fc_units, activation='relu', name='fc1')
+        self.dropout1 = Dropout(self.dropout_rate, name='dropout1')
 
         # Layer 7: Fully Connected (output layer)
-        # Output: n_metabolites (no macromolecule scaling factor for now)
-        self.fc2 = Dense(n_metabolites, activation='linear', name='fc2')
+        # Output: n_metabolites + 1 macromolecule scaling factor (as per original paper)
+        self.fc2 = Dense(n_metabolites + 1, activation='linear', name='fc2')
 
         # Build the model
         self.build((None, n_freqs, 2))
 
+    def build(self, input_shape):
+        """Build the model with the given input shape.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+        """
+        # Create a dummy input to build all layers
+        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+
+        # Forward pass to build all layers
+        x = dummy_input
+
+        # Apply convolutional layers dynamically
+        for i, (conv, crelu, pool) in enumerate(zip(self.conv_layers, self.crelu_layers, self.pool_layers)):
+            x = conv(x)
+            x = crelu(x)
+            x = pool(x)
+
+        # Flatten for fully connected layers
+        x = self.flatten(x)
+
+        # Fully connected layers
+        x = self.fc1(x)
+        x = self.dropout1(x)
+        x = self.fc2(x)
+
+        # Mark as built
+        self.built = True
+        self._build_input_shape = input_shape
+
     def call(self, inputs):
         """Forward pass through FoundationalCNN."""
-        # Layer 1
-        x = self.conv1(inputs)
-        x = self.crelu1(x)
-        x = self.pool1(x)
+        x = inputs
 
-        # Layer 2
-        x = self.conv2(x)
-        x = self.crelu2(x)
-        x = self.pool2(x)
-
-        # Layer 3
-        x = self.conv3(x)
-        x = self.crelu3(x)
-        x = self.pool3(x)
-
-        # Layer 4
-        x = self.conv4(x)
-        x = self.crelu4(x)
-        x = self.pool4(x)
-
-        # Layer 5
-        x = self.conv5(x)
-        x = self.crelu5(x)
-        x = self.pool5(x)
+        # Apply convolutional layers dynamically
+        for conv_layer, crelu_layer, pool_layer in zip(self.conv_layers,
+                                                       self.crelu_layers,
+                                                       self.pool_layers, strict=False):
+            x = conv_layer(x)
+            x = crelu_layer(x)
+            x = pool_layer(x)
 
         # Flatten and fully connected layers
         x = self.flatten(x)
@@ -175,7 +213,12 @@ class FoundationalCNNModel(Model):
         config = super().get_config()
         config.update({
             'n_freqs': self.n_freqs,
-            'n_metabolites': self.n_metabolites
+            'n_metabolites': self.n_metabolites,
+            'conv_filters': self.conv_filters,
+            'kernel_size': self.kernel_size,
+            'pool_size': self.pool_size,
+            'fc_units': self.fc_units,
+            'dropout_rate': self.dropout_rate
         })
         return config
 
@@ -202,17 +245,23 @@ class FoundationalCNN:
         fcnn_arch (keras.Model): The actual FoundationalCNN model
     """
 
-    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
+    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm,
+                 conv_filters=None, kernel_size=3, pool_size=2, fc_units=1024, dropout_rate=0.5):
         """Initialize a FoundationalCNN model.
 
         Parameters
         ----------
-            model (str): Model architecture identifier (e.g., 'fcnn_default')
+            model (str): Model architecture identifier (e.g., 'fcnn_default', 'fcnn_original')
             metabolites (list): List of metabolite names to predict
             pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
             acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
             datatype (list): List of data types (e.g., ['magnitude', 'phase'])
             norm (str): Normalization method (e.g., 'sum', 'max')
+            conv_filters (list, optional): Number of filters for each conv layer
+            kernel_size (int): Convolutional kernel size
+            pool_size (int): MaxPooling size
+            fc_units (int): Number of units in first FC layer
+            dropout_rate (float): Dropout rate
         """
         self.model = model
         self.metabolites = metabolites
@@ -222,6 +271,13 @@ class FoundationalCNN:
         self.norm = norm
         self.output = "concentrations"
 
+        # Architecture parameters
+        self.conv_filters = conv_filters
+        self.kernel_size = kernel_size
+        self.pool_size = pool_size
+        self.fc_units = fc_units
+        self.dropout_rate = dropout_rate
+
         # Input spectra data (constant!)
         self.low_ppm = -1.0
         self.high_ppm = -4.5
@@ -229,6 +285,69 @@ class FoundationalCNN:
 
         self.train_dataset_name = None
         self.fcnn_arch = None
+
+    def _parse_model_config(self, input_shape):
+        """Parse model string to extract configuration parameters.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+
+        Returns
+        -------
+            tuple: (conv_filters, kernel_size, pool_size, fc_units, dropout_rate)
+        """
+        vals = self.model.split("_")
+        if vals[0] != 'fcnn':
+            raise RuntimeError(f"Unknown model {vals[0]}")
+
+        # Default parameters (original paper architecture)
+        default_conv_filters = [32, 64, 128, 256, 512]
+        default_kernel_size = 3
+        default_pool_size = 2
+        default_fc_units = 1024
+        default_dropout_rate = 0.5
+
+        if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
+            # fcnn or fcnn_default: use default parameters
+            conv_filters = default_conv_filters
+            kernel_size = default_kernel_size
+            pool_size = default_pool_size
+            fc_units = default_fc_units
+            dropout_rate = default_dropout_rate
+        elif len(vals) == 2 and vals[1] == 'original':
+            # fcnn_original: use original paper parameters
+            conv_filters = default_conv_filters
+            kernel_size = default_kernel_size
+            pool_size = default_pool_size
+            fc_units = default_fc_units
+            dropout_rate = default_dropout_rate
+        else:
+            # Custom configuration: fcnn_[CONV_FILTERS]_[KERNEL]_[POOL]_[FC_UNITS]_[DROPOUT]
+            # Parse conv_filters (comma-separated list)
+            if len(vals) > 1 and vals[1]:
+                conv_filters = [int(x) for x in vals[1].split(',')]
+            else:
+                conv_filters = default_conv_filters
+
+            kernel_size = int(vals[2]) if len(vals) > 2 else default_kernel_size
+            pool_size = int(vals[3]) if len(vals) > 3 else default_pool_size
+            fc_units = int(vals[4]) if len(vals) > 4 else default_fc_units
+            dropout_rate = float(vals[5]) if len(vals) > 5 else default_dropout_rate
+
+        # Override with instance parameters if provided
+        if self.conv_filters is not None:
+            conv_filters = self.conv_filters
+        if self.kernel_size != 3:  # If not default
+            kernel_size = self.kernel_size
+        if self.pool_size != 2:  # If not default
+            pool_size = self.pool_size
+        if self.fc_units != 1024:  # If not default
+            fc_units = self.fc_units
+        if self.dropout_rate != 0.5:  # If not default
+            dropout_rate = self.dropout_rate
+
+        return conv_filters, kernel_size, pool_size, fc_units, dropout_rate
 
     def __str__(self):
         """Get string representation of the model path.
@@ -258,26 +377,24 @@ class FoundationalCNN:
             input_shape (tuple): Input tensor shape
             output_shape (tuple): Output tensor shape
         """
-        vals = self.model.split("_")
-        if vals[0] != 'fcnn':
-            raise RuntimeError(f"Unknown model {vals[0]}")
+        # Parse model configuration
+        conv_filters, kernel_size, pool_size, fc_units, dropout_rate = self._parse_model_config(input_shape)
 
-        # Parse model parameters
-        if len(vals) == 1:
-            # Default FoundationalCNN configuration
-            n_freqs = input_shape[-2]  # Frequency dimension
-            n_metabolites = len(self.metabolites)
-        elif len(vals) == 2 and vals[1] == 'default':
-            # fcnn_default configuration
-            n_freqs = input_shape[-2]  # Frequency dimension
-            n_metabolites = len(self.metabolites)
-        else:
-            # Custom FoundationalCNN configuration: fcnn_[FREQS]_[METABOLITES]
-            n_freqs = int(vals[1]) if len(vals) > 1 else input_shape[-2]
-            n_metabolites = int(vals[2]) if len(vals) > 2 else len(self.metabolites)
+        # Get framework-determined parameters
+        n_freqs = input_shape[-2]
+        n_metabolites = len(self.metabolites)
 
-        # Create FoundationalCNN model
-        self.fcnn_arch = FoundationalCNNModel(n_freqs, n_metabolites, name=self.model)
+        # Create FoundationalCNN model with parsed parameters
+        self.fcnn_arch = FoundationalCNNModel(
+            n_freqs=n_freqs,
+            n_metabolites=n_metabolites,
+            conv_filters=conv_filters,
+            kernel_size=kernel_size,
+            pool_size=pool_size,
+            fc_units=fc_units,
+            dropout_rate=dropout_rate,
+            name=self.model
+        )
 
     def train(self, d_data, v_data, epochs, batch_size,
               folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):

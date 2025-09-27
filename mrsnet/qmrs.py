@@ -14,10 +14,20 @@ QMRS is a CNN-LSTM model with multi-headed MLP that uses transfer learning
 and parameter constraints for MRS metabolite quantification.
 
 MODIFICATIONS FOR MRSNET:
-* QMRS-specific CNN-LSTM architecture
+* QMRS-specific CNN-LSTM architecture with inception modules
 * Custom InceptionModule for multi-scale feature extraction
-* Bidirectional LSTM with attention mechanism for sequence modeling
-* Multi-headed MLP for metabolite concentration prediction
+* Bidirectional LSTM with concatenated merge mode for sequence modeling
+* Multi-headed MLP for metabolite parameter prediction
+* Configurable architecture parameters:
+  - initial_filters: Initial conv layer filters (default: 32)
+  - inception_filters: Base inception module filters (default: 32)
+  - lstm_units: LSTM units (default: 128)
+  - mlp_hidden_units: MLP hidden layers (default: [512, 256])
+  - dropout_rate: Dropout rate (default: 0.5)
+* Model string parsing with configurable parameters:
+  - 'qmrs' or 'qmrs_default': default parameters
+  - 'qmrs_original': original paper parameters (281 frequency points)
+  - 'qmrs_[FREQS]_[METABOLITES]_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]': custom configuration
 * Transfer learning capabilities
 """
 
@@ -26,16 +36,20 @@ import io
 import json
 import os
 import sys
-from time import time_ns
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.layers import (
-    Activation, BatchNormalization, Conv1D, Dense, Dropout,
-    Flatten, Input, MaxPooling1D, ReLU, LSTM, Bidirectional,
-    Concatenate, Lambda
+    LSTM,
+    Bidirectional,
+    Concatenate,
+    Conv1D,
+    Dense,
+    Dropout,
+    Input,
+    MaxPooling1D,
 )
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
@@ -108,23 +122,32 @@ class MultiHeadMLP(keras.layers.Layer):
     - Baseline coefficients
     """
 
-    def __init__(self, n_metabolites, n_baseline_coeffs=6, name=None, **kwargs):
+    def __init__(self, n_metabolites, n_baseline_coeffs=6, mlp_hidden_units=None,
+                 dropout_rate=0.5, name=None, **kwargs):
         """Initialize MultiHeadMLP.
 
         Parameters
         ----------
             n_metabolites (int): Number of metabolites
             n_baseline_coeffs (int): Number of baseline coefficients
+            mlp_hidden_units (list): Hidden units in MLP layers
+            dropout_rate (float): Dropout rate
             name (str, optional): Layer name
         """
         super().__init__(name=name, **kwargs)
         self.n_metabolites = n_metabolites
         self.n_baseline_coeffs = n_baseline_coeffs
 
+        # Set default MLP hidden units if not provided
+        if mlp_hidden_units is None:
+            mlp_hidden_units = [512, 256]
+        self.mlp_hidden_units = mlp_hidden_units
+        self.dropout_rate = dropout_rate
+
         # Shared hidden layers
-        self.fc1 = Dense(512, activation='relu', name='shared_fc1')
-        self.fc2 = Dense(256, activation='relu', name='shared_fc2')
-        self.dropout = Dropout(0.5, name='shared_dropout')
+        self.fc1 = Dense(self.mlp_hidden_units[0], activation='relu', name='shared_fc1')
+        self.fc2 = Dense(self.mlp_hidden_units[1], activation='relu', name='shared_fc2')
+        self.dropout = Dropout(self.dropout_rate, name='shared_dropout')
 
         # Head 1: Metabolite amplitudes
         self.amplitude_head = Dense(n_metabolites, activation='linear', name='amplitude_head')
@@ -168,7 +191,9 @@ class MultiHeadMLP(keras.layers.Layer):
         config = super().get_config()
         config.update({
             'n_metabolites': self.n_metabolites,
-            'n_baseline_coeffs': self.n_baseline_coeffs
+            'n_baseline_coeffs': self.n_baseline_coeffs,
+            'mlp_hidden_units': self.mlp_hidden_units,
+            'dropout_rate': self.dropout_rate
         })
         return config
 
@@ -181,7 +206,9 @@ class QMRSModel(Model):
     from the QMRS paper for metabolite parameter prediction.
     """
 
-    def __init__(self, n_freqs, n_metabolites, n_baseline_coeffs=6, name='QMRSModel', **kwargs):
+    def __init__(self, n_freqs, n_metabolites, n_baseline_coeffs=6,
+                 initial_filters=32, inception_filters=32, lstm_units=128,
+                 mlp_hidden_units=None, dropout_rate=0.5, name='QMRSModel', **kwargs):
         """Initialize QMRS model.
 
         Parameters
@@ -189,34 +216,82 @@ class QMRSModel(Model):
             n_freqs (int): Number of frequency points in spectrum
             n_metabolites (int): Number of metabolites to quantify
             n_baseline_coeffs (int): Number of baseline coefficients
+            initial_filters (int): Number of filters in initial conv layer
+            inception_filters (int): Base number of filters for inception modules
+            lstm_units (int): Number of LSTM units
+            mlp_hidden_units (list): Hidden units in MLP layers
+            dropout_rate (float): Dropout rate
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
         self.n_freqs = n_freqs
         self.n_metabolites = n_metabolites
         self.n_baseline_coeffs = n_baseline_coeffs
+        self.initial_filters = initial_filters
+        self.inception_filters = inception_filters
+        self.lstm_units = lstm_units
+
+        # Set default MLP hidden units if not provided
+        if mlp_hidden_units is None:
+            mlp_hidden_units = [512, 256]
+        self.mlp_hidden_units = mlp_hidden_units
+        self.dropout_rate = dropout_rate
 
         # Input layer - 2 channels (edit-OFF and DIFF spectra)
         self.input_layer = Input(shape=(n_freqs, 2), name='spectrum_input')
 
         # Initial convolution and pooling
-        self.conv1 = Conv1D(32, kernel_size=3, padding='same', activation='relu', name='conv1')
+        self.conv1 = Conv1D(self.initial_filters, kernel_size=3, padding='same',
+                           activation='relu', name='conv1')
         self.pool1 = MaxPooling1D(pool_size=2, name='pool1')
 
-        # Three inception modules with increasing filters
-        self.inception1 = InceptionModule(32, name='inception1')
-        self.inception2 = InceptionModule(33, name='inception2')  # n+1 filters
-        self.inception3 = InceptionModule(34, name='inception3')  # n+2 filters
+        # Three inception modules with increasing filters (n, n+1, n+2)
+        self.inception1 = InceptionModule(self.inception_filters, name='inception1')
+        self.inception2 = InceptionModule(self.inception_filters + 1, name='inception2')
+        self.inception3 = InceptionModule(self.inception_filters + 2, name='inception3')
 
         # Bidirectional LSTM
-        self.lstm = Bidirectional(LSTM(128, return_sequences=False),
+        self.lstm = Bidirectional(LSTM(self.lstm_units, return_sequences=False),
                                 merge_mode='concat', name='bidirectional_lstm')
 
         # Multi-headed MLP
-        self.multi_head_mlp = MultiHeadMLP(n_metabolites, n_baseline_coeffs, name='multi_head_mlp')
+        self.multi_head_mlp = MultiHeadMLP(n_metabolites, n_baseline_coeffs,
+                                          mlp_hidden_units=self.mlp_hidden_units,
+                                          dropout_rate=self.dropout_rate,
+                                          name='multi_head_mlp')
 
         # Build the model
         self.build((None, n_freqs, 2))
+
+    def build(self, input_shape):
+        """Build the model with the given input shape.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+        """
+        # Create a dummy input to build all layers
+        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+
+        # Forward pass to build all layers
+        # Initial convolution and pooling
+        x = self.conv1(dummy_input)
+        x = self.pool1(x)
+
+        # Inception modules
+        x = self.inception1(x)
+        x = self.inception2(x)
+        x = self.inception3(x)
+
+        # Bidirectional LSTM
+        x = self.lstm(x)
+
+        # Multi-head MLP
+        x = self.multi_head_mlp(x)
+
+        # Mark as built
+        self.built = True
+        self._build_input_shape = input_shape
 
     def call(self, inputs):
         """Forward pass through QMRS."""
@@ -243,7 +318,12 @@ class QMRSModel(Model):
         config.update({
             'n_freqs': self.n_freqs,
             'n_metabolites': self.n_metabolites,
-            'n_baseline_coeffs': self.n_baseline_coeffs
+            'n_baseline_coeffs': self.n_baseline_coeffs,
+            'initial_filters': self.initial_filters,
+            'inception_filters': self.inception_filters,
+            'lstm_units': self.lstm_units,
+            'mlp_hidden_units': self.mlp_hidden_units,
+            'dropout_rate': self.dropout_rate
         })
         return config
 
@@ -271,17 +351,24 @@ class QMRS:
         qmrs_arch (keras.Model): The actual QMRS model
     """
 
-    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
+    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm,
+                 initial_filters=32, inception_filters=32, lstm_units=128,
+                 mlp_hidden_units=None, dropout_rate=0.5):
         """Initialize a QMRS model.
 
         Parameters
         ----------
-            model (str): Model architecture identifier (e.g., 'qmrs_default')
+            model (str): Model architecture identifier (e.g., 'qmrs_default', 'qmrs_original')
             metabolites (list): List of metabolite names to predict
             pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
             acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
             datatype (list): List of data types (e.g., ['magnitude', 'phase'])
             norm (str): Normalization method (e.g., 'sum', 'max')
+            initial_filters (int): Number of filters in initial conv layer
+            inception_filters (int): Base number of filters for inception modules
+            lstm_units (int): Number of LSTM units
+            mlp_hidden_units (list): Hidden units in MLP layers
+            dropout_rate (float): Dropout rate
         """
         self.model = model
         self.metabolites = metabolites
@@ -290,6 +377,13 @@ class QMRS:
         self.datatype = datatype
         self.norm = norm
         self.output = "concentrations"
+
+        # Architecture parameters
+        self.initial_filters = initial_filters
+        self.inception_filters = inception_filters
+        self.lstm_units = lstm_units
+        self.mlp_hidden_units = mlp_hidden_units
+        self.dropout_rate = dropout_rate
 
         # Input spectra data (constant!)
         self.low_ppm = -1.0
@@ -319,6 +413,70 @@ class QMRS:
         self.qmrs_arch = None
         self.train_dataset_name = None
 
+    def _parse_model_config(self, input_shape):
+        """Parse model string to extract configuration parameters.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+
+        Returns
+        -------
+            tuple: (initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate)
+        """
+        vals = self.model.split("_")
+        if vals[0] != 'qmrs':
+            raise RuntimeError(f"Unknown model {vals[0]}")
+
+        # Default parameters (original paper architecture)
+        default_initial_filters = 32
+        default_inception_filters = 32
+        default_lstm_units = 128
+        default_mlp_hidden_units = [512, 256]
+        default_dropout_rate = 0.5
+
+        if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
+            # qmrs or qmrs_default: use default parameters
+            initial_filters = default_initial_filters
+            inception_filters = default_inception_filters
+            lstm_units = default_lstm_units
+            mlp_hidden_units = default_mlp_hidden_units
+            dropout_rate = default_dropout_rate
+        elif len(vals) == 2 and vals[1] == 'original':
+            # qmrs_original: use original paper parameters (281 frequency points)
+            initial_filters = default_initial_filters
+            inception_filters = default_inception_filters
+            lstm_units = default_lstm_units
+            mlp_hidden_units = default_mlp_hidden_units
+            dropout_rate = default_dropout_rate
+        else:
+            # Custom configuration: qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT]
+            initial_filters = int(vals[1]) if len(vals) > 1 else default_initial_filters
+            inception_filters = int(vals[2]) if len(vals) > 2 else default_inception_filters
+            lstm_units = int(vals[3]) if len(vals) > 3 else default_lstm_units
+
+            # Parse MLP hidden units (comma-separated list)
+            if len(vals) > 4 and vals[4]:
+                mlp_hidden_units = [int(x) for x in vals[4].split(',')]
+            else:
+                mlp_hidden_units = default_mlp_hidden_units
+
+            dropout_rate = float(vals[5]) if len(vals) > 5 else default_dropout_rate
+
+        # Override with instance parameters if provided
+        if self.initial_filters != 32:  # If not default
+            initial_filters = self.initial_filters
+        if self.inception_filters != 32:  # If not default
+            inception_filters = self.inception_filters
+        if self.lstm_units != 128:  # If not default
+            lstm_units = self.lstm_units
+        if self.mlp_hidden_units is not None:  # If provided
+            mlp_hidden_units = self.mlp_hidden_units
+        if self.dropout_rate != 0.5:  # If not default
+            dropout_rate = self.dropout_rate
+
+        return initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate
+
     def _create_training_model(self, input_shape, output_shape):
         """Create a training model that wraps QMRSModel for Keras training.
 
@@ -327,11 +485,26 @@ class QMRS:
             input_shape (tuple): Input tensor shape
             output_shape (tuple): Output tensor shape
         """
-        # Create the QMRS model
-        n_freqs = input_shape[-2]  # Frequency dimension
-        n_metabolites = len(self.metabolites)
+        # Parse model configuration
+        initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate = self._parse_model_config(input_shape)
 
-        self.qmrs_arch = QMRSModel(n_freqs, n_metabolites, name=self.model)
+        # Get framework-determined parameters
+        n_freqs = input_shape[-2]
+        n_metabolites = len(self.metabolites)
+        n_baseline_coeffs = 6  # Fixed baseline coefficients
+
+        # Create the QMRS model with parsed parameters
+        self.qmrs_arch = QMRSModel(
+            n_freqs=n_freqs,
+            n_metabolites=n_metabolites,
+            n_baseline_coeffs=n_baseline_coeffs,
+            initial_filters=initial_filters,
+            inception_filters=inception_filters,
+            lstm_units=lstm_units,
+            mlp_hidden_units=mlp_hidden_units,
+            dropout_rate=dropout_rate,
+            name=self.model
+        )
 
         # Create a training model that outputs only metabolite amplitudes
         input_layer = Input(shape=input_shape, name='training_input')

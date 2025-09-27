@@ -20,7 +20,12 @@ MODIFICATIONS FOR MRSNET:
 * Bidirectional GRU with attention mechanism for sequence modeling
 * JPRESSConverter layer for JPRESS input format handling
 * Multi-head output for concentrations, FIDs, and phase predictions
-* Reduced default parameters for memory efficiency (64 filters instead of 128)
+* Configurable filters parameter (default: 64 instead of 128 for memory efficiency)
+* Fixed attention mechanism using proper softmax over echoes dimension
+* Model string parsing with memory-friendly defaults:
+  - 'encdec' or 'encdec_default': 8 echoes, 64 filters (memory-friendly)
+  - 'encdec_original': 32 echoes, 128 filters (original paper parameters)
+  - 'encdec_[ECHOES]_[FREQS]_[METABOLITES]_[FILTERS]': custom configuration
 """
 
 import csv
@@ -28,16 +33,21 @@ import io
 import json
 import os
 import sys
-from time import time_ns
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.layers import (
-    Activation, BatchNormalization, Conv1D, Dense, Dropout,
-    Flatten, Input, MaxPooling1D, ReLU, GRU, Bidirectional,
-    Concatenate, Lambda, Add, Multiply, GlobalAveragePooling1D
+    GRU,
+    Add,
+    Bidirectional,
+    Concatenate,
+    Conv1D,
+    Dense,
+    GlobalAveragePooling1D,
+    Input,
+    Multiply,
 )
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
@@ -162,7 +172,8 @@ class JPRESSConverter(keras.layers.Layer):
 class AttentionGRU(keras.layers.Layer):
     """Attention-based GRU for EncDec architecture.
 
-    This implements a bidirectional GRU with attention mechanisms
+    This implements a bidirectional GRU with attention mechanism
+    that applies softmax attention across the echoes dimension
     to integrate individual echo representations.
     """
 
@@ -182,7 +193,7 @@ class AttentionGRU(keras.layers.Layer):
                                 merge_mode='concat', name=f'{name}_gru')
 
         # Attention mechanism
-        self.attention_dense = Dense(1, activation='softmax', name=f'{name}_attention')
+        self.attention_dense = Dense(1, activation='linear', name=f'{name}_attention')
 
         # Global average pooling
         self.global_pool = GlobalAveragePooling1D(name=f'{name}_pool')
@@ -192,8 +203,9 @@ class AttentionGRU(keras.layers.Layer):
         # Apply bidirectional GRU
         gru_out = self.gru(inputs)
 
-        # Apply attention
-        attention_weights = self.attention_dense(gru_out)
+        # Apply attention across echoes dimension
+        attention_scores = self.attention_dense(gru_out)  # (batch, echoes, 1)
+        attention_weights = tf.nn.softmax(attention_scores, axis=1)  # Softmax over echoes
         attended = Multiply()([gru_out, attention_weights])
 
         # Global pooling
@@ -216,7 +228,7 @@ class EncDecModel(Model):
     and GRU for JPRESS data processing.
     """
 
-    def __init__(self, n_echoes, n_freqs, n_metabolites, name='EncDecModel', **kwargs):
+    def __init__(self, n_echoes, n_freqs, n_metabolites, filters=64, name='EncDecModel', **kwargs):
         """Initialize EncDec model.
 
         Parameters
@@ -224,33 +236,35 @@ class EncDecModel(Model):
             n_echoes (int): Number of echoes in JPRESS data
             n_freqs (int): Number of frequency points per echo
             n_metabolites (int): Number of metabolites to quantify
+            filters (int): Number of filters for WaveNet blocks (default: 64)
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
         self.n_echoes = n_echoes
         self.n_freqs = n_freqs
         self.n_metabolites = n_metabolites
+        self.filters = filters
 
         # Input layer - (batch, echoes, freqs, channels)
         self.input_layer = Input(shape=(n_echoes, n_freqs, 2), name='jpress_input')
 
         # Encoder: 3 WaveNet blocks with increasing dilation
-        self.wavenet1 = WaveNetBlock(128, dilation_rate=1, name='wavenet1')
-        self.wavenet2 = WaveNetBlock(128, dilation_rate=2, name='wavenet2')
-        self.wavenet3 = WaveNetBlock(128, dilation_rate=4, name='wavenet3')
+        self.wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='wavenet1')
+        self.wavenet2 = WaveNetBlock(filters, dilation_rate=2, name='wavenet2')
+        self.wavenet3 = WaveNetBlock(filters, dilation_rate=4, name='wavenet3')
 
         # Global pooling for each echo
         self.echo_pool = GlobalAveragePooling1D(name='echo_pool')
 
         # Attention GRU for echo integration
-        self.attention_gru = AttentionGRU(128, name='attention_gru')
+        self.attention_gru = AttentionGRU(filters, name='attention_gru')
 
         # Skip connections for decoder
         self.skip_concat = Concatenate(axis=-1, name='skip_concat')
 
         # Decoder: 2 WaveNet blocks
-        self.decoder_wavenet1 = WaveNetBlock(128, dilation_rate=1, name='decoder_wavenet1')
-        self.decoder_wavenet2 = WaveNetBlock(128, dilation_rate=1, name='decoder_wavenet2')
+        self.decoder_wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='decoder_wavenet1')
+        self.decoder_wavenet2 = WaveNetBlock(filters, dilation_rate=1, name='decoder_wavenet2')
 
         # Output layers
         # Metabolite concentrations
@@ -280,11 +294,11 @@ class EncDecModel(Model):
         x3 = self.wavenet3(x2)
 
         # Pool each echo
-        pooled = self.echo_pool(x3)  # (batch * echoes, 128)
-        pooled = tf.reshape(pooled, [batch_size, self.n_echoes, 128])
+        pooled = self.echo_pool(x3)  # (batch * echoes, filters)
+        pooled = tf.reshape(pooled, [batch_size, self.n_echoes, self.filters])
 
         # Attention GRU integration
-        unified_repr = self.attention_gru(pooled)  # (batch, 256)
+        unified_repr = self.attention_gru(pooled)  # (batch, 2*filters)
 
         # Decoder: Reconstruct FIDs
         # Expand unified representation for decoder
@@ -315,7 +329,8 @@ class EncDecModel(Model):
         config.update({
             'n_echoes': self.n_echoes,
             'n_freqs': self.n_freqs,
-            'n_metabolites': self.n_metabolites
+            'n_metabolites': self.n_metabolites,
+            'filters': self.filters
         })
         return config
 
@@ -342,7 +357,7 @@ class EncDec:
         encdec_arch (keras.Model): The actual EncDec model
     """
 
-    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
+    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm, filters=64):
         """Initialize an EncDec model.
 
         Parameters
@@ -353,6 +368,7 @@ class EncDec:
             acquisitions (list): List of acquisition types (e.g., ['edit_off', 'edit_on', 'difference'])
             datatype (list): List of data types (e.g., ['magnitude', 'phase'])
             norm (str): Normalization method (e.g., 'sum', 'max')
+            filters (int): Number of filters for WaveNet blocks (default: 64)
         """
         self.model = model
         self.metabolites = metabolites
@@ -360,6 +376,7 @@ class EncDec:
         self.acquisitions = acquisitions
         self.datatype = datatype
         self.norm = norm
+        self.filters = filters
         self.output = "concentrations"
 
         # Input spectra data (constant!)
@@ -390,6 +407,45 @@ class EncDec:
         self.encdec_arch = None
         self.train_dataset_name = None
 
+    def _parse_model_config(self, input_shape):
+        """Parse model configuration from model string.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+
+        Returns
+        -------
+            tuple: (n_echoes, filters)
+        """
+        vals = self.model.split("_")
+        if vals[0] != 'encdec':
+            raise RuntimeError(f"Unknown model {vals[0]}")
+
+        # Parse model parameters
+        if len(vals) == 1:
+            # Default EncDec configuration - memory-friendly defaults
+            n_echoes = 8   # Reduced from 32 for memory efficiency
+            filters = 64  # Default memory-friendly filters
+        elif len(vals) == 2 and vals[1] == 'default':
+            # encdec_default configuration - memory-friendly defaults
+            n_echoes = 8   # Reduced from 32 for memory efficiency
+            filters = 64  # Default memory-friendly filters
+        elif len(vals) == 2 and vals[1] == 'original':
+            # encdec_original configuration - original paper parameters
+            n_echoes = 32  # Original JPRESS standard (from paper)
+            filters = 128  # Original paper filters
+        else:
+            # Custom EncDec configuration: encdec_[ECHOES]_[FILTERS]
+            n_echoes = int(vals[1]) if len(vals) > 1 else 8
+            filters = int(vals[2]) if len(vals) > 2 else 64
+
+        # Override with instance filters if provided
+        if hasattr(self, 'filters') and self.filters != 64:
+            filters = self.filters
+
+        return n_echoes, filters
+
     def _create_training_model(self, input_shape, output_shape):
         """Create a training model that wraps EncDecModel for Keras training.
 
@@ -398,14 +454,12 @@ class EncDec:
             input_shape (tuple): Input tensor shape
             output_shape (tuple): Output tensor shape
         """
-        # Create the EncDec model
-        n_echoes = 32  # Original JPRESS standard (from paper)
-        n_freqs = input_shape[-1]  # Frequency dimension (last dimension)
-        n_metabolites = len(self.metabolites)
+        # Parse model configuration
+        n_echoes, n_freqs, n_metabolites, filters = self._parse_model_config(input_shape)
 
         # Create EncDec model with concrete input shape
         concrete_input_shape = (None, n_echoes, n_freqs, 2)
-        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, name=self.model)
+        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, filters=filters, name=self.model)
 
         # Create a training model that outputs only metabolite concentrations
         input_layer = Input(shape=input_shape, name='training_input')
@@ -436,29 +490,15 @@ class EncDec:
             input_shape (tuple): Input tensor shape
             output_shape (tuple): Output tensor shape
         """
-        vals = self.model.split("_")
-        if vals[0] != 'encdec':
-            raise RuntimeError(f"Unknown model {vals[0]}")
+        # Parse model configuration
+        n_echoes, filters = self._parse_model_config(input_shape)
 
-        # Parse model parameters
-        if len(vals) == 1:
-            # Default EncDec configuration
-            n_echoes = 32  # Original JPRESS standard (from paper)
-            n_freqs = input_shape[-1]  # Frequency dimension (last dimension)
-            n_metabolites = len(self.metabolites)
-        elif len(vals) == 2 and vals[1] == 'default':
-            # encdec_default configuration
-            n_echoes = 32  # Original JPRESS standard (from paper)
-            n_freqs = input_shape[-1]  # Frequency dimension (last dimension)
-            n_metabolites = len(self.metabolites)
-        else:
-            # Custom EncDec configuration: encdec_[ECHOES]_[FREQS]_[METABOLITES]
-            n_echoes = int(vals[1]) if len(vals) > 1 else 32
-            n_freqs = int(vals[2]) if len(vals) > 2 else input_shape[-1]
-            n_metabolites = int(vals[3]) if len(vals) > 3 else len(self.metabolites)
+        # Get framework-determined parameters
+        n_freqs = input_shape[0]  # Frequency dimension (first dimension)
+        n_metabolites = len(self.metabolites)
 
         # Create EncDec model
-        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, name=self.model)
+        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, filters=filters, name=self.model)
 
     def train(self, d_data, v_data, epochs, batch_size,
               folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -670,9 +710,17 @@ class EncDec:
             n_freqs = tf.shape(spectra)[2]
             spectra_reshaped = spectra
 
-        # For JPRESS, we simulate multiple echoes by replicating the input
-        # In practice, this would be actual JPRESS data with multiple echoes
-        n_echoes = 32  # Original JPRESS standard (from paper)
+        # Get the configured number of echoes from the model
+        # Parse model configuration to get n_echoes
+        vals = self.model.split("_")
+        if len(vals) == 1:
+            n_echoes = 8   # Default memory-friendly
+        elif len(vals) == 2 and vals[1] == 'default':
+            n_echoes = 8   # Default memory-friendly
+        elif len(vals) == 2 and vals[1] == 'original':
+            n_echoes = 32  # Original paper
+        else:
+            n_echoes = int(vals[1]) if len(vals) > 1 else 8
 
         # Reshape to (batch, echoes, freqs, channels)
         # For now, replicate the input across echoes
