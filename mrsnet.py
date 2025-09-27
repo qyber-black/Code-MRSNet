@@ -263,7 +263,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP], or qnet_[FREQS]_[METABOLITES] - see models in mrsnet for details.')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP], or qnet_[FREQS]_[METABOLITES], or fcnn_[FREQS]_[METABOLITES], or qmrs_[FREQS]_[METABOLITES] - see models in mrsnet for details.')
   p.add_argument('-a', '--autoencoder', type=str,
                  help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
@@ -781,6 +781,56 @@ def train(args):
                                verbose=args.verbose)
       data = [d_inp, d_out]
       data_name = ds.name+"_"+ds_rest
+  elif args.model[0:4] == 'fcnn':
+      from mrsnet.fcnn import FoundationalCNN
+      if args.verbose > 0:
+        print(f"# Loading dataset {name} : {ds_rest}")
+      ds = None
+      try:
+        ds = dataset.Dataset.load(args.dataset)
+      except Exception:
+        ds = None
+      if ds is None:
+        for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+          dn = os.path.join(spath,name,ds_rest)
+          if os.path.isdir(dn):
+            ds = dataset.Dataset.load(dn)
+            break
+      if ds is None:
+        raise RuntimeError(f"Dataset {args.dataset} not found")
+      model = FoundationalCNN(args.model, args.metabolites, ds.pulse_sequence,
+                             args.acquisitions, args.datatype, args.norm)
+      d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
+                               acquisitions=args.acquisitions, datatype=args.datatype,
+                               high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                               verbose=args.verbose)
+      data = [d_inp, d_out]
+      data_name = ds.name+"_"+ds_rest
+  elif args.model[0:4] == 'qmrs':
+      from mrsnet.qmrs import QMRS
+      if args.verbose > 0:
+        print(f"# Loading dataset {name} : {ds_rest}")
+      ds = None
+      try:
+        ds = dataset.Dataset.load(args.dataset)
+      except Exception:
+        ds = None
+      if ds is None:
+        for spath in [Cfg.val['path_simulation'], *Cfg.val['search_simulation']]:
+          dn = os.path.join(spath,name,ds_rest)
+          if os.path.isdir(dn):
+            ds = dataset.Dataset.load(dn)
+            break
+      if ds is None:
+        raise RuntimeError(f"Dataset {args.dataset} not found")
+      model = QMRS(args.model, args.metabolites, ds.pulse_sequence,
+                  args.acquisitions, args.datatype, args.norm)
+      d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
+                              acquisitions=args.acquisitions, datatype=args.datatype,
+                              high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                              verbose=args.verbose)
+      data = [d_inp, d_out]
+      data_name = ds.name+"_"+ds_rest
   else:
     raise RuntimeError(f"Unknown model {args.model}")
   if args.verbose > 0:
@@ -928,6 +978,28 @@ def quantify(args):
             quantifier = QNet.load(folder)
         except Exception:
             raise RuntimeError("Model not found") from None
+  elif name[0:4] == "fcnn":
+    from mrsnet.fcnn import FoundationalCNN
+    try:
+        folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+        quantifier = FoundationalCNN.load(folder)
+    except Exception:
+        try:
+            folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+            quantifier = FoundationalCNN.load(folder)
+        except Exception:
+            raise RuntimeError("Model not found") from None
+  elif name[0:4] == "qmrs":
+    from mrsnet.qmrs import QMRS
+    try:
+        folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+        quantifier = QMRS.load(folder)
+    except Exception:
+        try:
+            folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
+            quantifier = QMRS.load(folder)
+        except Exception:
+            raise RuntimeError("Model not found") from None
 
   else:
     raise RuntimeError("Unknown model "+name)
@@ -991,7 +1063,7 @@ def benchmark(args):
   idl = get_std_name(args.model)
   name = []
   for k in range(0,len(idl)):
-    if idl[k][0:4] == 'cnn_' or idl[k][0:4] == 'aeq_' or idl[k][0:4] == 'caeq' or idl[k][0:4] == 'qnet':
+    if idl[k][0:4] == 'cnn_' or idl[k][0:4] == 'aeq_' or idl[k][0:4] == 'caeq' or idl[k][0:4] == 'qnet' or idl[k][0:4] == 'fcnn' or idl[k][0:4] == 'qmrs':
       name = os.path.join(*idl[k:k+6])
       batchsize = idl[k+6]
       epochs = idl[k+7]
@@ -1075,6 +1147,42 @@ def benchmark(args):
         for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
           quantifier = QNet.load(folder)
+          break
+      except Exception:
+        quantifier = None
+      if quantifier is None:
+        raise RuntimeError("Model not found")
+  elif name[0:4] == "fcnn":
+    from mrsnet.fcnn import FoundationalCNN
+    quantifier = None
+    try:
+      folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+      quantifier = FoundationalCNN.load(folder)
+    except Exception:
+      quantifier = None
+    if quantifier is None:
+      try:
+        for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
+          folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
+          quantifier = FoundationalCNN.load(folder)
+          break
+      except Exception:
+        quantifier = None
+      if quantifier is None:
+        raise RuntimeError("Model not found")
+  elif name[0:4] == "qmrs":
+    from mrsnet.qmrs import QMRS
+    quantifier = None
+    try:
+      folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+      quantifier = QMRS.load(folder)
+    except Exception:
+      quantifier = None
+    if quantifier is None:
+      try:
+        for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
+          folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
+          quantifier = QMRS.load(folder)
           break
       except Exception:
         quantifier = None

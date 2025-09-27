@@ -274,6 +274,23 @@ class Select:
       from mrsnet.qnet import QNet
       model_name = str(QNet(model_str,self.metabolites, self.pulse_sequence,
                             args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:4] == 'fcnn':
+      # FoundationalCNN model
+      # fcnn_[FREQS]_[METABOLITES] or fcnn (default)
+      model_str = args['model']
+      self.error_type = 'concentration'
+      from mrsnet.fcnn import FoundationalCNN
+      model_name = str(FoundationalCNN(model_str,self.metabolites, self.pulse_sequence,
+                                      args['acquisitions'], args['datatype'], args['norm']))
+
+    elif args['model'][0:4] == 'qmrs':
+      # QMRS model
+      # qmrs_[FREQS]_[METABOLITES] or qmrs (default)
+      model_str = args['model']
+      self.error_type = 'concentration'
+      from mrsnet.qmrs import QMRS
+      model_name = str(QMRS(model_str,self.metabolites, self.pulse_sequence,
+                           args['acquisitions'], args['datatype'], args['norm']))
 
     else:
       raise RuntimeError(f"Unknown model string {args['model']}")
