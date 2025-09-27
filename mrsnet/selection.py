@@ -292,6 +292,15 @@ class Select:
       model_name = str(QMRS(model_str,self.metabolites, self.pulse_sequence,
                            args['acquisitions'], args['datatype'], args['norm']))
 
+    elif args['model'][0:6] == 'encdec':
+      # EncDec model
+      # encdec_[ECHOES]_[FREQS]_[METABOLITES] or encdec (default)
+      model_str = args['model']
+      self.error_type = 'concentration'
+      from mrsnet.encdec import EncDec
+      model_name = str(EncDec(model_str,self.metabolites, self.pulse_sequence,
+                             args['acquisitions'], args['datatype'], args['norm']))
+
     else:
       raise RuntimeError(f"Unknown model string {args['model']}")
 

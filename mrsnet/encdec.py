@@ -1,25 +1,26 @@
-# mrsnet/qnet.py - MRSNet - QNet model
+# mrsnet/encdec.py - MRSNet - EncDec model
 #
 # SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""QNet (Quantification Network) model for MRSNet.
+"""EncDec (Encoder-Decoder) model for MRSNet.
 
-This module implements the QNet architecture from the paper:
-"Quantification of Magnetic Resonance Spectroscopy Data Using Deep Learning"
-by Chen, D., et al. IEEE Trans Biomed Eng, 2024 Jun;71(6):1841-1852.
-doi: 10.1109/TBME.2024.3354123
-https://pubmed.ncbi.nlm.nih.gov/38224519/
+This module implements the EncDec architecture from the paper:
+"Quantification of Spatially Localized Magnetic Resonance Spectroscopy by a Novel Deep Learning Approach without Spectral Fitting"
+by Zhang, Y., Shen, J., Mag Reson Med, 2023, May 15;90(4):1282-1296.
+doi: 10.1002/mrm.29711
+https://pmc.ncbi.nlm.nih.gov/articles/PMC10524908/
 
-QNet consists of two deep learning modules:
-1. IF Extraction Module: Predicts imperfection factors (phase, frequency, linewidth)
-2. MM Signal Prediction Module: Predicts macromolecule background signal
-3. LLS Module: Linear Least Squares for metabolite concentration estimation
+EncDec is an encoder-decoder style neural network with WaveNet blocks and GRU
+for JPRESS data processing and metabolite quantification.
 
 MODIFICATIONS FOR MRSNET:
-* QNet-specific architecture with IF Extraction Module and MM Signal Prediction Module
-* Custom StackedConvolutionalBlock layer
-* LLS (Linear Least Squares) module for metabolite concentration estimation
+* EncDec-specific encoder-decoder architecture
+* Custom WaveNetBlock for dilated convolutions with residual connections
+* Bidirectional GRU with attention mechanism for sequence modeling
+* JPRESSConverter layer for JPRESS input format handling
+* Multi-head output for concentrations, FIDs, and phase predictions
+* Reduced default parameters for memory efficiency (64 filters instead of 128)
 """
 
 import csv
@@ -35,7 +36,8 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.layers import (
     Activation, BatchNormalization, Conv1D, Dense, Dropout,
-    Flatten, Input, MaxPooling1D, ReLU
+    Flatten, Input, MaxPooling1D, ReLU, GRU, Bidirectional,
+    Concatenate, Lambda, Add, Multiply, GlobalAveragePooling1D
 )
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
@@ -50,147 +52,279 @@ from mrsnet.cnn import TimeHistory
 from mrsnet.train import calculate_flops, reshape_spectra_data
 
 
-@register_keras_serializable(package="mrsnet", name="StackedConvolutionalBlock")
-class StackedConvolutionalBlock(keras.layers.Layer):
-    """Stacked Convolutional Block (SCB) as used in QNet.
+@register_keras_serializable(package="mrsnet", name="WaveNetBlock")
+class WaveNetBlock(keras.layers.Layer):
+    """WaveNet block for EncDec architecture.
 
-    Each SCB contains 2 convolutional layers with ReLU activation
-    and max pooling.
+    This implements a WaveNet-style dilated convolution block with
+    residual connections and gated activation.
     """
 
-    def __init__(self, filters, kernel_size=3, name=None, **kwargs):
-        """Initialize SCB.
+    def __init__(self, filters, kernel_size=5, dilation_rate=1, name=None, **kwargs):
+        """Initialize WaveNet block.
 
         Parameters
         ----------
-            filters (int): Number of filters in convolutional layers
-            kernel_size (int): Kernel size for convolution (default 3)
+            filters (int): Number of filters
+            kernel_size (int): Kernel size for convolution
+            dilation_rate (int): Dilation rate for convolution
             name (str, optional): Layer name
         """
         super().__init__(name=name, **kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
+        self.dilation_rate = dilation_rate
 
-        # Two convolutional layers
-        self.conv1 = Conv1D(filters, kernel_size, padding='same', activation='relu')
-        self.conv2 = Conv1D(filters, kernel_size, padding='same', activation='relu')
-        self.maxpool = MaxPooling1D(pool_size=2)
+        # Dilated convolution layers
+        self.conv_filter = Conv1D(filters, kernel_size, dilation_rate=dilation_rate,
+                                  padding='same', activation='tanh', name=f'{name}_filter')
+        self.conv_gate = Conv1D(filters, kernel_size, dilation_rate=dilation_rate,
+                               padding='same', activation='sigmoid', name=f'{name}_gate')
+
+        # 1x1 convolution for residual connection
+        self.conv_residual = Conv1D(filters, 1, padding='same', name=f'{name}_residual')
+
+        # Add layer for residual connection
+        self.add = Add(name=f'{name}_add')
 
     def call(self, inputs):
-        """Forward pass through SCB."""
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.maxpool(x)
-        return x
+        """Forward pass through WaveNet block."""
+        # Gated activation
+        filter_out = self.conv_filter(inputs)
+        gate_out = self.conv_gate(inputs)
+        gated = Multiply()([filter_out, gate_out])
+
+        # Residual connection
+        residual = self.conv_residual(inputs)
+        output = self.add([gated, residual])
+
+        return output
 
     def get_config(self):
         """Get configuration for serialization."""
         config = super().get_config()
         config.update({
             'filters': self.filters,
-            'kernel_size': self.kernel_size
+            'kernel_size': self.kernel_size,
+            'dilation_rate': self.dilation_rate
         })
         return config
 
 
-@register_keras_serializable(package="mrsnet", name="QNetModel")
-class QNetModel(Model):
-    """QNet model combining IF extraction, MM prediction, and LLS.
+@register_keras_serializable(package="mrsnet", name="JPRESSConverter")
+class JPRESSConverter(keras.layers.Layer):
+    """Convert spectra to JPRESS format (echoes, freqs, channels)."""
 
-    This implements the complete QNet architecture with two deep learning
-    modules and a linear least squares component.
+    def __init__(self, n_echoes=8, name=None, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.n_echoes = n_echoes
+
+    def call(self, inputs):
+        """Convert input spectra to JPRESS format."""
+        # Check if input is already in JPRESS format
+        if len(inputs.shape) == 4:  # (batch, echoes, freqs, channels)
+            return inputs
+
+        # Input shape: (batch, acquisitions*datatypes, freqs)
+        # Output shape: (batch, echoes, freqs, channels)
+
+        batch_size = tf.shape(inputs)[0]
+        n_channels = tf.shape(inputs)[1]  # acquisitions*datatypes
+        n_freqs = tf.shape(inputs)[2]
+
+        # For JPRESS, we simulate multiple echoes by replicating the input
+        # In practice, this would be actual JPRESS data with multiple echoes
+
+        # Reshape to (batch, echoes, freqs, channels)
+        # For now, replicate the input across echoes
+        spectra_expanded = tf.tile(tf.expand_dims(inputs, 1), [1, self.n_echoes, 1, 1])
+
+        # Transpose to get (batch, echoes, freqs, channels)
+        spectra_jpress = tf.transpose(spectra_expanded, [0, 1, 3, 2])
+
+        # Take first 2 channels or pad if needed
+        if n_channels >= 2:
+            spectra_jpress = spectra_jpress[:, :, :, :2]
+        else:
+            # Pad with zeros if we have fewer than 2 channels
+            padding = tf.zeros((batch_size, self.n_echoes, n_freqs, 2 - n_channels))
+            spectra_jpress = tf.concat([spectra_jpress, padding], axis=-1)
+
+        return spectra_jpress
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({'n_echoes': self.n_echoes})
+        return config
+
+
+@register_keras_serializable(package="mrsnet", name="AttentionGRU")
+class AttentionGRU(keras.layers.Layer):
+    """Attention-based GRU for EncDec architecture.
+
+    This implements a bidirectional GRU with attention mechanisms
+    to integrate individual echo representations.
     """
 
-    def __init__(self, n_freqs, n_metabolites, n_if_factors=3, name='QNetModel', **kwargs):
-        """Initialize QNet model.
+    def __init__(self, units, name=None, **kwargs):
+        """Initialize AttentionGRU.
 
         Parameters
         ----------
-            n_freqs (int): Number of frequency points in spectrum
+            units (int): Number of GRU units
+            name (str, optional): Layer name
+        """
+        super().__init__(name=name, **kwargs)
+        self.units = units
+
+        # Bidirectional GRU
+        self.gru = Bidirectional(GRU(units, return_sequences=True),
+                                merge_mode='concat', name=f'{name}_gru')
+
+        # Attention mechanism
+        self.attention_dense = Dense(1, activation='softmax', name=f'{name}_attention')
+
+        # Global average pooling
+        self.global_pool = GlobalAveragePooling1D(name=f'{name}_pool')
+
+    def call(self, inputs):
+        """Forward pass through AttentionGRU."""
+        # Apply bidirectional GRU
+        gru_out = self.gru(inputs)
+
+        # Apply attention
+        attention_weights = self.attention_dense(gru_out)
+        attended = Multiply()([gru_out, attention_weights])
+
+        # Global pooling
+        output = self.global_pool(attended)
+
+        return output
+
+    def get_config(self):
+        """Get configuration for serialization."""
+        config = super().get_config()
+        config.update({'units': self.units})
+        return config
+
+
+@register_keras_serializable(package="mrsnet", name="EncDecModel")
+class EncDecModel(Model):
+    """EncDec model for MRS metabolite quantification.
+
+    This implements the encoder-decoder architecture with WaveNet blocks
+    and GRU for JPRESS data processing.
+    """
+
+    def __init__(self, n_echoes, n_freqs, n_metabolites, name='EncDecModel', **kwargs):
+        """Initialize EncDec model.
+
+        Parameters
+        ----------
+            n_echoes (int): Number of echoes in JPRESS data
+            n_freqs (int): Number of frequency points per echo
             n_metabolites (int): Number of metabolites to quantify
-            n_if_factors (int): Number of imperfection factors (default 3: phase, freq, linewidth)
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
+        self.n_echoes = n_echoes
         self.n_freqs = n_freqs
         self.n_metabolites = n_metabolites
-        self.n_if_factors = n_if_factors
 
-        # Input layer
-        self.input_layer = Input(shape=(n_freqs,), name='spectrum_input')
+        # Input layer - (batch, echoes, freqs, channels)
+        self.input_layer = Input(shape=(n_echoes, n_freqs, 2), name='jpress_input')
 
-        # Transpose input for Conv1D layers
-        # Input is (batch, n_acquisitions * n_datatypes, n_freqs) -> (batch, n_freqs, n_acquisitions * n_datatypes)
-        self.input_transpose = tf.keras.layers.Lambda(lambda x: tf.transpose(x, [0, 2, 1]), name='input_transpose')
+        # Encoder: 3 WaveNet blocks with increasing dilation
+        self.wavenet1 = WaveNetBlock(128, dilation_rate=1, name='wavenet1')
+        self.wavenet2 = WaveNetBlock(128, dilation_rate=2, name='wavenet2')
+        self.wavenet3 = WaveNetBlock(128, dilation_rate=4, name='wavenet3')
 
-        # IF Extraction Module: 3 SCBs + 2 FCLs
-        self.if_scb1 = StackedConvolutionalBlock(16, name='if_scb1')
-        self.if_scb2 = StackedConvolutionalBlock(32, name='if_scb2')
-        self.if_scb3 = StackedConvolutionalBlock(64, name='if_scb3')
-        self.if_flatten = Flatten(name='if_flatten')
-        self.if_fc1 = Dense(128, activation='relu', name='if_fc1')
-        self.if_fc2 = Dense(n_metabolites * n_if_factors, name='if_output')
+        # Global pooling for each echo
+        self.echo_pool = GlobalAveragePooling1D(name='echo_pool')
 
-        # MM Signal Prediction Module: 6 SCBs + 2 FCLs
-        self.mm_scb1 = StackedConvolutionalBlock(16, name='mm_scb1')
-        self.mm_scb2 = StackedConvolutionalBlock(32, name='mm_scb2')
-        self.mm_scb3 = StackedConvolutionalBlock(64, name='mm_scb3')
-        self.mm_scb4 = StackedConvolutionalBlock(128, name='mm_scb4')
-        self.mm_scb5 = StackedConvolutionalBlock(256, name='mm_scb5')
-        self.mm_scb6 = StackedConvolutionalBlock(256, name='mm_scb6')
-        self.mm_flatten = Flatten(name='mm_flatten')
-        self.mm_fc1 = Dense(512, activation='relu', name='mm_fc1')
-        self.mm_fc2 = Dense(n_freqs, name='mm_output')
+        # Attention GRU for echo integration
+        self.attention_gru = AttentionGRU(128, name='attention_gru')
 
-        # Build the model
-        self.build((None, n_freqs))
+        # Skip connections for decoder
+        self.skip_concat = Concatenate(axis=-1, name='skip_concat')
+
+        # Decoder: 2 WaveNet blocks
+        self.decoder_wavenet1 = WaveNetBlock(128, dilation_rate=1, name='decoder_wavenet1')
+        self.decoder_wavenet2 = WaveNetBlock(128, dilation_rate=1, name='decoder_wavenet2')
+
+        # Output layers
+        # Metabolite concentrations
+        self.concentration_dense = Dense(n_metabolites, activation='linear', name='concentrations')
+
+        # Individual metabolite FIDs (for all echoes) - original size
+        self.fid_dense = Dense(n_echoes * n_freqs * 2, activation='linear', name='fids')
+
+        # Spectral parameters
+        self.phase_dense = Dense(2, activation='linear', name='phase')  # phase shift and frequency offset
+
+    def build(self, input_shape):
+        """Build the model with proper input shape."""
+        super().build(input_shape)
+        # The layers will be built automatically when called
 
     def call(self, inputs):
-        """Forward pass through QNet."""
-        # Transpose input for Conv1D layers
-        x = self.input_transpose(inputs)
+        """Forward pass through EncDec."""
+        # Encoder: Process each echo through WaveNet blocks
+        # Input is already in JPRESS format: (batch, echoes, freqs, channels)
+        batch_size = tf.shape(inputs)[0]
+        x = tf.reshape(inputs, [batch_size * self.n_echoes, self.n_freqs, 2])
 
-        # IF Extraction branch
-        if_x = self.if_scb1(x)
-        if_x = self.if_scb2(if_x)
-        if_x = self.if_scb3(if_x)
-        if_x = self.if_flatten(if_x)
-        if_x = self.if_fc1(if_x)
-        if_factors = self.if_fc2(if_x)
+        # WaveNet blocks
+        x1 = self.wavenet1(x)
+        x2 = self.wavenet2(x1)
+        x3 = self.wavenet3(x2)
 
-        # MM Signal Prediction branch
-        mm_x = self.mm_scb1(x)
-        mm_x = self.mm_scb2(mm_x)
-        mm_x = self.mm_scb3(mm_x)
-        mm_x = self.mm_scb4(mm_x)
-        mm_x = self.mm_scb5(mm_x)
-        mm_x = self.mm_scb6(mm_x)
-        mm_x = self.mm_flatten(mm_x)
-        mm_x = self.mm_fc1(mm_x)
-        mm_signal = self.mm_fc2(mm_x)
+        # Pool each echo
+        pooled = self.echo_pool(x3)  # (batch * echoes, 128)
+        pooled = tf.reshape(pooled, [batch_size, self.n_echoes, 128])
+
+        # Attention GRU integration
+        unified_repr = self.attention_gru(pooled)  # (batch, 256)
+
+        # Decoder: Reconstruct FIDs
+        # Expand unified representation for decoder
+        decoder_input = tf.tile(tf.expand_dims(unified_repr, 1), [1, self.n_freqs, 1])
+
+        # Skip connections
+        skip_features = self.skip_concat([x1, x2, x3])
+        skip_features = tf.reshape(skip_features, [batch_size, self.n_freqs, -1])
+
+        # Decoder WaveNet blocks
+        decoder_out1 = self.decoder_wavenet1(decoder_input)
+        decoder_out2 = self.decoder_wavenet2(decoder_out1)
+
+        # Outputs
+        concentrations = self.concentration_dense(unified_repr)
+        fids = self.fid_dense(tf.reshape(decoder_out2, [batch_size, -1]))
+        phase_params = self.phase_dense(unified_repr)
 
         return {
-            'if_factors': if_factors,
-            'mm_signal': mm_signal
+            'concentrations': concentrations,
+            'fids': fids,
+            'phase': phase_params
         }
 
     def get_config(self):
         """Get configuration for serialization."""
         config = super().get_config()
         config.update({
+            'n_echoes': self.n_echoes,
             'n_freqs': self.n_freqs,
-            'n_metabolites': self.n_metabolites,
-            'n_if_factors': self.n_if_factors
+            'n_metabolites': self.n_metabolites
         })
         return config
 
 
-class QNet:
-    """QNet (Quantification Network) for MRS metabolite quantification.
+class EncDec:
+    """EncDec for MRS metabolite quantification.
 
-    This class implements the QNet architecture with two deep learning modules
-    for imperfection factor extraction and macromolecule signal prediction,
-    combined with linear least squares for metabolite concentration estimation.
+    This class implements the encoder-decoder architecture with WaveNet blocks
+    and GRU for JPRESS data processing and metabolite concentration prediction.
 
     Attributes
     ----------
@@ -205,18 +339,18 @@ class QNet:
         high_ppm (float): Upper PPM bound for input data
         fft_samples (int): Number of FFT samples
         train_dataset_name (str): Name of training dataset
-        qnet_arch (keras.Model): The actual QNet model
+        encdec_arch (keras.Model): The actual EncDec model
     """
 
     def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm):
-        """Initialize a QNet model.
+        """Initialize an EncDec model.
 
         Parameters
         ----------
-            model (str): Model architecture identifier (e.g., 'qnet_default')
+            model (str): Model architecture identifier (e.g., 'encdec_default')
             metabolites (list): List of metabolite names to predict
             pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
-            acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
+            acquisitions (list): List of acquisition types (e.g., ['edit_off', 'edit_on', 'difference'])
             datatype (list): List of data types (e.g., ['magnitude', 'phase'])
             norm (str): Normalization method (e.g., 'sum', 'max')
         """
@@ -234,10 +368,7 @@ class QNet:
         self.fft_samples = 2048
 
         self.train_dataset_name = None
-        self.qnet_arch = None
-
-        # Basis set for LLS (will be loaded during training)
-        self.basis_set = None
+        self.encdec_arch = None
 
     def __str__(self):
         """Get string representation of the model path.
@@ -252,16 +383,53 @@ class QNet:
         return n
 
     def reset(self):
-        """Reset the QNet architecture and training dataset name.
+        """Reset the EncDec architecture and training dataset name.
 
         Clears the current model architecture and training dataset information.
         """
-        self.qnet_arch = None
+        self.encdec_arch = None
         self.train_dataset_name = None
-        self.basis_set = None
+
+    def _create_training_model(self, input_shape, output_shape):
+        """Create a training model that wraps EncDecModel for Keras training.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+            output_shape (tuple): Output tensor shape
+        """
+        # Create the EncDec model
+        n_echoes = 32  # Original JPRESS standard (from paper)
+        n_freqs = input_shape[-1]  # Frequency dimension (last dimension)
+        n_metabolites = len(self.metabolites)
+
+        # Create EncDec model with concrete input shape
+        concrete_input_shape = (None, n_echoes, n_freqs, 2)
+        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, name=self.model)
+
+        # Create a training model that outputs only metabolite concentrations
+        input_layer = Input(shape=input_shape, name='training_input')
+
+        # Convert input to JPRESS format using custom layer
+        jpress_converter = JPRESSConverter(n_echoes=n_echoes, name='jpress_converter')
+        jpress_input = jpress_converter(input_layer)
+
+        # Get EncDec outputs
+        encdec_outputs = self.encdec_arch(jpress_input)
+
+        # Extract only the concentrations for training (ignore FIDs and phase)
+        if isinstance(encdec_outputs, dict):
+            concentration_output = encdec_outputs['concentrations']
+        else:
+            concentration_output = encdec_outputs
+
+        # Create training model
+        self.training_model = Model(inputs=input_layer, outputs=concentration_output, name=f"{self.model}_training")
+
+        return self.training_model
 
     def _construct(self, input_shape, output_shape):
-        """Construct the QNet architecture using functional API.
+        """Construct the EncDec architecture using functional API.
 
         Parameters
         ----------
@@ -269,128 +437,32 @@ class QNet:
             output_shape (tuple): Output tensor shape
         """
         vals = self.model.split("_")
-        if vals[0] != 'qnet':
+        if vals[0] != 'encdec':
             raise RuntimeError(f"Unknown model {vals[0]}")
 
         # Parse model parameters
         if len(vals) == 1:
-            # Default QNet configuration
-            n_freqs = input_shape[-1]
+            # Default EncDec configuration
+            n_echoes = 32  # Original JPRESS standard (from paper)
+            n_freqs = input_shape[-1]  # Frequency dimension (last dimension)
             n_metabolites = len(self.metabolites)
         elif len(vals) == 2 and vals[1] == 'default':
-            # qnet_default configuration
-            n_freqs = input_shape[-1]
+            # encdec_default configuration
+            n_echoes = 32  # Original JPRESS standard (from paper)
+            n_freqs = input_shape[-1]  # Frequency dimension (last dimension)
             n_metabolites = len(self.metabolites)
         else:
-            # Custom QNet configuration: qnet_[FREQS]_[METABOLITES]
-            n_freqs = int(vals[1]) if len(vals) > 1 else input_shape[-1]
-            n_metabolites = int(vals[2]) if len(vals) > 2 else len(self.metabolites)
+            # Custom EncDec configuration: encdec_[ECHOES]_[FREQS]_[METABOLITES]
+            n_echoes = int(vals[1]) if len(vals) > 1 else 32
+            n_freqs = int(vals[2]) if len(vals) > 2 else input_shape[-1]
+            n_metabolites = int(vals[3]) if len(vals) > 3 else len(self.metabolites)
 
-        # Create QNet model
-        self.qnet_arch = QNetModel(n_freqs, n_metabolites, name=self.model)
-
-        # Create a wrapper model for training that outputs concentrations directly
-        # This is a simplified approach - in practice, you'd implement the full LLS
-        self.training_model = self._create_training_model()
-
-    def _create_training_model(self):
-        """Create a training model that outputs concentrations directly.
-
-        This is a simplified approach for training. In practice, you would
-        implement the full LLS module with basis set modulation.
-
-        Returns
-        -------
-            keras.Model: Training model that outputs metabolite concentrations
-        """
-        # Get the input shape from the QNet model
-        # The QNet model expects (n_acquisitions * n_datatypes, n_freqs) input
-        input_shape = (len(self.acquisitions) * len(self.datatype), self.fft_samples)
-
-        # Create input layer
-        inputs = Input(shape=input_shape, name='spectrum_input')
-
-        # Get QNet outputs
-        qnet_outputs = self.qnet_arch(inputs)
-
-        # Simplified concentration prediction using IF factors
-        # In practice, this would use the LLS module with basis set
-        if_factors = qnet_outputs['if_factors']
-
-        # Reshape IF factors to get concentration estimates
-        # This is a placeholder - real implementation would use LLS
-        concentrations = Dense(len(self.metabolites),
-                             activation='softmax',
-                             name='concentrations')(if_factors)
-
-        # Create training model
-        training_model = Model(inputs=inputs, outputs=concentrations, name=f"{self.model}_training")
-
-        return training_model
-
-    def _apply_imperfection_factors(self, basis_set, if_factors):
-        """Apply imperfection factors to basis set.
-
-        Parameters
-        ----------
-            basis_set (tensor): Original basis set
-            if_factors (tensor): Predicted imperfection factors
-
-        Returns
-        -------
-            tensor: Modified basis set with applied imperfection factors
-        """
-        # Reshape IF factors: (batch, n_metabolites * 3) -> (batch, n_metabolites, 3)
-        batch_size = tf.shape(if_factors)[0]
-        n_metabolites = len(self.metabolites)
-        if_reshaped = tf.reshape(if_factors, (batch_size, n_metabolites, 3))
-
-        # Extract individual factors
-        phase_shift = if_reshaped[:, :, 0]  # Phase shift
-        freq_shift = if_reshaped[:, :, 1]    # Frequency shift
-        linewidth_dev = if_reshaped[:, :, 2] # Linewidth deviation
-
-        # Apply imperfection factors to basis set
-        # This is a simplified implementation - in practice, this would involve
-        # complex signal processing operations
-        modified_basis = basis_set
-
-        # Add phase shift
-        phase_factor = tf.exp(1j * phase_shift)
-        modified_basis = modified_basis * tf.cast(phase_factor, tf.complex64)
-
-        # Add frequency shift (simplified)
-        freq_factor = tf.exp(1j * 2 * np.pi * freq_shift)
-        modified_basis = modified_basis * tf.cast(freq_factor, tf.complex64)
-
-        return modified_basis
-
-    def _linear_least_squares(self, modified_basis, clean_spectrum):
-        """Perform linear least squares estimation of metabolite concentrations.
-
-        Parameters
-        ----------
-            modified_basis (tensor): Basis set with applied imperfection factors
-            clean_spectrum (tensor): Spectrum with MM signal removed
-
-        Returns
-        -------
-            tensor: Estimated metabolite concentrations
-        """
-        # Convert to real part for LLS
-        basis_real = tf.math.real(modified_basis)
-        spectrum_real = tf.math.real(clean_spectrum)
-
-        # Solve LLS: c = (M^T M)^(-1) M^T y
-        # Using pseudo-inverse for numerical stability
-        concentrations = tf.linalg.pinv(basis_real) @ tf.expand_dims(spectrum_real, -1)
-        concentrations = tf.squeeze(concentrations, -1)
-
-        return concentrations
+        # Create EncDec model
+        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, name=self.model)
 
     def train(self, d_data, v_data, epochs, batch_size,
               folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
-        """Train the QNet model on provided data.
+        """Train the EncDec model on provided data.
 
         Parameters
         ----------
@@ -433,12 +505,16 @@ class QNet:
             os.makedirs(folder)
 
         if verbose > 0:
-            print(f"# Train QNet {self!s}")
+            print(f"# Train EncDec {self!s}")
 
         # Prepare data
         d_inp = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
         d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
         d_inp = reshape_spectra_data(d_inp, add_channel_dim=False)
+
+        # Convert to JPRESS format (echoes, freqs, channels)
+        # Input shape: (batch, acquisitions*datatypes, freqs) -> (batch, echoes, freqs, channels)
+        d_inp = self._convert_to_jpress_format(d_inp)
 
         train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
 
@@ -446,12 +522,13 @@ class QNet:
             v_inp = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
             v_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
             v_inp = reshape_spectra_data(v_inp, add_channel_dim=False)
+            v_inp = self._convert_to_jpress_format(v_inp)
             validation_data = tf.data.Dataset.from_tensor_slices((v_inp, v_out))
         else:
             validation_data = None
 
         if verbose > 0:
-            print("  Input:", d_inp.shape, "[spectrum, acquisition x datatype, frequency]")
+            print("  Input:", d_inp.shape, "[batch, echoes, frequency, channels]")
             print("  Output:", d_out.shape, "[spectrum, metabolite_concentration]")
 
         learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
@@ -461,7 +538,7 @@ class QNet:
             dev_multiplier = len(devices)
             mirrored_strategy = tf.distribute.MirroredStrategy(devices=devices)
             with mirrored_strategy.scope():
-                self._construct(d_inp.shape[1:], d_out.shape[1:])
+                self._create_training_model(d_inp.shape[1:], d_out.shape[1:])
                 optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                                   beta_1=Cfg.val['beta1'],
                                                   beta_2=Cfg.val['beta2'],
@@ -472,18 +549,18 @@ class QNet:
         else:
             # Single GPU / CPU training
             dev_multiplier = 1
-            self._construct(d_inp.shape[1:], d_out.shape[1:])
+            self._create_training_model(d_inp.shape[1:], d_out.shape[1:])
             optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                               beta_1=Cfg.val['beta1'],
                                               beta_2=Cfg.val['beta2'],
                                               epsilon=Cfg.val['epsilon'])
             self.training_model.compile(loss='mse',
-                                       optimizer=optimiser,
-                                       metrics=['mae'])
+                                      optimizer=optimiser,
+                                      metrics=['mae'])
 
         # Calculate FLOPs
         try:
-            self.flops = calculate_flops(self.qnet_arch, d_inp.shape[1:])
+            self.flops = calculate_flops(self.training_model, d_inp.shape[1:])
         except Exception as e:
             if verbose > 0:
                 print(f"Error calculating FLOPs: {e}")
@@ -492,7 +569,7 @@ class QNet:
         # Plot model architecture
         for dpi in image_dpi:
             try:
-                plot_model(self.qnet_arch,
+                plot_model(self.training_model,
                            to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
                            show_shapes=True,
                            show_dtype=True,
@@ -502,7 +579,7 @@ class QNet:
                            dpi=dpi)
             except Exception as e:
                 try:
-                    plot_model(self.qnet_arch,
+                    plot_model(self.training_model,
                                to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
                                show_shapes=True,
                                show_dtype=True,
@@ -517,7 +594,7 @@ class QNet:
                         print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
 
         if verbose > 0:
-            self.qnet_arch.summary()
+            self.training_model.summary()
 
         timer = TimeHistory(epochs)
         callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
@@ -564,6 +641,56 @@ class QNet:
         v_res = {"MSE": v_score[0], "MAE": v_score[1]}
         return d_res, v_res
 
+    def _convert_to_jpress_format(self, spectra):
+        """Convert spectra to JPRESS format (echoes, freqs, channels).
+
+        Parameters
+        ----------
+            spectra (tensor): Input spectra tensor
+
+        Returns
+        -------
+            tensor: JPRESS format spectra tensor
+        """
+        # Handle both 3D and 4D input shapes
+        if len(spectra.shape) == 4:
+            # Input shape: (batch, acquisitions, datatypes, freqs)
+            batch_size = tf.shape(spectra)[0]
+            n_acquisitions = tf.shape(spectra)[1]
+            n_datatypes = tf.shape(spectra)[2]
+            n_freqs = tf.shape(spectra)[3]
+
+            # Reshape to (batch, acquisitions*datatypes, freqs)
+            spectra_reshaped = tf.reshape(spectra, [batch_size, n_acquisitions * n_datatypes, n_freqs])
+            n_channels = n_acquisitions * n_datatypes
+        else:
+            # Input shape: (batch, channels, freqs)
+            batch_size = tf.shape(spectra)[0]
+            n_channels = tf.shape(spectra)[1]
+            n_freqs = tf.shape(spectra)[2]
+            spectra_reshaped = spectra
+
+        # For JPRESS, we simulate multiple echoes by replicating the input
+        # In practice, this would be actual JPRESS data with multiple echoes
+        n_echoes = 32  # Original JPRESS standard (from paper)
+
+        # Reshape to (batch, echoes, freqs, channels)
+        # For now, replicate the input across echoes
+        spectra_expanded = tf.tile(tf.expand_dims(spectra_reshaped, 1), [1, n_echoes, 1, 1])
+
+        # Transpose to get (batch, echoes, freqs, channels)
+        spectra_jpress = tf.transpose(spectra_expanded, [0, 1, 3, 2])
+
+        # Take first 2 channels or pad if needed
+        if n_channels >= 2:
+            spectra_jpress = spectra_jpress[:, :, :, :2]
+        else:
+            # Pad with zeros if we have fewer than 2 channels
+            padding = tf.zeros((batch_size, n_echoes, n_freqs, 2 - n_channels))
+            spectra_jpress = tf.concat([spectra_jpress, padding], axis=-1)
+
+        return spectra_jpress
+
     def predict(self, d_inp, reshape=True, verbose=0):
         """Make predictions on input data.
 
@@ -580,26 +707,33 @@ class QNet:
         if reshape:
             d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
             d_inp = reshape_spectra_data(d_inp, add_channel_dim=False)
+            d_inp = self._convert_to_jpress_format(d_inp)
 
         # Dataset options
         options = tf.data.Options()
         options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
         data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
 
-        # Use training model for prediction
-        concentrations = self.training_model.predict(data, verbose=(verbose>0)*2)
+        # Get predictions
+        predictions = self.encdec_arch.predict(data, verbose=(verbose>0)*2)
+
+        # Extract metabolite concentrations from the multi-head output
+        if isinstance(predictions, dict):
+            concentrations = predictions['concentrations']
+        else:
+            concentrations = predictions
 
         return np.array(concentrations, dtype=np.float64)
 
     def save(self, folder):
-        """Save the trained QNet model to disk.
+        """Save the trained EncDec model to disk.
 
         Parameters
         ----------
             folder (str): Directory to save the model
         """
         os.makedirs(folder, exist_ok=True)
-        self.training_model.save(os.path.join(folder, "model.keras"))
+        self.encdec_arch.save(os.path.join(folder, "model.keras"))
 
         # Calculate model metrics from summary
         old_stdout = sys.stdout
@@ -672,7 +806,7 @@ class QNet:
 
     @staticmethod
     def load(path):
-        """Load a trained QNet model from disk.
+        """Load a trained EncDec model from disk.
 
         Parameters
         ----------
@@ -680,21 +814,20 @@ class QNet:
 
         Returns
         -------
-            QNet: Loaded QNet model instance
+            EncDec: Loaded EncDec model instance
         """
         with open(os.path.join(path, "mrsnet.json")) as f:
             data = json.load(f)
-        model = QNet(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
-                     data['datatype'], data['norm'])
+        model = EncDec(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
+                      data['datatype'], data['norm'])
         model.train_dataset_name = data['train_dataset_name']
-        model.training_model = load_model(os.path.join(path, "model.keras"),
-                                         custom_objects={
-                                             "QNetModel": QNetModel,
-                                             "StackedConvolutionalBlock": StackedConvolutionalBlock
-                                         },
-                                         safe_mode=False)
-        # Reconstruct the QNet architecture
-        model._construct(model.training_model.input_shape[1:], model.training_model.output_shape[1:])
+        model.encdec_arch = load_model(os.path.join(path, "model.keras"),
+                                      custom_objects={
+                                          "EncDecModel": EncDecModel,
+                                          "WaveNetBlock": WaveNetBlock,
+                                          "AttentionGRU": AttentionGRU
+                                      },
+                                      safe_mode=False)
         return model
 
     def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):

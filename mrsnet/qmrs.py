@@ -7,9 +7,18 @@
 
 This module implements the QMRS architecture from the paper:
 "Q-MRS: A Deep Learning Framework for Quantitative Magnetic Resonance Spectra Analysis"
+by Wu, C.J, et al, 2024.
+https://arxiv.org/abs/2408.15999
 
 QMRS is a CNN-LSTM model with multi-headed MLP that uses transfer learning
 and parameter constraints for MRS metabolite quantification.
+
+MODIFICATIONS FOR MRSNET:
+* QMRS-specific CNN-LSTM architecture
+* Custom InceptionModule for multi-scale feature extraction
+* Bidirectional LSTM with attention mechanism for sequence modeling
+* Multi-headed MLP for metabolite concentration prediction
+* Transfer learning capabilities
 """
 
 import csv

@@ -6,11 +6,17 @@
 """FoundationalCNN (fCNN) model for MRSNet.
 
 This module implements the FoundationalCNN architecture from the paper:
-"Magnetic Resonance Spectroscopy Quantification using Deep Learning"
-(MICCAI 2018)
+"Quantification of Magnetic Resonance Spectroscopy Data Using Deep Learning"
+Hatami, N., Sdika, M., Ratiney, H., 2018.
+https://arxiv.org/abs/1806.07237
 
 The FoundationalCNN is a 7-layer CNN model designed for MRS metabolite
 quantification using CReLU activation and convolutional layers.
+
+MODIFICATIONS FOR MRSNET:
+* FoundationalCNN-specific 7-layer CNN architecture
+* Custom CReLU activation layer for concatenated ReLU
+* Maintained original 7-layer structure with CReLU activation
 """
 
 import csv
