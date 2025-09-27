@@ -266,6 +266,14 @@ class Select:
       from mrsnet.ae_quantifier import AutoencoderQuantifier
       model_name = str(AutoencoderQuantifier(model_str,self.metabolites, self.pulse_sequence,
                                              args['acquisitions'], args['datatype'], args['norm']))
+    elif args['model'][0:4] == 'qnet':
+      # QNet model
+      # qnet_[FREQS]_[METABOLITES] or qnet (default)
+      model_str = args['model']
+      self.error_type = 'concentration'
+      from mrsnet.qnet import QNet
+      model_name = str(QNet(model_str,self.metabolites, self.pulse_sequence,
+                            args['acquisitions'], args['datatype'], args['norm']))
 
     else:
       raise RuntimeError(f"Unknown model string {args['model']}")
