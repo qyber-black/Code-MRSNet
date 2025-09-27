@@ -12,20 +12,44 @@ doi: 10.1002/mrm.29711
 https://pmc.ncbi.nlm.nih.gov/articles/PMC10524908/
 
 EncDec is an encoder-decoder style neural network with WaveNet blocks and GRU
-for JPRESS data processing and metabolite quantification.
+for arbitrary MRS data processing and metabolite quantification.
 
-MODIFICATIONS FOR MRSNET:
-* EncDec-specific encoder-decoder architecture
-* Custom WaveNetBlock for dilated convolutions with residual connections
-* Bidirectional GRU with attention mechanism for sequence modeling
-* JPRESSConverter layer for JPRESS input format handling
-* Multi-head output for concentrations, FIDs, and phase predictions
-* Configurable filters parameter (default: 64 instead of 128 for memory efficiency)
-* Fixed attention mechanism using proper softmax over echoes dimension
-* Model string parsing with memory-friendly defaults:
-  - 'encdec' or 'encdec_default': 8 echoes, 64 filters (memory-friendly)
-  - 'encdec_original': 32 echoes, 128 filters (original paper parameters)
-  - 'encdec_[ECHOES]_[FREQS]_[METABOLITES]_[FILTERS]': custom configuration
+MODIFICATIONS FOR MRSNET INTEGRATION:
+
+1. CONTEXT ADAPTATION (NECESSARY):
+   - Original: Designed for JPRESS data with multiple echoes (32 echoes x 512 frequency points)
+   - MRSNet: Adapted for arbitrary acquisition contexts (acquisitions + datatypes)
+   - Input format: (batch, acquisitions, freqs, datatypes) instead of (batch, echoes, freqs, channels)
+   - Context validation: Ensures compatibility with supported datatypes (magnitude, phase, real, imaginary)
+   - Flexible processing: Handles any number of acquisitions and datatypes
+
+2. ARCHITECTURAL SIMPLIFICATIONS (MEMORY CONSTRAINTS):
+   - Original: 128 filters in WaveNet blocks, 32 echoes
+   - MRSNet: Reduced to 16 filters (default) and 2 acquisitions for GPU memory efficiency
+   - Memory-optimized defaults: 'encdec_default' uses minimal parameters
+   - Original parameters available: 'encdec_original' preserves paper architecture
+   - Configurable: 'encdec_[ACQUISITIONS]_[FILTERS]' for custom configurations
+
+3. IMPLEMENTATION DETAILS:
+   - Custom WaveNetBlock: Dilated convolutions with residual connections (dilation rates: 1, 2, 4)
+   - AttentionGRU: Bidirectional GRU with Bahdanau attention mechanism
+   - ContextConverter: Converts MRSNet input format to EncDec-compatible format
+   - Multi-head output: Concentrations (primary), FIDs, and phase parameters
+   - Attention mechanism: Softmax over acquisitions dimension (corrected from original implementation)
+
+4. TRAINING SIMPLIFICATIONS:
+   - Output focus: Primary output is metabolite concentrations for MRSNet compatibility
+   - FID reconstruction: Simplified for memory efficiency
+   - Phase prediction: Basic phase shift and frequency offset parameters
+
+5. COMPATIBILITY FEATURES:
+   - Context validation: Explicit error messages for unsupported contexts
+   - Flexible input handling: Supports both 3D and 4D input shapes
+   - Memory management: Configurable parameters for different GPU capacities
+   - Model string parsing: Dynamic configuration based on model identifier
+
+This implementation maintains the core EncDec architecture while adapting it for
+the MRSNet framework's arbitrary context handling and memory constraints.
 """
 
 import csv
@@ -121,50 +145,39 @@ class WaveNetBlock(keras.layers.Layer):
         return config
 
 
-@register_keras_serializable(package="mrsnet", name="JPRESSConverter")
-class JPRESSConverter(keras.layers.Layer):
-    """Convert spectra to JPRESS format (echoes, freqs, channels)."""
+@register_keras_serializable(package="mrsnet", name="ContextConverter")
+class ContextConverter(keras.layers.Layer):
+    """Convert spectra to context-aware format (acquisitions, freqs, channels)."""
 
-    def __init__(self, n_echoes=8, name=None, **kwargs):
+    def __init__(self, n_acquisitions=2, n_datatypes=1, name=None, **kwargs):
         super().__init__(name=name, **kwargs)
-        self.n_echoes = n_echoes
+        self.n_acquisitions = n_acquisitions
+        self.n_datatypes = n_datatypes
 
     def call(self, inputs):
-        """Convert input spectra to JPRESS format."""
-        # Check if input is already in JPRESS format
-        if len(inputs.shape) == 4:  # (batch, echoes, freqs, channels)
+        """Convert input spectra to context-aware format."""
+        # Check if input is already in context format
+        if len(inputs.shape) == 4:  # (batch, acquisitions, freqs, channels)
             return inputs
 
         # Input shape: (batch, acquisitions*datatypes, freqs)
-        # Output shape: (batch, echoes, freqs, channels)
+        # Output shape: (batch, acquisitions, freqs, datatypes)
 
         batch_size = tf.shape(inputs)[0]
         n_channels = tf.shape(inputs)[1]  # acquisitions*datatypes
         n_freqs = tf.shape(inputs)[2]
 
-        # For JPRESS, we simulate multiple echoes by replicating the input
-        # In practice, this would be actual JPRESS data with multiple echoes
+        # Reshape to (batch, acquisitions, freqs, datatypes)
+        spectra_context = tf.reshape(inputs, [batch_size, self.n_acquisitions, n_freqs, self.n_datatypes])
 
-        # Reshape to (batch, echoes, freqs, channels)
-        # For now, replicate the input across echoes
-        spectra_expanded = tf.tile(tf.expand_dims(inputs, 1), [1, self.n_echoes, 1, 1])
-
-        # Transpose to get (batch, echoes, freqs, channels)
-        spectra_jpress = tf.transpose(spectra_expanded, [0, 1, 3, 2])
-
-        # Take first 2 channels or pad if needed
-        if n_channels >= 2:
-            spectra_jpress = spectra_jpress[:, :, :, :2]
-        else:
-            # Pad with zeros if we have fewer than 2 channels
-            padding = tf.zeros((batch_size, self.n_echoes, n_freqs, 2 - n_channels))
-            spectra_jpress = tf.concat([spectra_jpress, padding], axis=-1)
-
-        return spectra_jpress
+        return spectra_context
 
     def get_config(self):
         config = super().get_config()
-        config.update({'n_echoes': self.n_echoes})
+        config.update({
+            'n_acquisitions': self.n_acquisitions,
+            'n_datatypes': self.n_datatypes
+        })
         return config
 
 
@@ -225,28 +238,30 @@ class EncDecModel(Model):
     """EncDec model for MRS metabolite quantification.
 
     This implements the encoder-decoder architecture with WaveNet blocks
-    and GRU for JPRESS data processing.
+    and GRU for MEGA-PRESS data processing.
     """
 
-    def __init__(self, n_echoes, n_freqs, n_metabolites, filters=64, name='EncDecModel', **kwargs):
+    def __init__(self, n_acquisitions, n_freqs, n_metabolites, n_datatypes=1, filters=64, name='EncDecModel', **kwargs):
         """Initialize EncDec model.
 
         Parameters
         ----------
-            n_echoes (int): Number of echoes in JPRESS data
-            n_freqs (int): Number of frequency points per echo
+            n_acquisitions (int): Number of acquisitions in the data
+            n_freqs (int): Number of frequency points per acquisition
             n_metabolites (int): Number of metabolites to quantify
+            n_datatypes (int): Number of datatypes per acquisition
             filters (int): Number of filters for WaveNet blocks (default: 64)
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
-        self.n_echoes = n_echoes
+        self.n_acquisitions = n_acquisitions
         self.n_freqs = n_freqs
         self.n_metabolites = n_metabolites
+        self.n_datatypes = n_datatypes
         self.filters = filters
 
-        # Input layer - (batch, echoes, freqs, channels)
-        self.input_layer = Input(shape=(n_echoes, n_freqs, 2), name='jpress_input')
+        # Input layer - (batch, acquisitions, freqs, datatypes)
+        self.input_layer = Input(shape=(n_acquisitions, n_freqs, n_datatypes), name='context_input')
 
         # Encoder: 3 WaveNet blocks with increasing dilation
         self.wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='wavenet1')
@@ -270,8 +285,11 @@ class EncDecModel(Model):
         # Metabolite concentrations
         self.concentration_dense = Dense(n_metabolites, activation='linear', name='concentrations')
 
-        # Individual metabolite FIDs (for all echoes) - original size
-        self.fid_dense = Dense(n_echoes * n_freqs * 2, activation='linear', name='fids')
+        # Individual metabolite FIDs (for all acquisitions) - original size
+        # Calculate the actual decoder output size: batch_size * n_freqs * filters
+        decoder_output_size = n_freqs * filters  # filters from WaveNet decoder
+        # FID projection with enhanced reconstruction (tanh for better signal bounds)
+        self.fid_projection = Dense(n_acquisitions * n_freqs * 2, activation='tanh', name='fids')
 
         # Spectral parameters
         self.phase_dense = Dense(2, activation='linear', name='phase')  # phase shift and frequency offset
@@ -283,19 +301,19 @@ class EncDecModel(Model):
 
     def call(self, inputs):
         """Forward pass through EncDec."""
-        # Encoder: Process each echo through WaveNet blocks
-        # Input is already in JPRESS format: (batch, echoes, freqs, channels)
+        # Encoder: Process each acquisition through WaveNet blocks
+        # Input is already in context format: (batch, acquisitions, freqs, datatypes)
         batch_size = tf.shape(inputs)[0]
-        x = tf.reshape(inputs, [batch_size * self.n_echoes, self.n_freqs, 2])
+        x = tf.reshape(inputs, [batch_size * self.n_acquisitions, self.n_freqs, self.n_datatypes])
 
         # WaveNet blocks
         x1 = self.wavenet1(x)
         x2 = self.wavenet2(x1)
         x3 = self.wavenet3(x2)
 
-        # Pool each echo
-        pooled = self.echo_pool(x3)  # (batch * echoes, filters)
-        pooled = tf.reshape(pooled, [batch_size, self.n_echoes, self.filters])
+        # Pool each acquisition
+        pooled = self.echo_pool(x3)  # (batch * acquisitions, filters)
+        pooled = tf.reshape(pooled, [batch_size, self.n_acquisitions, self.filters])
 
         # Attention GRU integration
         unified_repr = self.attention_gru(pooled)  # (batch, 2*filters)
@@ -314,7 +332,9 @@ class EncDecModel(Model):
 
         # Outputs
         concentrations = self.concentration_dense(unified_repr)
-        fids = self.fid_dense(tf.reshape(decoder_out2, [batch_size, -1]))
+        # Reshape decoder output properly: (batch_size, n_freqs, filters) -> (batch_size, n_freqs * filters)
+        decoder_flat = tf.reshape(decoder_out2, [batch_size, self.n_freqs * self.filters])
+        fids = self.fid_projection(decoder_flat)
         phase_params = self.phase_dense(unified_repr)
 
         return {
@@ -327,9 +347,10 @@ class EncDecModel(Model):
         """Get configuration for serialization."""
         config = super().get_config()
         config.update({
-            'n_echoes': self.n_echoes,
+            'n_acquisitions': self.n_acquisitions,
             'n_freqs': self.n_freqs,
             'n_metabolites': self.n_metabolites,
+            'n_datatypes': self.n_datatypes,
             'filters': self.filters
         })
         return config
@@ -339,7 +360,7 @@ class EncDec:
     """EncDec for MRS metabolite quantification.
 
     This class implements the encoder-decoder architecture with WaveNet blocks
-    and GRU for JPRESS data processing and metabolite concentration prediction.
+    and GRU for MEGA-PRESS data processing and metabolite concentration prediction.
 
     Attributes
     ----------
@@ -387,6 +408,9 @@ class EncDec:
         self.train_dataset_name = None
         self.encdec_arch = None
 
+        # Validate context compatibility
+        self._validate_context()
+
     def __str__(self):
         """Get string representation of the model path.
 
@@ -398,6 +422,31 @@ class EncDec:
                          self.pulse_sequence, "-".join(self.acquisitions),
                          "-".join(self.datatype), self.norm)
         return n
+
+    def _validate_context(self):
+        """Validate that the context (acquisitions + datatypes) is compatible with EncDec.
+
+        EncDec can handle arbitrary contexts but works best with:
+        - Any number of acquisitions (processed as separate channels)
+        - Any datatypes (magnitude, phase, real, imaginary)
+        - Minimum 1 acquisition and 1 datatype
+        """
+        if not self.acquisitions:
+            raise ValueError("EncDec requires at least one acquisition")
+        if not self.datatype:
+            raise ValueError("EncDec requires at least one datatype")
+
+        # Check for supported datatypes
+        supported_datatypes = {'magnitude', 'phase', 'real', 'imaginary'}
+        unsupported = set(self.datatype) - supported_datatypes
+        if unsupported:
+            raise ValueError(f"EncDec does not support datatypes: {unsupported}. "
+                           f"Supported datatypes: {supported_datatypes}")
+
+        # Log context information
+        print(f"EncDec context: {len(self.acquisitions)} acquisitions, {len(self.datatype)} datatypes")
+        print(f"  Acquisitions: {self.acquisitions}")
+        print(f"  Datatypes: {self.datatype}")
 
     def reset(self):
         """Reset the EncDec architecture and training dataset name.
@@ -416,7 +465,7 @@ class EncDec:
 
         Returns
         -------
-            tuple: (n_echoes, filters)
+            tuple: (n_acquisitions, filters)
         """
         vals = self.model.split("_")
         if vals[0] != 'encdec':
@@ -425,26 +474,26 @@ class EncDec:
         # Parse model parameters
         if len(vals) == 1:
             # Default EncDec configuration - memory-friendly defaults
-            n_echoes = 8   # Reduced from 32 for memory efficiency
-            filters = 64  # Default memory-friendly filters
+            n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
+            filters = 16  # Minimal filters for memory efficiency
         elif len(vals) == 2 and vals[1] == 'default':
             # encdec_default configuration - memory-friendly defaults
-            n_echoes = 8   # Reduced from 32 for memory efficiency
-            filters = 64  # Default memory-friendly filters
+            n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
+            filters = 16  # Minimal filters for memory efficiency
         elif len(vals) == 2 and vals[1] == 'original':
             # encdec_original configuration - original paper parameters
-            n_echoes = 32  # Original JPRESS standard (from paper)
+            n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
             filters = 128  # Original paper filters
         else:
-            # Custom EncDec configuration: encdec_[ECHOES]_[FILTERS]
-            n_echoes = int(vals[1]) if len(vals) > 1 else 8
-            filters = int(vals[2]) if len(vals) > 2 else 64
+            # Custom EncDec configuration: encdec_[ACQUISITIONS]_[FILTERS]
+            n_acquisitions = int(vals[1]) if len(vals) > 1 else 2
+            filters = int(vals[2]) if len(vals) > 2 else 16
 
         # Override with instance filters if provided
-        if hasattr(self, 'filters') and self.filters != 64:
+        if hasattr(self, 'filters') and self.filters != 16:
             filters = self.filters
 
-        return n_echoes, filters
+        return n_acquisitions, filters
 
     def _create_training_model(self, input_shape, output_shape):
         """Create a training model that wraps EncDecModel for Keras training.
@@ -455,21 +504,26 @@ class EncDec:
             output_shape (tuple): Output tensor shape
         """
         # Parse model configuration
-        n_echoes, n_freqs, n_metabolites, filters = self._parse_model_config(input_shape)
+        n_acquisitions, filters = self._parse_model_config(input_shape)
+
+        # Get framework-determined parameters
+        n_freqs = input_shape[1]  # Frequency dimension (second dimension)
+        n_metabolites = len(self.metabolites)
+        n_datatypes = len(self.datatype)
 
         # Create EncDec model with concrete input shape
-        concrete_input_shape = (None, n_echoes, n_freqs, 2)
-        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, filters=filters, name=self.model)
+        concrete_input_shape = (None, n_acquisitions, n_freqs, n_datatypes)
+        self.encdec_arch = EncDecModel(n_acquisitions, n_freqs, n_metabolites, n_datatypes=n_datatypes, filters=filters, name=self.model)
 
         # Create a training model that outputs only metabolite concentrations
         input_layer = Input(shape=input_shape, name='training_input')
 
-        # Convert input to JPRESS format using custom layer
-        jpress_converter = JPRESSConverter(n_echoes=n_echoes, name='jpress_converter')
-        jpress_input = jpress_converter(input_layer)
+        # Convert input to context format using custom layer
+        context_converter = ContextConverter(n_acquisitions=n_acquisitions, n_datatypes=n_datatypes, name='context_converter')
+        context_input = context_converter(input_layer)
 
         # Get EncDec outputs
-        encdec_outputs = self.encdec_arch(jpress_input)
+        encdec_outputs = self.encdec_arch(context_input)
 
         # Extract only the concentrations for training (ignore FIDs and phase)
         if isinstance(encdec_outputs, dict):
@@ -491,14 +545,14 @@ class EncDec:
             output_shape (tuple): Output tensor shape
         """
         # Parse model configuration
-        n_echoes, filters = self._parse_model_config(input_shape)
+        n_acquisitions, filters = self._parse_model_config(input_shape)
 
         # Get framework-determined parameters
-        n_freqs = input_shape[0]  # Frequency dimension (first dimension)
+        n_freqs = input_shape[1]  # Frequency dimension (second dimension)
         n_metabolites = len(self.metabolites)
 
         # Create EncDec model
-        self.encdec_arch = EncDecModel(n_echoes, n_freqs, n_metabolites, filters=filters, name=self.model)
+        self.encdec_arch = EncDecModel(n_acquisitions, n_freqs, n_metabolites, filters=filters, name=self.model)
 
     def train(self, d_data, v_data, epochs, batch_size,
               folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -552,9 +606,9 @@ class EncDec:
         d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
         d_inp = reshape_spectra_data(d_inp, add_channel_dim=False)
 
-        # Convert to JPRESS format (echoes, freqs, channels)
-        # Input shape: (batch, acquisitions*datatypes, freqs) -> (batch, echoes, freqs, channels)
-        d_inp = self._convert_to_jpress_format(d_inp)
+        # Convert to context format (acquisitions, freqs, datatypes)
+        # Input shape: (batch, acquisitions*datatypes, freqs) -> (batch, acquisitions, freqs, datatypes)
+        d_inp = self._convert_to_context_format(d_inp)
 
         train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
 
@@ -562,13 +616,13 @@ class EncDec:
             v_inp = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
             v_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
             v_inp = reshape_spectra_data(v_inp, add_channel_dim=False)
-            v_inp = self._convert_to_jpress_format(v_inp)
+            v_inp = self._convert_to_context_format(v_inp)
             validation_data = tf.data.Dataset.from_tensor_slices((v_inp, v_out))
         else:
             validation_data = None
 
         if verbose > 0:
-            print("  Input:", d_inp.shape, "[batch, echoes, frequency, channels]")
+            print("  Input:", d_inp.shape, "[batch, acquisitions, frequency, channels]")
             print("  Output:", d_out.shape, "[spectrum, metabolite_concentration]")
 
         learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
@@ -641,7 +695,7 @@ class EncDec:
                                                    min_delta=1e-8,
                                                    patience=25,
                                                    mode='min',
-                                                   verbose=(verbose > 0),
+                                                   verbose=(verbose > 0)*2,
                                                    restore_best_weights=True),
                      timer]
 
@@ -681,8 +735,8 @@ class EncDec:
         v_res = {"MSE": v_score[0], "MAE": v_score[1]}
         return d_res, v_res
 
-    def _convert_to_jpress_format(self, spectra):
-        """Convert spectra to JPRESS format (echoes, freqs, channels).
+    def _convert_to_context_format(self, spectra):
+        """Convert spectra to context-aware format (acquisitions, freqs, datatypes).
 
         Parameters
         ----------
@@ -690,7 +744,7 @@ class EncDec:
 
         Returns
         -------
-            tensor: JPRESS format spectra tensor
+            tensor: Context-aware format spectra tensor
         """
         # Handle both 3D and 4D input shapes
         if len(spectra.shape) == 4:
@@ -700,44 +754,21 @@ class EncDec:
             n_datatypes = tf.shape(spectra)[2]
             n_freqs = tf.shape(spectra)[3]
 
-            # Reshape to (batch, acquisitions*datatypes, freqs)
-            spectra_reshaped = tf.reshape(spectra, [batch_size, n_acquisitions * n_datatypes, n_freqs])
-            n_channels = n_acquisitions * n_datatypes
+            # Reshape to (batch, acquisitions, freqs, datatypes)
+            spectra_context = tf.transpose(spectra, [0, 1, 3, 2])  # (batch, acquisitions, freqs, datatypes)
+
         else:
-            # Input shape: (batch, channels, freqs)
+            # Input shape: (batch, acquisitions*datatypes, freqs)
             batch_size = tf.shape(spectra)[0]
-            n_channels = tf.shape(spectra)[1]
+            n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes
             n_freqs = tf.shape(spectra)[2]
-            spectra_reshaped = spectra
 
-        # Get the configured number of echoes from the model
-        # Parse model configuration to get n_echoes
-        vals = self.model.split("_")
-        if len(vals) == 1:
-            n_echoes = 8   # Default memory-friendly
-        elif len(vals) == 2 and vals[1] == 'default':
-            n_echoes = 8   # Default memory-friendly
-        elif len(vals) == 2 and vals[1] == 'original':
-            n_echoes = 32  # Original paper
-        else:
-            n_echoes = int(vals[1]) if len(vals) > 1 else 8
+            # Reshape to (batch, acquisitions, freqs, datatypes)
+            n_acquisitions = len(self.acquisitions)
+            n_datatypes = len(self.datatype)
+            spectra_context = tf.reshape(spectra, [batch_size, n_acquisitions, n_freqs, n_datatypes])
 
-        # Reshape to (batch, echoes, freqs, channels)
-        # For now, replicate the input across echoes
-        spectra_expanded = tf.tile(tf.expand_dims(spectra_reshaped, 1), [1, n_echoes, 1, 1])
-
-        # Transpose to get (batch, echoes, freqs, channels)
-        spectra_jpress = tf.transpose(spectra_expanded, [0, 1, 3, 2])
-
-        # Take first 2 channels or pad if needed
-        if n_channels >= 2:
-            spectra_jpress = spectra_jpress[:, :, :, :2]
-        else:
-            # Pad with zeros if we have fewer than 2 channels
-            padding = tf.zeros((batch_size, n_echoes, n_freqs, 2 - n_channels))
-            spectra_jpress = tf.concat([spectra_jpress, padding], axis=-1)
-
-        return spectra_jpress
+        return spectra_context
 
     def predict(self, d_inp, reshape=True, verbose=0):
         """Make predictions on input data.
@@ -755,7 +786,7 @@ class EncDec:
         if reshape:
             d_inp = tf.convert_to_tensor(d_inp, dtype=tf.float32)
             d_inp = reshape_spectra_data(d_inp, add_channel_dim=False)
-            d_inp = self._convert_to_jpress_format(d_inp)
+            d_inp = self._convert_to_context_format(d_inp)
 
         # Dataset options
         options = tf.data.Options()

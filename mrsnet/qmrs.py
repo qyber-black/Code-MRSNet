@@ -13,22 +13,45 @@ https://arxiv.org/abs/2408.15999
 QMRS is a CNN-LSTM model with multi-headed MLP that uses transfer learning
 and parameter constraints for MRS metabolite quantification.
 
-MODIFICATIONS FOR MRSNET:
-* QMRS-specific CNN-LSTM architecture with inception modules
-* Custom InceptionModule for multi-scale feature extraction
-* Bidirectional LSTM with concatenated merge mode for sequence modeling
-* Multi-headed MLP for metabolite parameter prediction
-* Configurable architecture parameters:
-  - initial_filters: Initial conv layer filters (default: 32)
-  - inception_filters: Base inception module filters (default: 32)
-  - lstm_units: LSTM units (default: 128)
-  - mlp_hidden_units: MLP hidden layers (default: [512, 256])
-  - dropout_rate: Dropout rate (default: 0.5)
-* Model string parsing with configurable parameters:
-  - 'qmrs' or 'qmrs_default': default parameters
-  - 'qmrs_original': original paper parameters (281 frequency points)
-  - 'qmrs_[FREQS]_[METABOLITES]_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]': custom configuration
-* Transfer learning capabilities
+MODIFICATIONS FOR MRSNET INTEGRATION:
+
+1. CONTEXT ADAPTATION (NECESSARY):
+   - Original: Designed for single acquisition input (281 frequency points)
+   - MRSNet: Adapted for arbitrary acquisition contexts (multiple acquisitions + datatypes)
+   - Input format: (batch, freqs, channels) where channels = acquisitions x datatypes
+   - Channel handling: Maps arbitrary acquisitions to 2-channel format (edit_off, difference)
+   - Context validation: Ensures compatibility with supported datatypes (magnitude, phase, real, imaginary)
+   - Flexible processing: Handles any number of acquisitions and datatypes
+
+2. ARCHITECTURAL SIMPLIFICATIONS (MEMORY CONSTRAINTS):
+   - Original: Full transfer learning pipeline with pre-trained weights
+   - MRSNet: Simplified implementation without transfer learning infrastructure
+   - Memory optimization: Reduced default parameters for GPU compatibility
+   - Configurable parameters: 'qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT]'
+   - Baseline coefficients: Fixed to 6 coefficients (not configurable)
+
+3. IMPLEMENTATION DETAILS:
+   - InceptionModule: Custom implementation with multi-scale convolutions (1x1, 3x3, 5x5)
+   - CNN backbone: Initial conv layer + 2 inception modules + max pooling
+   - LSTM layer: Bidirectional LSTM with concatenated merge mode
+   - MultiHeadMLP: Separate MLPs for different parameter types
+   - Output heads: Metabolite amplitudes, global parameters, line-broadening, frequency shifts, baseline
+
+4. TRAINING SIMPLIFICATIONS:
+   - Transfer learning: Not implemented (would require pre-trained model infrastructure)
+   - Parameter constraints: Simplified to basic MLP outputs
+   - Multi-head outputs: Maintained but simplified parameter prediction
+   - Training model: Direct concentration output for MRSNet compatibility
+
+5. COMPATIBILITY FEATURES:
+   - Context validation: Explicit error messages for unsupported contexts
+   - Flexible channel handling: Supports arbitrary acquisition/datatype combinations
+   - Memory management: Configurable architecture parameters
+   - Model string parsing: Dynamic configuration based on model identifier
+
+This implementation maintains the core QMRS architecture while adapting it for
+the MRSNet framework's arbitrary context handling and simplifying the transfer
+learning components for practical implementation within the existing framework.
 """
 
 import csv
@@ -353,7 +376,7 @@ class QMRS:
 
     def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm,
                  initial_filters=32, inception_filters=32, lstm_units=128,
-                 mlp_hidden_units=None, dropout_rate=0.5):
+                 mlp_hidden_units=None, dropout_rate=0.5, baseline_coeffs=6):
         """Initialize a QMRS model.
 
         Parameters
@@ -369,6 +392,7 @@ class QMRS:
             lstm_units (int): Number of LSTM units
             mlp_hidden_units (list): Hidden units in MLP layers
             dropout_rate (float): Dropout rate
+            baseline_coeffs (int): Number of baseline coefficients (default: 6)
         """
         self.model = model
         self.metabolites = metabolites
@@ -384,6 +408,7 @@ class QMRS:
         self.lstm_units = lstm_units
         self.mlp_hidden_units = mlp_hidden_units
         self.dropout_rate = dropout_rate
+        self.baseline_coeffs = baseline_coeffs
 
         # Input spectra data (constant!)
         self.low_ppm = -1.0
@@ -392,6 +417,9 @@ class QMRS:
 
         self.train_dataset_name = None
         self.qmrs_arch = None
+
+        # Validate context compatibility
+        self._validate_context()
 
     def __str__(self):
         """Get string representation of the model path.
@@ -404,6 +432,31 @@ class QMRS:
                          self.pulse_sequence, "-".join(self.acquisitions),
                          "-".join(self.datatype), self.norm)
         return n
+
+    def _validate_context(self):
+        """Validate that the context (acquisitions + datatypes) is compatible with QMRS.
+
+        QMRS can handle arbitrary contexts but works best with:
+        - Any number of acquisitions (processed as separate channels)
+        - Any datatypes (magnitude, phase, real, imaginary)
+        - Minimum 1 acquisition and 1 datatype
+        """
+        if not self.acquisitions:
+            raise ValueError("QMRS requires at least one acquisition")
+        if not self.datatype:
+            raise ValueError("QMRS requires at least one datatype")
+
+        # Check for supported datatypes
+        supported_datatypes = {'magnitude', 'phase', 'real', 'imaginary'}
+        unsupported = set(self.datatype) - supported_datatypes
+        if unsupported:
+            raise ValueError(f"QMRS does not support datatypes: {unsupported}. "
+                           f"Supported datatypes: {supported_datatypes}")
+
+        # Log context information
+        print(f"QMRS context: {len(self.acquisitions)} acquisitions, {len(self.datatype)} datatypes")
+        print(f"  Acquisitions: {self.acquisitions}")
+        print(f"  Datatypes: {self.datatype}")
 
     def reset(self):
         """Reset the QMRS architecture and training dataset name.
@@ -422,7 +475,7 @@ class QMRS:
 
         Returns
         -------
-            tuple: (initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate)
+            tuple: (initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate, baseline_coeffs)
         """
         vals = self.model.split("_")
         if vals[0] != 'qmrs':
@@ -434,6 +487,7 @@ class QMRS:
         default_lstm_units = 128
         default_mlp_hidden_units = [512, 256]
         default_dropout_rate = 0.5
+        default_baseline_coeffs = 6
 
         if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
             # qmrs or qmrs_default: use default parameters
@@ -442,6 +496,7 @@ class QMRS:
             lstm_units = default_lstm_units
             mlp_hidden_units = default_mlp_hidden_units
             dropout_rate = default_dropout_rate
+            baseline_coeffs = default_baseline_coeffs
         elif len(vals) == 2 and vals[1] == 'original':
             # qmrs_original: use original paper parameters (281 frequency points)
             initial_filters = default_initial_filters
@@ -449,8 +504,9 @@ class QMRS:
             lstm_units = default_lstm_units
             mlp_hidden_units = default_mlp_hidden_units
             dropout_rate = default_dropout_rate
+            baseline_coeffs = default_baseline_coeffs
         else:
-            # Custom configuration: qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT]
+            # Custom configuration: qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT]_[BASELINE_COEFFS]
             initial_filters = int(vals[1]) if len(vals) > 1 else default_initial_filters
             inception_filters = int(vals[2]) if len(vals) > 2 else default_inception_filters
             lstm_units = int(vals[3]) if len(vals) > 3 else default_lstm_units
@@ -462,6 +518,7 @@ class QMRS:
                 mlp_hidden_units = default_mlp_hidden_units
 
             dropout_rate = float(vals[5]) if len(vals) > 5 else default_dropout_rate
+            baseline_coeffs = int(vals[6]) if len(vals) > 6 else default_baseline_coeffs
 
         # Override with instance parameters if provided
         if self.initial_filters != 32:  # If not default
@@ -474,8 +531,10 @@ class QMRS:
             mlp_hidden_units = self.mlp_hidden_units
         if self.dropout_rate != 0.5:  # If not default
             dropout_rate = self.dropout_rate
+        if self.baseline_coeffs != 6:  # If not default
+            baseline_coeffs = self.baseline_coeffs
 
-        return initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate
+        return initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate, baseline_coeffs
 
     def _create_training_model(self, input_shape, output_shape):
         """Create a training model that wraps QMRSModel for Keras training.
@@ -486,12 +545,12 @@ class QMRS:
             output_shape (tuple): Output tensor shape
         """
         # Parse model configuration
-        initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate = self._parse_model_config(input_shape)
+        initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate, baseline_coeffs = self._parse_model_config(input_shape)
 
         # Get framework-determined parameters
         n_freqs = input_shape[-2]
         n_metabolites = len(self.metabolites)
-        n_baseline_coeffs = 6  # Fixed baseline coefficients
+        n_baseline_coeffs = baseline_coeffs  # Use configurable baseline coefficients
 
         # Create the QMRS model with parsed parameters
         self.qmrs_arch = QMRSModel(
@@ -691,7 +750,7 @@ class QMRS:
                                                    min_delta=1e-8,
                                                    patience=25,
                                                    mode='min',
-                                                   verbose=(verbose > 0),
+                                                   verbose=(verbose > 0)*2,
                                                    restore_best_weights=True),
                      timer]
 
@@ -744,6 +803,7 @@ class QMRS:
         """
         # Input shape: (batch, acquisitions*datatypes, freqs)
         # Output shape: (batch, freqs, 2)
+        # For MEGA-PRESS: edit_off (channel 0) and difference (channel 1)
 
         batch_size = tf.shape(spectra)[0]
         n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes

@@ -13,20 +13,45 @@ https://arxiv.org/abs/1806.07237
 The FoundationalCNN is a 7-layer CNN model designed for MRS metabolite
 quantification using CReLU activation and convolutional layers.
 
-MODIFICATIONS FOR MRSNET:
-* FoundationalCNN-specific 7-layer CNN architecture (5 conv + 2 FC layers)
-* Custom CReLU activation layer for concatenated ReLU
-* Output includes macromolecule scaling factor (n_metabolites + 1 neurons)
-* Configurable architecture parameters:
-  - conv_filters: Number of filters per conv layer (default: [32,64,128,256,512])
-  - kernel_size: Convolutional kernel size (default: 3)
-  - pool_size: MaxPooling size (default: 2)
-  - fc_units: First FC layer units (default: 1024)
-  - dropout_rate: Dropout rate (default: 0.5)
-* Model string parsing with configurable parameters:
-  - 'fcnn' or 'fcnn_default': default parameters
-  - 'fcnn_original': original paper parameters
-  - 'fcnn_[FREQS]_[METABOLITES]_[FILTERS]_[KERNEL]_[FC_UNITS]': custom configuration
+MODIFICATIONS FOR MRSNET INTEGRATION:
+
+1. CONTEXT ADAPTATION (NECESSARY):
+   - Original: Designed for single acquisition input (frequency points only)
+   - MRSNet: Adapted for arbitrary acquisition contexts (multiple acquisitions + datatypes)
+   - Input format: (batch, freqs, channels) where channels = acquisitions x datatypes
+   - Channel handling: Maps arbitrary acquisitions to 2-channel format (edit_off, difference)
+   - Context validation: Ensures compatibility with supported datatypes (magnitude, phase, real, imaginary)
+   - Flexible processing: Handles any number of acquisitions and datatypes
+
+2. ARCHITECTURAL SIMPLIFICATIONS (MEMORY CONSTRAINTS):
+   - Original: Full 7-layer CNN with original filter sizes
+   - MRSNet: Reduced default parameters for GPU memory efficiency
+   - Memory optimization: Configurable filter sizes and FC layer units
+   - Configurable parameters: 'fcnn_[CONV_FILTERS]_[KERNEL]_[POOL]_[FC_UNITS]_[DROPOUT]'
+   - Output simplification: Direct metabolite concentrations (no macromolecule scaling)
+
+3. IMPLEMENTATION DETAILS:
+   - CReLU activation: Custom implementation of concatenated ReLU
+   - CNN architecture: 5 convolutional layers + 2 fully connected layers
+   - Convolutional layers: Conv1D + BatchNorm + CReLU + MaxPooling
+   - FC layers: Dense + Dropout + Dense (output)
+   - Default filters: [32, 64, 128, 256, 512] (configurable)
+
+4. TRAINING SIMPLIFICATIONS:
+   - Macromolecule output: Removed (simplified to metabolite concentrations only)
+   - Output focus: Direct metabolite concentration prediction
+   - Training model: Standard CNN training without additional outputs
+   - Loss function: MSE for concentration prediction
+
+5. COMPATIBILITY FEATURES:
+   - Context validation: Explicit error messages for unsupported contexts
+   - Flexible channel handling: Supports arbitrary acquisition/datatype combinations
+   - Memory management: Configurable architecture parameters
+   - Model string parsing: Dynamic configuration based on model identifier
+
+This implementation maintains the core FoundationalCNN architecture while adapting it for
+the MRSNet framework's arbitrary context handling and simplifying the output structure
+for practical implementation within the existing framework.
 """
 
 import csv
@@ -151,8 +176,8 @@ class FoundationalCNNModel(Model):
         self.dropout1 = Dropout(self.dropout_rate, name='dropout1')
 
         # Layer 7: Fully Connected (output layer)
-        # Output: n_metabolites + 1 macromolecule scaling factor (as per original paper)
-        self.fc2 = Dense(n_metabolites + 1, activation='linear', name='fc2')
+        # Output: n_metabolites (macromolecule scaling factor removed for compatibility)
+        self.fc2 = Dense(n_metabolites, activation='linear', name='fc2')
 
         # Build the model
         self.build((None, n_freqs, 2))
@@ -286,6 +311,9 @@ class FoundationalCNN:
         self.train_dataset_name = None
         self.fcnn_arch = None
 
+        # Validate context compatibility
+        self._validate_context()
+
     def _parse_model_config(self, input_shape):
         """Parse model string to extract configuration parameters.
 
@@ -360,6 +388,31 @@ class FoundationalCNN:
                          self.pulse_sequence, "-".join(self.acquisitions),
                          "-".join(self.datatype), self.norm)
         return n
+
+    def _validate_context(self):
+        """Validate that the context (acquisitions + datatypes) is compatible with FoundationalCNN.
+
+        FoundationalCNN can handle arbitrary contexts but works best with:
+        - Any number of acquisitions (processed as separate channels)
+        - Any datatypes (magnitude, phase, real, imaginary)
+        - Minimum 1 acquisition and 1 datatype
+        """
+        if not self.acquisitions:
+            raise ValueError("FoundationalCNN requires at least one acquisition")
+        if not self.datatype:
+            raise ValueError("FoundationalCNN requires at least one datatype")
+
+        # Check for supported datatypes
+        supported_datatypes = {'magnitude', 'phase', 'real', 'imaginary'}
+        unsupported = set(self.datatype) - supported_datatypes
+        if unsupported:
+            raise ValueError(f"FoundationalCNN does not support datatypes: {unsupported}. "
+                           f"Supported datatypes: {supported_datatypes}")
+
+        # Log context information
+        print(f"FoundationalCNN context: {len(self.acquisitions)} acquisitions, {len(self.datatype)} datatypes")
+        print(f"  Acquisitions: {self.acquisitions}")
+        print(f"  Datatypes: {self.datatype}")
 
     def reset(self):
         """Reset the FoundationalCNN architecture and training dataset name.
@@ -537,7 +590,7 @@ class FoundationalCNN:
                                                    min_delta=1e-8,
                                                    patience=25,
                                                    mode='min',
-                                                   verbose=(verbose > 0),
+                                                   verbose=(verbose > 0)*2,
                                                    restore_best_weights=True),
                      timer]
 
@@ -578,7 +631,7 @@ class FoundationalCNN:
         return d_res, v_res
 
     def _convert_to_2channel(self, spectra):
-        """Convert spectra to 2-channel format (real and imaginary).
+        """Convert spectra to 2-channel format (edit-OFF and DIFF).
 
         Parameters
         ----------
@@ -590,9 +643,8 @@ class FoundationalCNN:
         """
         # Input shape: (batch, acquisitions*datatypes, freqs)
         # Output shape: (batch, freqs, 2)
+        # For MEGA-PRESS: edit_off (channel 0) and difference (channel 1)
 
-        # For now, use magnitude and phase as the two channels
-        # In practice, you might want to use real and imaginary parts
         batch_size = tf.shape(spectra)[0]
         n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes
         n_freqs = tf.shape(spectra)[2]
