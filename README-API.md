@@ -22,6 +22,10 @@ The main package is located in `mrsnet/` and contains the following modules:
 - `cnn.py` - Convolutional Neural Network models
 - `autoencoder.py` - Autoencoder models
 - `ae_quantifier.py` - Autoencoder-quantifier models
+- `encdec.py` - Encoder-Decoder model with WaveNet blocks and attention
+- `fcnn.py` - FoundationalCNN model with CReLU activation
+- `qmrs.py` - QMRS CNN-LSTM hybrid model
+- `qnet.py` - QNet dual-branch model with LLS quantification
 - `train.py` - Training utilities and validation
 - `analyse.py` - Model analysis and evaluation
 - `compare.py` - Spectrum comparison utilities
@@ -272,6 +276,193 @@ Main autoencoder-quantifier interface.
 - `_train_aeq(d_data, v_data, epochs, batch_size, folder, verbose, image_dpi, screen_dpi, train_dataset_name, devices)` - Train model
 - `_save_results(folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)` - Save training results
 
+#### Encoder-Decoder Models (`mrsnet.encdec`)
+
+#### `WaveNetBlock` Class
+WaveNet-style convolutional block with dilated convolutions.
+
+**Methods:**
+- `__init__(filters, kernel_size, dilation_rate, name)` - Initialize WaveNet block
+- `call(inputs)` - Forward pass through WaveNet block
+
+#### `AttentionGRU` Class
+Bidirectional GRU with Bahdanau attention mechanism.
+
+**Methods:**
+- `__init__(units, name)` - Initialize attention GRU
+- `call(inputs)` - Forward pass with attention
+
+#### `ContextConverter` Class
+Converts multi-acquisition input to context format.
+
+**Methods:**
+- `__init__(n_acquisitions, n_datatypes, name)` - Initialize converter
+- `call(inputs)` - Convert input to context format
+
+#### `EncDecModel` Class
+Main Encoder-Decoder model combining WaveNet blocks and attention GRU.
+
+**Methods:**
+- `__init__(n_acquisitions, n_freqs, n_metabolites, n_datatypes, filters, name)` - Initialize model
+- `call(inputs)` - Forward pass through encoder-decoder
+
+#### `EncDec` Class
+Main EncDec interface for MRSNet integration.
+
+**Methods:**
+- `__init__(model, metabolites, pulse_sequence, acquisitions, datatype, norm)` - Initialize EncDec
+- `reset()` - Reset model state
+- `train(d_data, v_data, epochs, batch_size, folder, verbose, image_dpi, screen_dpi, train_dataset_name)` - Train model
+- `predict(d_inp, reshape, verbose)` - Predict concentrations
+- `save(folder)` - Save trained model
+
+**Static Methods:**
+- `load(path)` - Load trained model
+
+**Private Methods:**
+- `_parse_model_config(input_shape)` - Parse model configuration string
+- `_create_training_model(input_shape, output_shape)` - Create training wrapper
+- `_construct(input_shape, output_shape)` - Construct EncDec architecture
+- `_save_results(folder, history, d_score, v_score, image_dpi, screen_dpi, verbose)` - Save training results
+
+#### FoundationalCNN Models (`mrsnet.fcnn`)
+
+#### `CReLU` Class
+Concatenated ReLU activation function.
+
+**Methods:**
+- `__init__(name)` - Initialize CReLU layer
+- `call(inputs)` - Apply CReLU activation
+
+#### `FoundationalCNNModel` Class
+7-layer CNN with CReLU activation for metabolite quantification.
+
+**Methods:**
+- `__init__(n_freqs, n_metabolites, filters, name)` - Initialize model
+- `call(inputs)` - Forward pass through CNN
+
+#### `FoundationalCNN` Class
+Main FoundationalCNN interface for MRSNet integration.
+
+**Methods:**
+- `__init__(model, metabolites, pulse_sequence, acquisitions, datatype, norm)` - Initialize FCNN
+- `reset()` - Reset model state
+- `train(d_data, v_data, epochs, batch_size, folder, verbose, image_dpi, screen_dpi, train_dataset_name)` - Train model
+- `predict(d_inp, reshape, verbose)` - Predict concentrations
+- `save(folder)` - Save trained model
+
+**Static Methods:**
+- `load(path)` - Load trained model
+
+**Private Methods:**
+- `_parse_model_config(input_shape)` - Parse model configuration string
+- `_construct(input_shape, output_shape)` - Construct FCNN architecture
+- `_convert_to_2channel(inputs)` - Convert to 2-channel input format
+- `_save_results(folder, history, d_score, v_score, image_dpi, screen_dpi, verbose)` - Save training results
+
+#### QMRS Models (`mrsnet.qmrs`)
+
+#### `InceptionModule` Class
+Inception-style module with multi-scale convolutions.
+
+**Methods:**
+- `__init__(n_filters, name)` - Initialize inception module
+- `call(inputs)` - Forward pass through inception module
+
+#### `MultiHeadMLP` Class
+Multi-headed MLP for different parameter types.
+
+**Methods:**
+- `__init__(n_metabolites, n_baseline_coeffs, mlp_hidden_units, dropout_rate, name)` - Initialize MLP
+- `call(inputs)` - Forward pass through multi-head MLP
+
+#### `QMRSModel` Class
+CNN-LSTM hybrid model for metabolite parameter prediction.
+
+**Methods:**
+- `__init__(n_freqs, n_metabolites, n_baseline_coeffs, initial_filters, inception_filters, lstm_units, mlp_hidden_units, dropout_rate, name)` - Initialize model
+- `call(inputs)` - Forward pass through QMRS
+
+#### `QMRS` Class
+Main QMRS interface for MRSNet integration.
+
+**Methods:**
+- `__init__(model, metabolites, pulse_sequence, acquisitions, datatype, norm)` - Initialize QMRS
+- `reset()` - Reset model state
+- `train(d_data, v_data, epochs, batch_size, folder, verbose, image_dpi, screen_dpi, train_dataset_name)` - Train model
+- `predict(d_inp, reshape, verbose)` - Predict concentrations
+- `save(folder)` - Save trained model
+
+**Static Methods:**
+- `load(path)` - Load trained model
+
+**Private Methods:**
+- `_parse_model_config(input_shape)` - Parse model configuration string
+- `_create_training_model(input_shape, output_shape)` - Create training wrapper
+- `_construct(input_shape, output_shape)` - Construct QMRS architecture
+- `_save_results(folder, history, d_score, v_score, image_dpi, screen_dpi, verbose)` - Save training results
+
+#### QNet Models (`mrsnet.qnet`)
+
+#### `StackedConvolutionalBlock` Class
+Stacked convolutional block with Conv1D, BatchNorm, and ReLU.
+
+**Methods:**
+- `__init__(filters, kernel_size, name)` - Initialize SCB
+- `call(inputs)` - Forward pass through SCB
+
+#### `AcquisitionSplitter` Class
+Custom layer to split multi-acquisition input.
+
+**Methods:**
+- `__init__(acquisition_idx, name)` - Initialize splitter
+- `call(inputs)` - Extract single acquisition
+- `compute_output_shape(input_shape)` - Compute output shape
+
+#### `IFConcatenator` Class
+Custom layer to concatenate IF factors from multiple acquisitions.
+
+**Methods:**
+- `__init__(name)` - Initialize concatenator
+- `call(inputs)` - Concatenate IF factors
+- `compute_output_shape(input_shape)` - Compute output shape
+
+#### `BasicLLSModule` Class
+Basic Linear Least Squares module for metabolite quantification.
+
+**Methods:**
+- `__init__(n_metabolites, n_if_factors, name)` - Initialize LLS module
+- `build(input_shape)` - Build LLS matrix
+- `call(if_factors)` - Apply LLS to IF factors
+
+#### `QNetModel` Class
+Dual-branch model combining IF extraction and MM prediction.
+
+**Methods:**
+- `__init__(n_freqs, n_metabolites, n_if_factors, if_scb_filters, mm_scb_filters, kernel_size, if_fc_units, mm_fc_units, name)` - Initialize model
+- `build(input_shape)` - Build model architecture
+- `call(inputs)` - Forward pass through QNet
+
+#### `QNet` Class
+Main QNet interface for MRSNet integration.
+
+**Methods:**
+- `__init__(model, metabolites, pulse_sequence, acquisitions, datatype, norm)` - Initialize QNet
+- `reset()` - Reset model state
+- `train(d_data, v_data, epochs, batch_size, folder, verbose, image_dpi, screen_dpi, train_dataset_name)` - Train model
+- `predict(d_inp, reshape, verbose)` - Predict concentrations
+- `save(folder)` - Save trained model
+
+**Static Methods:**
+- `load(path)` - Load trained model
+
+**Private Methods:**
+- `_parse_model_config(input_shape)` - Parse model configuration string
+- `_create_training_model()` - Create training wrapper
+- `_construct(input_shape, output_shape)` - Construct QNet architecture
+- `_validate_context()` - Validate acquisition/datatype context
+- `_save_results(folder, history, d_score, v_score, image_dpi, screen_dpi, verbose)` - Save training results
+
 ### Training Utilities (`mrsnet.train`)
 
 #### `Train` Class
@@ -422,6 +613,7 @@ The MRSNet API follows a consistent pattern across all modules:
 - **Flexible Configuration**: Configuration can be overridden via JSON files
 - **Multiple Data Sources**: Support for LCModel, FID-A, PyGamma, and DICOM data
 - **Extensible Models**: Easy to add new model architectures
+- **Optimized Training**: Unused architectural components are disabled to eliminate gradient warnings and improve performance
 
 ## Usage Examples
 
@@ -431,6 +623,10 @@ The MRSNet API follows a consistent pattern across all modules:
 from mrsnet.cfg import Cfg
 from mrsnet.dataset import Dataset
 from mrsnet.cnn import CNN
+from mrsnet.encdec import EncDec
+from mrsnet.fcnn import FoundationalCNN
+from mrsnet.qmrs import QMRS
+from mrsnet.qnet import QNet
 from mrsnet.train import KFold
 
 # Initialize configuration (give absolute path to mrsnet.py to resolve paths)
@@ -439,9 +635,19 @@ Cfg.init('/absolute/path/to/repo/mrsnet.py')
 # Load dataset
 ds = Dataset.load('/path/to/dataset')
 
-# Train CNN model
-model = CNN('cnn_small_softmax', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
-            'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum')
+# Train different models
+models = [
+    CNN('cnn_small_softmax', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+        'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
+    EncDec('encdec_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+           'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
+    FoundationalCNN('fcnn_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+                    'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
+    QMRS('qmrs_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+         'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
+    QNet('qnet_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+         'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum')
+]
 
 # Train with K-fold cross-validation
 trainer = KFold(k=5)
@@ -455,9 +661,11 @@ inp, out = ds.export(metabolites=['Cr','GABA','Glu','Gln','NAA'],
 # Package into [train_inp, train_out] for trainer.train()
 data = [inp, out]
 
-trainer.train(model, data, epochs=100, batch_size=16,
-              path_model='/path/to/models', train_dataset_name=ds.name,
-              image_dpi=[300], screen_dpi=96, shuffle=True, verbose=1)
+# Train each model
+for model in models:
+    trainer.train(model, data, epochs=100, batch_size=16,
+                  path_model='/path/to/models', train_dataset_name=ds.name,
+                  image_dpi=[300], screen_dpi=96, shuffle=True, verbose=1)
 
 # Quantify spectra (numpy array shaped like ds.export input)
 predictions = model.predict(inp, reshape=True)
@@ -472,8 +680,18 @@ python mrsnet.py basis --source lcmodel --metabolites Cr GABA Glu Gln NAA
 # Simulate dataset
 python mrsnet.py simulate --source lcmodel --sample random --num 1000
 
-# Train model
+# Train different models
 python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m cnn_small_softmax
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m encdec_default
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m fcnn_default
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m qmrs_default
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m qnet_default
+
+# Train with custom parameters
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m encdec_2_32
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m fcnn_16_32_64_128_256
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m qmrs_16_32_64_128_0.3_6
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m qnet_8_16_32_64_128_256_3_64_256_2
 
 # Quantify DICOM spectra
 python mrsnet.py quantify -d /path/to/dicoms -m /path/to/model

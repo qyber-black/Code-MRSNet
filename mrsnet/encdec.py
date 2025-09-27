@@ -134,6 +134,27 @@ class WaveNetBlock(keras.layers.Layer):
 
         return output
 
+    def build(self, input_shape):
+        """Build the layer with the given input shape.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+        """
+        # Create a dummy input to build all layers
+        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+
+        # Forward pass to build all layers
+        filter_out = self.conv_filter(dummy_input)
+        gate_out = self.conv_gate(dummy_input)
+        gated = Multiply()([filter_out, gate_out])
+        residual = self.conv_residual(dummy_input)
+        output = self.add([gated, residual]) # noqa: F841
+
+        # Mark as built
+        self.built = True
+        self._build_input_shape = input_shape
+
     def get_config(self):
         """Get configuration for serialization."""
         config = super().get_config()
@@ -164,7 +185,7 @@ class ContextConverter(keras.layers.Layer):
         # Output shape: (batch, acquisitions, freqs, datatypes)
 
         batch_size = tf.shape(inputs)[0]
-        n_channels = tf.shape(inputs)[1]  # acquisitions*datatypes
+        #n_channels = tf.shape(inputs)[1]  # acquisitions*datatypes
         n_freqs = tf.shape(inputs)[2]
 
         # Reshape to (batch, acquisitions, freqs, datatypes)
@@ -173,6 +194,14 @@ class ContextConverter(keras.layers.Layer):
         return spectra_context
 
     def get_config(self):
+        """Get configuration for serialization.
+
+        Returns
+        -------
+        dict
+            Dictionary containing layer configuration parameters for serialization.
+            Includes n_acquisitions and n_datatypes parameters.
+        """
         config = super().get_config()
         config.update({
             'n_acquisitions': self.n_acquisitions,
@@ -225,6 +254,27 @@ class AttentionGRU(keras.layers.Layer):
         output = self.global_pool(attended)
 
         return output
+
+    def build(self, input_shape):
+        """Build the layer with the given input shape.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+        """
+        # Create a dummy input to build all layers
+        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+
+        # Forward pass to build all layers
+        gru_out = self.gru(dummy_input)
+        attention_scores = self.attention_dense(gru_out)
+        attention_weights = tf.nn.softmax(attention_scores, axis=1)
+        attended = Multiply()([gru_out, attention_weights])
+        output = self.global_pool(attended) # noqa: F841
+
+        # Mark as built
+        self.built = True
+        self._build_input_shape = input_shape
 
     def get_config(self):
         """Get configuration for serialization."""
@@ -287,7 +337,7 @@ class EncDecModel(Model):
 
         # Individual metabolite FIDs (for all acquisitions) - original size
         # Calculate the actual decoder output size: batch_size * n_freqs * filters
-        decoder_output_size = n_freqs * filters  # filters from WaveNet decoder
+        #decoder_output_size = n_freqs * filters  # filters from WaveNet decoder
         # FID projection with enhanced reconstruction (tanh for better signal bounds)
         self.fid_projection = Dense(n_acquisitions * n_freqs * 2, activation='tanh', name='fids')
 
@@ -341,6 +391,15 @@ class EncDecModel(Model):
             'concentrations': concentrations,
             'fids': fids,
             'phase': phase_params
+        }
+
+    def compute_output_spec(self, input_spec):
+        """Compute the output spec for the model."""
+        # The model outputs a dictionary with concentrations, FIDs, and phase
+        return {
+            'concentrations': tf.TensorSpec(shape=(input_spec.shape[0], self.n_metabolites), dtype=tf.float32),
+            'fids': tf.TensorSpec(shape=(input_spec.shape[0], self.n_acquisitions * self.n_freqs * 2), dtype=tf.float32),
+            'phase': tf.TensorSpec(shape=(input_spec.shape[0], 2), dtype=tf.float32)
         }
 
     def get_config(self):
@@ -512,7 +571,7 @@ class EncDec:
         n_datatypes = len(self.datatype)
 
         # Create EncDec model with concrete input shape
-        concrete_input_shape = (None, n_acquisitions, n_freqs, n_datatypes)
+        #concrete_input_shape = (None, n_acquisitions, n_freqs, n_datatypes)
         self.encdec_arch = EncDecModel(n_acquisitions, n_freqs, n_metabolites, n_datatypes=n_datatypes, filters=filters, name=self.model)
 
         # Create a training model that outputs only metabolite concentrations
@@ -660,32 +719,8 @@ class EncDec:
                 print(f"Error calculating FLOPs: {e}")
             self.flops = 0
 
-        # Plot model architecture
-        for dpi in image_dpi:
-            try:
-                plot_model(self.training_model,
-                           to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
-                           show_shapes=True,
-                           show_dtype=True,
-                           show_layer_names=True,
-                           rankdir='TB',
-                           expand_nested=True,
-                           dpi=dpi)
-            except Exception as e:
-                try:
-                    plot_model(self.training_model,
-                               to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
-                               show_shapes=True,
-                               show_dtype=True,
-                               show_layer_names=True,
-                               rankdir='TB',
-                               expand_nested=True,
-                               dpi=dpi)
-                    if verbose > 0:
-                        print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
-                except Exception as e2:
-                    if verbose > 0:
-                        print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
+        # Create comprehensive architecture plots
+        self._create_architecture_plots(folder, image_dpi, verbose)
 
         if verbose > 0:
             self.training_model.summary()
@@ -760,7 +795,7 @@ class EncDec:
         else:
             # Input shape: (batch, acquisitions*datatypes, freqs)
             batch_size = tf.shape(spectra)[0]
-            n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes
+            #n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes
             n_freqs = tf.shape(spectra)[2]
 
             # Reshape to (batch, acquisitions, freqs, datatypes)
@@ -908,6 +943,256 @@ class EncDec:
                                       },
                                       safe_mode=False)
         return model
+
+    def _create_architecture_plots(self, folder, image_dpi, verbose):
+        """Create comprehensive architecture plots for EncDec."""
+        try:
+            # 1. Main training model architecture
+            for dpi in image_dpi:
+                try:
+                    plot_model(self.training_model,
+                               to_file=os.path.join(folder, f'encdec_training_architecture@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(self.training_model,
+                                   to_file=os.path.join(folder, f'encdec_training_architecture@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: EncDec training architecture PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: EncDec training architecture plot failed: {e2}")
+
+            # 2. Individual EncDec architecture (core model) - Enhanced
+            self._plot_enhanced_core_architecture(folder, image_dpi, verbose)
+
+            # 3. Create module architecture plots
+            self._create_module_plots(folder, image_dpi, verbose)
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: Architecture plotting failed: {e}")
+
+    def _plot_enhanced_core_architecture(self, folder, image_dpi, verbose):
+        """Create an enhanced plot of the EncDec core architecture showing all layers."""
+        try:
+            # Create a detailed model that shows the EncDec architecture step by step
+            from tensorflow.keras.layers import Dense, Input
+            from tensorflow.keras.models import Model
+
+            input_layer = Input(shape=(self.n_freqs, self.n_datatypes), name='encdec_input')
+
+            # Encoder: WaveNet blocks
+            wavenet1 = WaveNetBlock(filters=self.filters, kernel_size=3, dilation_rate=1, name='wavenet1')(input_layer)
+            wavenet2 = WaveNetBlock(filters=self.filters, kernel_size=3, dilation_rate=2, name='wavenet2')(wavenet1)
+            wavenet3 = WaveNetBlock(filters=self.filters, kernel_size=3, dilation_rate=4, name='wavenet3')(wavenet2)
+
+            # Decoder: Attention GRU
+            attention_gru = AttentionGRU(units=self.filters, name='attention_gru')(wavenet3)
+
+            # Multi-head outputs
+            concentrations = Dense(units=len(self.metabolites), activation='linear', name='concentrations')(attention_gru)
+
+            # FID reconstruction
+            fid_projection = Dense(units=self.n_acquisitions * self.n_freqs * 2, activation='tanh', name='fids')(attention_gru)
+
+            # Phase parameters
+            phase_shift = Dense(units=1, activation='linear', name='phase_shift')(attention_gru)
+            freq_offset = Dense(units=1, activation='linear', name='freq_offset')(attention_gru)
+
+            # Create outputs dictionary
+            outputs = {
+                'concentrations': concentrations,
+                'fids': fid_projection,
+                'phase_shift': phase_shift,
+                'freq_offset': freq_offset
+            }
+
+            # Create the detailed model
+            detailed_model = Model(inputs=input_layer, outputs=outputs, name='EncDec_Detailed')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(detailed_model,
+                               to_file=os.path.join(folder, f'encdec_detailed_architecture@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(detailed_model,
+                                   to_file=os.path.join(folder, f'encdec_detailed_architecture@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: EncDec detailed architecture PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: EncDec detailed architecture plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: EncDec detailed architecture creation failed: {e}")
+
+    def _create_module_plots(self, folder, image_dpi, verbose):
+        """Create visual plots of EncDec modules."""
+        try:
+            # Create WaveNetBlock plot
+            self._plot_wavenet_block(folder, image_dpi, verbose)
+
+            # Create AttentionGRU plot
+            self._plot_attention_gru(folder, image_dpi, verbose)
+
+            # Create ContextConverter plot
+            self._plot_context_converter(folder, image_dpi, verbose)
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: Module plotting failed: {e}")
+
+    def _plot_wavenet_block(self, folder, image_dpi, verbose):
+        """Create a visual plot of WaveNetBlock."""
+        try:
+            # Create a simple model to demonstrate WaveNetBlock
+            from tensorflow.keras.layers import Input
+            input_layer = Input(shape=(2048, 1), name='wavenet_input')
+            wavenet = WaveNetBlock(filters=16, kernel_size=3, dilation_rate=1, name='block_wavenet')
+            output = wavenet(input_layer)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='WaveNetBlock_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'encdec_wavenet_block@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'encdec_wavenet_block@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: WaveNetBlock PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: WaveNetBlock plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: WaveNetBlock demo model creation failed: {e}")
+
+    def _plot_attention_gru(self, folder, image_dpi, verbose):
+        """Create a visual plot of AttentionGRU."""
+        try:
+            # Create a simple model to demonstrate AttentionGRU
+            from tensorflow.keras.layers import Input
+            input_layer = Input(shape=(2, 16), name='attention_gru_input')  # 2 acquisitions, 16 features
+            attention_gru = AttentionGRU(units=32, name='block_attention_gru')
+            output = attention_gru(input_layer)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='AttentionGRU_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'encdec_attention_gru@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'encdec_attention_gru@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: AttentionGRU PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: AttentionGRU plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: AttentionGRU demo model creation failed: {e}")
+
+    def _plot_context_converter(self, folder, image_dpi, verbose):
+        """Create a visual plot of ContextConverter."""
+        try:
+            # Create a simple model to demonstrate ContextConverter
+            from tensorflow.keras.layers import Input
+            input_layer = Input(shape=(2, 2048), name='context_input')  # 2 acquisitions, 2048 freqs
+            context_converter = ContextConverter(n_acquisitions=2, n_datatypes=1, name='block_context_converter')
+            output = context_converter(input_layer)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='ContextConverter_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'encdec_context_converter@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'encdec_context_converter@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: ContextConverter PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: ContextConverter plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: ContextConverter demo model creation failed: {e}")
 
     def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
         """Save training results to files.

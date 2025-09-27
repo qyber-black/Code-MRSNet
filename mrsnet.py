@@ -1193,8 +1193,10 @@ def benchmark(args):
     quantifier = None
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
+      print(f"# Loading model from {folder}")
       quantifier = FoundationalCNN.load(folder)
-    except Exception:
+    except Exception as e:
+      print(f"# Error loading model from {folder}: {e}")
       quantifier = None
     if quantifier is None:
       try:

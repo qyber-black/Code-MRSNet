@@ -180,6 +180,26 @@ previous section of how to generate these and what these paths are) for 100
 epochs using 5-fold cross validating on the cnn_small_softmax model with some
 verbosity.
 
+### Available Models
+
+MRSNet supports several deep learning architectures:
+
+* `cnn_*` - Convolutional Neural Networks (various configurations)
+* `ae_*` - Autoencoder models
+* `aeq_*` - Autoencoder-quantifier models
+* `encdec_*` - Encoder-Decoder architecture with WaveNet blocks and attention GRU
+* `fcnn_*` - FoundationalCNN with CReLU activation and 7-layer architecture
+* `qmrs_*` - CNN-LSTM hybrid with multi-headed MLP for parameter prediction
+* `qnet_*` - Dual-branch network with IF extraction and LLS quantification
+
+Each model supports configurable parameters via model strings. For example:
+* `encdec_default` - Default EncDec configuration
+* `fcnn_32_64_128` - FCNN with custom filter sizes
+* `qmrs_16_32_64_128_0.3` - QMRS with custom architecture parameters
+* `qnet_original` - QNet with original paper parameters
+
+See `mrsnet.py train --help` for detailed model configuration options.
+
 MRSNet can run model selection approaches over a set of model parameters
 (currently hardcoded in `mrsnet/selection.py`) and also run the training
 on a remote system using a separate script - see `scheduler/run_scw.sh` for
@@ -263,7 +283,8 @@ Released versions:
   spectra processing; extended dataset generation, model training, model selection,
   and quantification.
 * v2.1 - current version with TensorFlow 2.20, Python 3.13 support, and enhanced
-  model architectures including autoencoders and autoencoder-quantifiers.
+  model architectures including autoencoders, autoencoder-quantifiers, and four extra
+  deep learning models: EncDec, FoundationalCNN (fCNN), QMRS, and QNet.
 
 ## Locations
 

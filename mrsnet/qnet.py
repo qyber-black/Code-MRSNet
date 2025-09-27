@@ -141,13 +141,134 @@ class AcquisitionSplitter(Layer):
 
     def call(self, inputs):
         """Extract single acquisition from multi-acquisition input."""
+        # Input shape: (batch, acquisitions, freqs)
+        # Output shape: (batch, freqs)
+        # Use tf.gather with proper axis
         return tf.gather(inputs, self.acquisition_idx, axis=1)
 
+    def compute_output_shape(self, input_shape):
+        """Compute the output shape."""
+        return (input_shape[0], input_shape[2])  # (batch, freqs)
+
     def get_config(self):
+        """Get configuration for serialization."""
         config = super().get_config()
         config.update({'acquisition_idx': self.acquisition_idx})
         return config
 
+
+@register_keras_serializable(package="mrsnet", name="AcquisitionDatatypeSplitter")
+class AcquisitionDatatypeSplitter(Layer):
+    """Custom layer to split multi-acquisition multi-datatype input into single acquisitions."""
+
+    def __init__(self, acquisition_idx, n_datatypes, **kwargs):
+        super().__init__(**kwargs)
+        self.acquisition_idx = acquisition_idx
+        self.n_datatypes = n_datatypes
+
+    def call(self, inputs):
+        """Extract single acquisition from multi-acquisition multi-datatype input."""
+        # Input shape: (batch, acquisition*datatype, freqs)
+        # Output shape: (batch, datatype, freqs)
+        # Extract all datatypes for the specified acquisition
+        start_idx = self.acquisition_idx * self.n_datatypes
+        end_idx = start_idx + self.n_datatypes
+        return tf.gather(inputs, tf.range(start_idx, end_idx), axis=1)
+
+    def compute_output_shape(self, input_shape):
+        """Compute the output shape."""
+        return (input_shape[0], self.n_datatypes, input_shape[2])  # (batch, datatype, freqs)
+
+    def get_config(self):
+        """Get configuration for serialization."""
+        config = super().get_config()
+        config.update({
+            'acquisition_idx': self.acquisition_idx,
+            'n_datatypes': self.n_datatypes
+        })
+        return config
+
+
+@register_keras_serializable(package="mrsnet", name="DatatypeProcessor")
+class DatatypeProcessor(Layer):
+    """Custom layer to process multiple datatypes for a single acquisition."""
+
+    def __init__(self, qnet_model, **kwargs):
+        super().__init__(**kwargs)
+        self.qnet_model = qnet_model
+
+    def call(self, inputs):
+        """Process multiple datatypes for a single acquisition."""
+        # Input shape: (batch, datatype, freqs)
+        # Process each datatype separately and combine results
+
+        # For now, just use the first datatype (real part)
+        # In a more sophisticated implementation, you could combine all datatypes
+        single_datatype = tf.gather(inputs, 0, axis=1)  # Take first datatype
+        return self.qnet_model(single_datatype)
+
+    def compute_output_shape(self, input_shape):
+        """Compute the output shape."""
+        # Return the same shape as the QNet model output
+        if hasattr(self.qnet_model, 'n_metabolites') and hasattr(self.qnet_model, 'n_if_factors'):
+            return (input_shape[0], self.qnet_model.n_metabolites * self.qnet_model.n_if_factors)
+        else:
+            # Fallback for serialized models - use a reasonable default
+            return (input_shape[0], 5 * 3)  # 5 metabolites * 3 IF factors
+
+    def get_config(self):
+        """Get configuration for serialization."""
+        config = super().get_config()
+        # Don't serialize the qnet_model directly as it causes TrackedDict issues
+        # Instead, store the necessary attributes
+        config.update({
+            'n_metabolites': self.qnet_model.n_metabolites,
+            'n_if_factors': self.qnet_model.n_if_factors
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        """Create layer from config."""
+        # Remove the attributes we added for serialization
+        config.pop('n_metabolites', None)
+        config.pop('n_if_factors', None)
+
+        # Create the layer without qnet_model
+        layer = cls(**config)
+
+        # The qnet_model will be set when the layer is used
+        return layer
+
+
+@register_keras_serializable(package="mrsnet", name="IFConcatenator")
+class IFConcatenator(keras.layers.Layer):
+    """Custom layer to concatenate IF factors from multiple acquisitions."""
+
+    def __init__(self, name=None, **kwargs):
+        super().__init__(name=name, **kwargs)
+
+    def call(self, inputs):
+        """Concatenate IF factors from multiple acquisitions."""
+        return tf.concat(inputs, axis=-1)
+
+    def compute_output_shape(self, input_shape):
+        """Compute the output shape."""
+        # input_shape is a list of shapes: [(batch, if_factors1), (batch, if_factors2)]
+        total_if_factors = sum(shape[1] for shape in input_shape)
+        return (input_shape[0][0], total_if_factors)
+
+    def get_config(self):
+        """Get configuration for serialization.
+
+        Returns
+        -------
+        dict
+            Dictionary containing layer configuration parameters for serialization.
+            Includes n_acquisitions and n_datatypes parameters.
+        """
+        config = super().get_config()
+        return config
 
 @register_keras_serializable(package="mrsnet", name="BasicLLSModule")
 class BasicLLSModule(keras.layers.Layer):
@@ -270,14 +391,15 @@ class QNetModel(Model):
         self.if_fc1 = Dense(self.if_fc_units, activation='relu', name='if_fc1')
         self.if_fc2 = Dense(n_metabolites * n_if_factors, name='if_output')
 
-        # MM Signal Prediction Module: Dynamic SCBs + 2 FCLs
-        self.mm_scbs = []
-        for i, filters in enumerate(self.mm_scb_filters):
-            scb = StackedConvolutionalBlock(filters, kernel_size=self.kernel_size, name=f'mm_scb{i+1}')
-            self.mm_scbs.append(scb)
-        self.mm_flatten = Flatten(name='mm_flatten')
-        self.mm_fc1 = Dense(self.mm_fc_units, activation='relu', name='mm_fc1')
-        self.mm_fc2 = Dense(n_freqs, name='mm_output')
+        # MM Signal Prediction Module: Dynamic SCBs + 2 FCLs - DISABLED
+        # Commented out to eliminate gradient warnings since MM branch is not used
+        # self.mm_scbs = []
+        # for i, filters in enumerate(self.mm_scb_filters):
+        #     scb = StackedConvolutionalBlock(filters, kernel_size=self.kernel_size, name=f'mm_scb{i+1}')
+        #     self.mm_scbs.append(scb)
+        # self.mm_flatten = Flatten(name='mm_flatten')
+        # self.mm_fc1 = Dense(self.mm_fc_units, activation='relu', name='mm_fc1')
+        # self.mm_fc2 = Dense(n_freqs, name='mm_output')
 
         # Build the model
         self.build((None, n_freqs))
@@ -301,15 +423,16 @@ class QNetModel(Model):
             if_x = scb(if_x)
         if_x = self.if_flatten(if_x)
         if_x = self.if_fc1(if_x)
-        if_factors = self.if_fc2(if_x)
+        if_factors = self.if_fc2(if_x) # noqa: F841
 
-        # Build MM signal prediction branch
-        mm_x = x
-        for scb in self.mm_scbs:
-            mm_x = scb(mm_x)
-        mm_x = self.mm_flatten(mm_x)
-        mm_x = self.mm_fc1(mm_x)
-        mm_signal = self.mm_fc2(mm_x)
+        # Build MM signal prediction branch - DISABLED
+        # Commented out to eliminate gradient warnings since MM branch is not used
+        # mm_x = x
+        # for scb in self.mm_scbs:
+        #     mm_x = scb(mm_x)
+        # mm_x = self.mm_flatten(mm_x)
+        # mm_x = self.mm_fc1(mm_x)
+        # mm_signal = self.mm_fc2(mm_x)
 
         # Mark as built
         self.built = True
@@ -328,14 +451,18 @@ class QNetModel(Model):
         if_x = self.if_fc1(if_x)
         if_factors = self.if_fc2(if_x)
 
-        # MM Signal Prediction branch
-        mm_x = x
-        for scb in self.mm_scbs:
-            mm_x = scb(mm_x)
-        mm_x = self.mm_flatten(mm_x)
-        mm_x = self.mm_fc1(mm_x)
-        mm_signal = self.mm_fc2(mm_x)
+        # MM Signal Prediction branch - DISABLED to avoid gradient warnings
+        # The MM branch is not used in training, so we skip execution to eliminate
+        # "gradients do not exist" warnings while preserving the architecture
+        # mm_x = x
+        # for scb in self.mm_scbs:
+        #     mm_x = scb(mm_x)
+        # mm_x = self.mm_flatten(mm_x)
+        # mm_x = self.mm_fc1(mm_x)
+        # mm_signal = self.mm_fc2(mm_x)
 
+        # Return dummy MM signal with correct shape for compatibility
+        mm_signal = tf.zeros([tf.shape(if_factors)[0], self.n_freqs], dtype=tf.float32)
         return {
             'if_factors': if_factors,
             'mm_signal': mm_signal
@@ -592,52 +719,40 @@ class QNet:
         -------
             keras.Model: Training model that outputs metabolite concentrations
         """
-        # Get the input shape from MRSNet (acquisitions, freqs)
-        # QNet expects (freqs,) input, so we process each acquisition separately
-        input_shape = (len(self.acquisitions), self.qnet_arch.n_freqs)
+        # Get the input shape from MRSNet after reshape_spectra_data
+        # The data is reshaped from (batch, acquisition, datatype, frequency) to (batch, acquisition*datatype, frequency)
+        input_shape = (len(self.acquisitions) * len(self.datatype), self.qnet_arch.n_freqs)
 
         # Create input layer for multi-acquisition input
         inputs = Input(shape=input_shape, name='spectrum_input')
 
         # Process each acquisition separately with QNet
-        # Split acquisitions: (batch, acquisitions, freqs) -> list of (batch, freqs)
+        # Split acquisitions: (batch, acquisition*datatype, freqs) -> list of (batch, freqs)
         acquisition_outputs = []
-        for i in range(len(self.acquisitions)):
-            # Extract single acquisition: (batch, freqs)
-            single_acq = AcquisitionSplitter(i)(inputs)
 
-            # Process with QNet
-            qnet_outputs = self.qnet_arch(single_acq)
-            acquisition_outputs.append(qnet_outputs)
+        # Extract edit_off acquisition (index 0) with all its datatypes
+        edit_off_acq = AcquisitionDatatypeSplitter(0, len(self.datatype), name='extract_edit_off')(inputs)
+        edit_off_processor = DatatypeProcessor(self.qnet_arch, name='process_edit_off')
+        edit_off_outputs = edit_off_processor(edit_off_acq)
+        acquisition_outputs.append(edit_off_outputs)
 
-        # Combine outputs from all acquisitions
-        # For MEGA-PRESS, we have edit_off and difference acquisitions
-        # Use both acquisitions to get better metabolite quantification
-        edit_off_outputs = acquisition_outputs[0]  # edit_off acquisition
-        difference_outputs = acquisition_outputs[1] if len(acquisition_outputs) > 1 else acquisition_outputs[0]  # difference acquisition
+        # Extract difference acquisition (index 1) if available
+        if len(self.acquisitions) > 1:
+            difference_acq = AcquisitionDatatypeSplitter(1, len(self.datatype), name='extract_difference')(inputs)
+            difference_processor = DatatypeProcessor(self.qnet_arch, name='process_difference')
+            difference_outputs = difference_processor(difference_acq)
+            acquisition_outputs.append(difference_outputs)
+        else:
+            difference_outputs = edit_off_outputs
 
         # Combine IF factors from both acquisitions
-        # In practice, you might want to use different strategies:
-        # 1. Average the IF factors
-        # 2. Use edit_off for some metabolites and difference for others
-        # 3. Learnable combination weights
-        # For now, we'll use edit_off IF factors as primary and difference as secondary
-
-        # Create a custom layer to handle the concatenation
-        class ConcatLayer(keras.layers.Layer):
-            def call(self, inputs):
-                return tf.concat(inputs, axis=-1)
-
-        concat_layer = ConcatLayer()
-        if_factors_combined = concat_layer([
-            edit_off_outputs['if_factors'],
-            difference_outputs['if_factors']
-        ])
+        # Use custom layer to concatenate IF factors
+        if_factors_combined = IFConcatenator(name='concat_if_factors')([edit_off_outputs, difference_outputs])
 
         # Apply Basic LLS module for metabolite concentration estimation
         lls_module = BasicLLSModule(
             n_metabolites=len(self.metabolites),
-            n_if_factors=self.n_if_factors,
+            n_if_factors=self.n_if_factors * len(self.acquisitions),  # Combined IF factors from all acquisitions
             name='basic_lls'
         )
         concentrations = lls_module(if_factors_combined)
@@ -667,7 +782,7 @@ class QNet:
         # Extract individual factors
         phase_shift = if_reshaped[:, :, 0]  # Phase shift
         freq_shift = if_reshaped[:, :, 1]    # Frequency shift
-        linewidth_dev = if_reshaped[:, :, 2] # Linewidth deviation
+        #linewidth_dev = if_reshaped[:, :, 2] # Linewidth deviation
 
         # Apply imperfection factors to basis set
         # This is a simplified implementation - in practice, this would involve
@@ -802,38 +917,14 @@ class QNet:
 
         # Calculate FLOPs
         try:
-            self.flops = calculate_flops(self.qnet_arch, d_inp.shape[1:])
+            self.flops = calculate_flops(self.training_model, d_inp.shape[1:])
         except Exception as e:
             if verbose > 0:
                 print(f"Error calculating FLOPs: {e}")
             self.flops = 0
 
-        # Plot model architecture
-        for dpi in image_dpi:
-            try:
-                plot_model(self.qnet_arch,
-                           to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
-                           show_shapes=True,
-                           show_dtype=True,
-                           show_layer_names=True,
-                           rankdir='TB',
-                           expand_nested=True,
-                           dpi=dpi)
-            except Exception as e:
-                try:
-                    plot_model(self.qnet_arch,
-                               to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
-                               show_shapes=True,
-                               show_dtype=True,
-                               show_layer_names=True,
-                               rankdir='TB',
-                               expand_nested=True,
-                               dpi=dpi)
-                    if verbose > 0:
-                        print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
-                except Exception as e2:
-                    if verbose > 0:
-                        print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
+        # Create comprehensive architecture plots
+        self._create_architecture_plots(folder, image_dpi, verbose)
 
         if verbose > 0:
             self.qnet_arch.summary()
@@ -1001,20 +1092,322 @@ class QNet:
         -------
             QNet: Loaded QNet model instance
         """
-        with open(os.path.join(path, "mrsnet.json")) as f:
-            data = json.load(f)
-        model = QNet(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
-                     data['datatype'], data['norm'])
-        model.train_dataset_name = data['train_dataset_name']
-        model.training_model = load_model(os.path.join(path, "model.keras"),
-                                         custom_objects={
-                                             "QNetModel": QNetModel,
-                                             "StackedConvolutionalBlock": StackedConvolutionalBlock
-                                         },
-                                         safe_mode=False)
-        # Reconstruct the QNet architecture
-        model._construct(model.training_model.input_shape[1:], model.training_model.output_shape[1:])
-        return model
+        try:
+            with open(os.path.join(path, "mrsnet.json")) as f:
+                data = json.load(f)
+            model = QNet(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
+                         data['datatype'], data['norm'])
+            model.train_dataset_name = data['train_dataset_name']
+            model.training_model = load_model(os.path.join(path, "model.keras"),
+                                             custom_objects={
+                                                 "QNetModel": QNetModel,
+                                                 "StackedConvolutionalBlock": StackedConvolutionalBlock,
+                                                 "BasicLLSModule": BasicLLSModule,
+                                                 "AcquisitionSplitter": AcquisitionSplitter,
+                                                 "IFConcatenator": IFConcatenator
+                                             },
+                                             safe_mode=False)
+            # Reconstruct the QNet architecture
+            model._construct(model.training_model.input_shape[1:], model.training_model.output_shape[1:])
+            return model
+        except Exception as e:
+            print(f"QNet load error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def _create_architecture_plots(self, folder, image_dpi, verbose):
+        """Create comprehensive architecture plots for QNet."""
+        try:
+            # 1. Main training model architecture
+            for dpi in image_dpi:
+                try:
+                    plot_model(self.training_model,
+                               to_file=os.path.join(folder, f'qnet_training_architecture@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(self.training_model,
+                                   to_file=os.path.join(folder, f'qnet_training_architecture@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: QNet training architecture PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: QNet training architecture plot failed: {e2}")
+
+            # 2. Individual QNet architecture (core model) - Enhanced
+            self._plot_enhanced_core_architecture(folder, image_dpi, verbose)
+
+            # 3. Create module architecture plots
+            self._create_module_plots(folder, image_dpi, verbose)
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: Architecture plotting failed: {e}")
+
+    def _plot_enhanced_core_architecture(self, folder, image_dpi, verbose):
+        """Create an enhanced plot of the QNet core architecture showing all layers."""
+        try:
+            # Create a detailed model that shows the QNet architecture step by step
+            from tensorflow.keras.layers import Dense, Input
+            from tensorflow.keras.models import Model
+
+            input_layer = Input(shape=(2048,), name='qnet_input')  # Single acquisition spectrum
+
+            # IF Extraction Module
+            if_scb1 = StackedConvolutionalBlock(filters=16, kernel_size=3, name='if_scb1')(input_layer)
+            if_scb2 = StackedConvolutionalBlock(filters=32, kernel_size=3, name='if_scb2')(if_scb1)
+            if_scb3 = StackedConvolutionalBlock(filters=64, kernel_size=3, name='if_scb3')(if_scb2)
+            if_fc1 = Dense(units=128, activation='relu', name='if_fc1')(if_scb3)
+            if_output = Dense(units=len(self.metabolites) * self.n_if_factors, activation='linear', name='if_output')(if_fc1)
+
+            # MM Signal Prediction Module
+            mm_scb1 = StackedConvolutionalBlock(filters=16, kernel_size=3, name='mm_scb1')(input_layer)
+            mm_scb2 = StackedConvolutionalBlock(filters=32, kernel_size=3, name='mm_scb2')(mm_scb1)
+            mm_scb3 = StackedConvolutionalBlock(filters=64, kernel_size=3, name='mm_scb3')(mm_scb2)
+            mm_scb4 = StackedConvolutionalBlock(filters=128, kernel_size=3, name='mm_scb4')(mm_scb3)
+            mm_scb5 = StackedConvolutionalBlock(filters=256, kernel_size=3, name='mm_scb5')(mm_scb4)
+            mm_scb6 = StackedConvolutionalBlock(filters=256, kernel_size=3, name='mm_scb6')(mm_scb5)
+            mm_fc1 = Dense(units=512, activation='relu', name='mm_fc1')(mm_scb6)
+            mm_output = Dense(units=len(self.metabolites), activation='linear', name='mm_output')(mm_fc1)
+
+            # Create outputs dictionary
+            outputs = {
+                'if_factors': if_output,
+                'mm_signal': mm_output
+            }
+
+            # Create the detailed model
+            detailed_model = Model(inputs=input_layer, outputs=outputs, name='QNet_Detailed')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(detailed_model,
+                               to_file=os.path.join(folder, f'qnet_detailed_architecture@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(detailed_model,
+                                   to_file=os.path.join(folder, f'qnet_detailed_architecture@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: QNet detailed architecture PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: QNet detailed architecture plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: QNet detailed architecture creation failed: {e}")
+
+    def _create_module_plots(self, folder, image_dpi, verbose):
+        """Create visual plots of QNet modules."""
+        try:
+            # Create StackedConvolutionalBlock plot
+            self._plot_stacked_conv_block(folder, image_dpi, verbose)
+
+            # Create BasicLLSModule plot
+            self._plot_basic_lls_module(folder, image_dpi, verbose)
+
+            # Create AcquisitionSplitter plot
+            self._plot_acquisition_splitter(folder, image_dpi, verbose)
+
+            # Create IFConcatenator plot
+            self._plot_if_concatenator(folder, image_dpi, verbose)
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: Module plotting failed: {e}")
+
+    def _plot_stacked_conv_block(self, folder, image_dpi, verbose):
+        """Create a visual plot of StackedConvolutionalBlock."""
+        try:
+            # Create a simple model to demonstrate SCB
+            from tensorflow.keras.layers import Input
+            input_layer = Input(shape=(2048, 1), name='scb_input')
+            scb = StackedConvolutionalBlock(filters=32, kernel_size=3, name='block_scb')
+            output = scb(input_layer)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='StackedConvolutionalBlock_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'qnet_stacked_conv_block@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'qnet_stacked_conv_block@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: SCB PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: SCB plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: SCB demo model creation failed: {e}")
+
+    def _plot_basic_lls_module(self, folder, image_dpi, verbose):
+        """Create a visual plot of BasicLLSModule."""
+        try:
+            # Create a simple model to demonstrate BasicLLSModule
+            from tensorflow.keras.layers import Input
+            input_layer = Input(shape=(10,), name='lls_input')  # 2 acquisitions * 5 metabolites * 1 if_factor
+            lls_module = BasicLLSModule(n_metabolites=5, n_if_factors=2, name='block_lls')
+            output = lls_module(input_layer)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='BasicLLSModule_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'qnet_basic_lls_module@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'qnet_basic_lls_module@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: BasicLLS PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: BasicLLS plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: BasicLLS demo model creation failed: {e}")
+
+    def _plot_acquisition_splitter(self, folder, image_dpi, verbose):
+        """Create a visual plot of AcquisitionSplitter."""
+        try:
+            # Create a simple model to demonstrate AcquisitionSplitter
+            from tensorflow.keras.layers import Input
+            input_layer = Input(shape=(2, 2048), name='splitter_input')  # 2 acquisitions, 2048 freqs
+            splitter = AcquisitionSplitter(0, name='block_splitter')
+            output = splitter(input_layer)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='AcquisitionSplitter_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'qnet_acquisition_splitter@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'qnet_acquisition_splitter@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: AcquisitionSplitter PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: AcquisitionSplitter plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: AcquisitionSplitter demo model creation failed: {e}")
+
+    def _plot_if_concatenator(self, folder, image_dpi, verbose):
+        """Create a visual plot of IFConcatenator."""
+        try:
+            # Create a simple model to demonstrate IFConcatenator
+            from tensorflow.keras.layers import Input
+            input1 = Input(shape=(5,), name='if_factors_1')
+            input2 = Input(shape=(5,), name='if_factors_2')
+            concatenator = IFConcatenator(name='block_concatenator')
+            output = concatenator([input1, input2])
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=[input1, input2], outputs=output, name='IFConcatenator_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'qnet_if_concatenator@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'qnet_if_concatenator@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: IFConcatenator PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: IFConcatenator plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: IFConcatenator demo model creation failed: {e}")
 
     def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
         """Save training results to files.

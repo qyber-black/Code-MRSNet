@@ -106,6 +106,20 @@ class CReLU(keras.layers.Layer):
         neg = self.relu(-inputs)
         return Concatenate()([pos, neg])
 
+    def build(self, input_shape):
+        """Build the layer with the given input shape.
+
+        Parameters
+        ----------
+            input_shape (tuple): Input tensor shape
+        """
+        # Build the ReLU layers
+        self.relu.build(input_shape)
+
+        # Mark as built
+        self.built = True
+        self._build_input_shape = input_shape
+
     def get_config(self):
         """Get configuration for serialization."""
         config = super().get_config()
@@ -121,7 +135,7 @@ class FoundationalCNNModel(Model):
     Output includes metabolite concentrations plus macromolecule scaling factor.
     """
 
-    def __init__(self, n_freqs, n_metabolites, conv_filters=None, kernel_size=3,
+    def __init__(self, n_freqs, n_metabolites, n_channels=2, conv_filters=None, kernel_size=3,
                  pool_size=2, fc_units=1024, dropout_rate=0.5, name='FoundationalCNNModel', **kwargs):
         """Initialize FoundationalCNN model.
 
@@ -150,8 +164,8 @@ class FoundationalCNNModel(Model):
         self.fc_units = fc_units
         self.dropout_rate = dropout_rate
 
-        # Input layer - 2 channels (real and imaginary parts)
-        self.input_layer = Input(shape=(n_freqs, 2), name='spectrum_input')
+        # Input layer - variable channels (2 for real-only, 4 for real+imaginary)
+        self.input_layer = Input(shape=(n_freqs, n_channels), name='spectrum_input')
 
         # Create convolutional layers dynamically based on conv_filters
         self.conv_layers = []
@@ -179,35 +193,30 @@ class FoundationalCNNModel(Model):
         # Output: n_metabolites (macromolecule scaling factor removed for compatibility)
         self.fc2 = Dense(n_metabolites, activation='linear', name='fc2')
 
-        # Build the model
-        self.build((None, n_freqs, 2))
-
     def build(self, input_shape):
         """Build the model with the given input shape.
 
         Parameters
         ----------
-            input_shape (tuple): Input tensor shape
+            input_shape (tuple): Input tensor shape (batch, freqs, channels)
         """
-        # Create a dummy input to build all layers
-        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+        # Initialize all layers with proper input shapes
+        # This ensures all weights are properly initialized
 
-        # Forward pass to build all layers
-        x = dummy_input
+        # Build convolutional layers
+        x_shape = input_shape
+        for i, conv_layer in enumerate(self.conv_layers):
+            conv_layer.build(x_shape)
+            # After conv: same batch, same freqs, filters channels
+            # After CReLU: same batch, same freqs, 2 * filters channels
+            # After MaxPool: same batch, freqs // pool_size, 2 * filters channels
+            x_shape = (x_shape[0], x_shape[1] // self.pool_size, self.conv_filters[i] * 2)
 
-        # Apply convolutional layers dynamically
-        for i, (conv, crelu, pool) in enumerate(zip(self.conv_layers, self.crelu_layers, self.pool_layers)):
-            x = conv(x)
-            x = crelu(x)
-            x = pool(x)
-
-        # Flatten for fully connected layers
-        x = self.flatten(x)
-
-        # Fully connected layers
-        x = self.fc1(x)
-        x = self.dropout1(x)
-        x = self.fc2(x)
+        # Build fully connected layers
+        # After all conv+pool layers, we have flattened output
+        flattened_size = x_shape[1] * x_shape[2]  # freqs * channels
+        self.fc1.build((x_shape[0], flattened_size))
+        self.fc2.build((x_shape[0], self.fc_units))
 
         # Mark as built
         self.built = True
@@ -434,13 +443,16 @@ class FoundationalCNN:
         conv_filters, kernel_size, pool_size, fc_units, dropout_rate = self._parse_model_config(input_shape)
 
         # Get framework-determined parameters
-        n_freqs = input_shape[-2]
+        # After _convert_to_2channel: (batch, freqs, channels)
+        n_freqs = input_shape[0]  # Frequency dimension is the first dimension
+        n_channels = input_shape[1]  # Channel dimension is the second dimension
         n_metabolites = len(self.metabolites)
 
         # Create FoundationalCNN model with parsed parameters
         self.fcnn_arch = FoundationalCNNModel(
             n_freqs=n_freqs,
             n_metabolites=n_metabolites,
+            n_channels=n_channels,
             conv_filters=conv_filters,
             kernel_size=kernel_size,
             pool_size=pool_size,
@@ -448,6 +460,11 @@ class FoundationalCNN:
             dropout_rate=dropout_rate,
             name=self.model
         )
+
+        # Rebuild the model with the actual input shape
+        # input_shape is (freqs, channels), but build expects (batch, freqs, channels)
+        full_input_shape = (None, *input_shape)
+        self.fcnn_arch.build(full_input_shape)
 
     def train(self, d_data, v_data, epochs, batch_size,
               folder, verbose=0, image_dpi=[300], screen_dpi=96, train_dataset_name=""):
@@ -499,10 +516,15 @@ class FoundationalCNN:
         # Prepare data
         d_inp = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
         d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
+        if verbose > 0:
+            print(f"  Debug - Original d_inp shape: {d_inp.shape}")
+
         d_inp = reshape_spectra_data(d_inp, add_channel_dim=False)
+        if verbose > 0:
+            print(f"  Debug - After reshape_spectra_data: {d_inp.shape}")
 
         # Convert to 2-channel input (real and imaginary parts)
-        # Input shape: (batch, acquisitions*datatypes, freqs) -> (batch, freqs, 2)
+        # Input shape: (batch, acquisitions*datatypes, freqs) -> (batch, freqs, channels)
         d_inp = self._convert_to_2channel(d_inp)
 
         train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
@@ -519,6 +541,7 @@ class FoundationalCNN:
         if verbose > 0:
             print("  Input:", d_inp.shape, "[spectrum, frequency, channels]")
             print("  Output:", d_out.shape, "[spectrum, metabolite_concentration]")
+            print("  Input shape for model:", d_inp.shape[1:])
 
         learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
 
@@ -555,32 +578,8 @@ class FoundationalCNN:
                 print(f"Error calculating FLOPs: {e}")
             self.flops = 0
 
-        # Plot model architecture
-        for dpi in image_dpi:
-            try:
-                plot_model(self.fcnn_arch,
-                           to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
-                           show_shapes=True,
-                           show_dtype=True,
-                           show_layer_names=True,
-                           rankdir='TB',
-                           expand_nested=True,
-                           dpi=dpi)
-            except Exception as e:
-                try:
-                    plot_model(self.fcnn_arch,
-                               to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
-                               show_shapes=True,
-                               show_dtype=True,
-                               show_layer_names=True,
-                               rankdir='TB',
-                               expand_nested=True,
-                               dpi=dpi)
-                    if verbose > 0:
-                        print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
-                except Exception as e2:
-                    if verbose > 0:
-                        print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
+        # Create comprehensive architecture plots
+        self._create_architecture_plots(folder, image_dpi, verbose)
 
         if verbose > 0:
             self.fcnn_arch.summary()
@@ -645,20 +644,36 @@ class FoundationalCNN:
         # Output shape: (batch, freqs, 2)
         # For MEGA-PRESS: edit_off (channel 0) and difference (channel 1)
 
-        batch_size = tf.shape(spectra)[0]
-        n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes
-        n_freqs = tf.shape(spectra)[2]
+        # Use static shapes for debugging
+        input_shape = spectra.shape
 
-        # Reshape to (batch, freqs, channels) and take first 2 channels
+        if len(input_shape) != 3:
+            raise ValueError(f"Expected 3D input (batch, channels, freqs), got {len(input_shape)}D: {input_shape}")
+
+        batch_size = input_shape[0]
+        n_channels = input_shape[1]  # acquisitions*datatypes
+        n_freqs = input_shape[2]
+
+        # Reshape to (batch, freqs, channels)
         spectra_reshaped = tf.transpose(spectra, [0, 2, 1])  # (batch, freqs, channels)
 
-        # Take first 2 channels or pad if needed
-        if n_channels >= 2:
-            spectra_2channel = spectra_reshaped[:, :, :2]
-        else:
-            # Pad with zeros if we have fewer than 2 channels
-            padding = tf.zeros((batch_size, n_freqs, 2 - n_channels))
+        # Handle different channel configurations
+        if n_channels == 1:
+            # Single channel: pad with zeros
+            padding = tf.zeros((batch_size, n_freqs, 1))
             spectra_2channel = tf.concat([spectra_reshaped, padding], axis=-1)
+        elif n_channels == 2:
+            # Exactly 2 channels: use as-is
+            spectra_2channel = spectra_reshaped
+        elif n_channels == 4:
+            # 4 channels (2 acquisitions * 2 datatypes): preserve real and imaginary
+            # Channel 0: edit_off_real, Channel 1: edit_off_imaginary
+            # Channel 2: edit_on_real, Channel 3: edit_on_imaginary
+            # Keep all 4 channels to preserve phase information
+            spectra_2channel = spectra_reshaped
+        else:
+            # More than 4 channels or other configurations: take first 2 channels
+            spectra_2channel = spectra_reshaped[:, :, :2]
 
         return spectra_2channel
 
@@ -783,16 +798,213 @@ class FoundationalCNN:
         """
         with open(os.path.join(path, "mrsnet.json")) as f:
             data = json.load(f)
-        model = FoundationalCNN(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
-                                data['datatype'], data['norm'])
+
+        # Create model instance without building the architecture
+        model = FoundationalCNN.__new__(FoundationalCNN)
+        model.model = data['model']
+        model.metabolites = data['metabolites']
+        model.pulse_sequence = data['pulse_sequence']
+        model.acquisitions = data['acquisitions']
+        model.datatype = data['datatype']
+        model.norm = data['norm']
         model.train_dataset_name = data['train_dataset_name']
+
+        # Set default attributes (same as constructor)
+        # FIXME: should not be hardcoded, but fine for now as we only use these values
+        model.low_ppm = -1.0
+        model.high_ppm = -4.5
+        model.fft_samples = 2048
+        model.output = "concentrations"
+
+        # Set default architecture parameters (same as constructor defaults)
+        model.conv_filters = [32, 64, 128, 256, 512]  # Default from constructor
+        model.kernel_size = 3
+        model.pool_size = 2
+        model.fc_units = 1024
+        model.dropout_rate = 0.5
+
+        # Load the saved model architecture directly
         model.fcnn_arch = load_model(os.path.join(path, "model.keras"),
                                      custom_objects={
                                          "FoundationalCNNModel": FoundationalCNNModel,
                                          "CReLU": CReLU
                                      },
+                                     compile=False,
                                      safe_mode=False)
         return model
+
+    def _create_architecture_plots(self, folder, image_dpi, verbose):
+        """Create comprehensive architecture plots for FoundationalCNN."""
+        try:
+            # 1. Main training model architecture
+            for dpi in image_dpi:
+                try:
+                    plot_model(self.training_model,
+                               to_file=os.path.join(folder, f'fcnn_training_architecture@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(self.training_model,
+                                   to_file=os.path.join(folder, f'fcnn_training_architecture@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: FCNN training architecture PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: FCNN training architecture plot failed: {e2}")
+
+            # 2. Individual FCNN architecture (core model) - Enhanced
+            self._plot_enhanced_core_architecture(folder, image_dpi, verbose)
+
+            # 3. Create module architecture plots
+            self._create_module_plots(folder, image_dpi, verbose)
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: Architecture plotting failed: {e}")
+
+    def _plot_enhanced_core_architecture(self, folder, image_dpi, verbose):
+        """Create an enhanced plot of the FCNN core architecture showing all layers."""
+        try:
+            # Create a detailed model that shows the FCNN architecture step by step
+            from tensorflow.keras.layers import BatchNormalization, Conv1D, Dense, Dropout, Input, MaxPooling1D
+            from tensorflow.keras.models import Model
+
+            input_layer = Input(shape=(2048, 2), name='fcnn_input')  # 2 channels (edit_off, difference)
+
+            # Conv Layer 1
+            conv1 = Conv1D(filters=32, kernel_size=3, padding='same', name='conv1')(input_layer)
+            bn1 = BatchNormalization(name='bn1')(conv1)
+            crelu1 = CReLU(name='crelu1')(bn1)
+            pool1 = MaxPooling1D(pool_size=2, name='pool1')(crelu1)
+
+            # Conv Layer 2
+            conv2 = Conv1D(filters=64, kernel_size=3, padding='same', name='conv2')(pool1)
+            bn2 = BatchNormalization(name='bn2')(conv2)
+            crelu2 = CReLU(name='crelu2')(bn2)
+            pool2 = MaxPooling1D(pool_size=2, name='pool2')(crelu2)
+
+            # Conv Layer 3
+            conv3 = Conv1D(filters=128, kernel_size=3, padding='same', name='conv3')(pool2)
+            bn3 = BatchNormalization(name='bn3')(conv3)
+            crelu3 = CReLU(name='crelu3')(bn3)
+            pool3 = MaxPooling1D(pool_size=2, name='pool3')(crelu3)
+
+            # Conv Layer 4
+            conv4 = Conv1D(filters=256, kernel_size=3, padding='same', name='conv4')(pool3)
+            bn4 = BatchNormalization(name='bn4')(conv4)
+            crelu4 = CReLU(name='crelu4')(bn4)
+            pool4 = MaxPooling1D(pool_size=2, name='pool4')(crelu4)
+
+            # Conv Layer 5
+            conv5 = Conv1D(filters=512, kernel_size=3, padding='same', name='conv5')(pool4)
+            bn5 = BatchNormalization(name='bn5')(conv5)
+            crelu5 = CReLU(name='crelu5')(bn5)
+            pool5 = MaxPooling1D(pool_size=2, name='pool5')(crelu5)
+
+            # Flatten and FC layers
+            from tensorflow.keras.layers import Flatten
+            flatten = Flatten(name='flatten')(pool5)
+            fc1 = Dense(units=512, activation='relu', name='fc1')(flatten)
+            dropout = Dropout(rate=0.5, name='dropout')(fc1)
+            fc2 = Dense(units=len(self.metabolites), activation='linear', name='fc2')(dropout)
+
+            # Create the detailed model
+            detailed_model = Model(inputs=input_layer, outputs=fc2, name='FoundationalCNN_Detailed')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(detailed_model,
+                               to_file=os.path.join(folder, f'fcnn_detailed_architecture@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(detailed_model,
+                                   to_file=os.path.join(folder, f'fcnn_detailed_architecture@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: FCNN detailed architecture PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: FCNN detailed architecture plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: FCNN detailed architecture creation failed: {e}")
+
+    def _create_module_plots(self, folder, image_dpi, verbose):
+        """Create visual plots of FoundationalCNN modules."""
+        try:
+            # Create CReLU plot
+            self._plot_crelu(folder, image_dpi, verbose)
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: Module plotting failed: {e}")
+
+    def _plot_crelu(self, folder, image_dpi, verbose):
+        """Create a visual plot of CReLU."""
+        try:
+            # Create a simple model to demonstrate CReLU
+            from tensorflow.keras.layers import BatchNormalization, Conv1D, Input
+            input_layer = Input(shape=(2048, 1), name='crelu_input')
+            conv = Conv1D(filters=32, kernel_size=3, padding='same', name='conv_layer')(input_layer)
+            bn = BatchNormalization(name='batch_norm')(conv)
+            crelu = CReLU(name='block_crelu')
+            output = crelu(bn)
+
+            from tensorflow.keras.models import Model
+            demo_model = Model(inputs=input_layer, outputs=output, name='CReLU_Block')
+
+            for dpi in image_dpi:
+                try:
+                    plot_model(demo_model,
+                               to_file=os.path.join(folder, f'fcnn_crelu@{dpi}.png'),
+                               show_shapes=True,
+                               show_dtype=True,
+                               show_layer_names=True,
+                               rankdir='TB',
+                               expand_nested=True,
+                               dpi=dpi)
+                except Exception as e:
+                    try:
+                        plot_model(demo_model,
+                                   to_file=os.path.join(folder, f'fcnn_crelu@{dpi}.svg'),
+                                   show_shapes=True,
+                                   show_dtype=True,
+                                   show_layer_names=True,
+                                   rankdir='TB',
+                                   expand_nested=True,
+                                   dpi=dpi)
+                        if verbose > 0:
+                            print(f"# WARNING: CReLU PNG failed; wrote SVG instead: {e}")
+                    except Exception as e2:
+                        if verbose > 0:
+                            print(f"# WARNING: CReLU plot failed: {e2}")
+
+        except Exception as e:
+            if verbose > 0:
+                print(f"# WARNING: CReLU demo model creation failed: {e}")
 
     def _save_results(self, folder, history, d_score, v_score, image_dpi, screen_dpi, verbose):
         """Save training results to files.
