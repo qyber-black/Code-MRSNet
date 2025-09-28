@@ -261,10 +261,12 @@ def main():
     print("🚀 Starting test of extra models")
     print("="*60)
     print("This script will:")
-    print(f"1. Train each model with {DS_SIZE} samples (80/20 train/validation split)")
+    print(f"1. Train {len(MODELS)} models on {DS_SIZE} samples for {EPOCHS} epochs using {SPLIT_K}-fold split")
     print("2. Run benchmarks on the trained models")
-    print("3. Test multiple acquisition and datatype combinations")
-    print("4. Fail if any command issues an error")
+    print(f"3. Test {len(ACQUISITIONS_LIST)} acquisition combos and {len(DATATYPES_LIST)} datatype combos")
+    print(f"   - Acquisitions: {', '.join(['+'.join(sorted(a)) for a in ACQUISITIONS_LIST])}")
+    print(f"   - Datatypes: {', '.join(['+'.join(sorted(d)) for d in DATATYPES_LIST])}")
+    print("4. Continue even if some tests fail; only benchmark models that trained")
     print("="*60)
 
     # Model configurations - using paper-based configurations
