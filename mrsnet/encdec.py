@@ -262,17 +262,7 @@ class AttentionGRU(keras.layers.Layer):
         ----------
             input_shape (tuple): Input tensor shape
         """
-        # Create a dummy input to build all layers
-        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
-
-        # Forward pass to build all layers
-        gru_out = self.gru(dummy_input)
-        attention_scores = self.attention_dense(gru_out)
-        attention_weights = tf.nn.softmax(attention_scores, axis=1)
-        attended = Multiply()([gru_out, attention_weights])
-        output = self.global_pool(attended) # noqa: F841
-
-        # Mark as built
+        # Mark as built - the actual forward pass will be done in call()
         self.built = True
         self._build_input_shape = input_shape
 
@@ -391,15 +381,6 @@ class EncDecModel(Model):
             'concentrations': concentrations,
             'fids': fids,
             'phase': phase_params
-        }
-
-    def compute_output_spec(self, input_spec):
-        """Compute the output spec for the model."""
-        # The model outputs a dictionary with concentrations, FIDs, and phase
-        return {
-            'concentrations': tf.TensorSpec(shape=(input_spec.shape[0], self.n_metabolites), dtype=tf.float32),
-            'fids': tf.TensorSpec(shape=(input_spec.shape[0], self.n_acquisitions * self.n_freqs * 2), dtype=tf.float32),
-            'phase': tf.TensorSpec(shape=(input_spec.shape[0], 2), dtype=tf.float32)
         }
 
     def get_config(self):

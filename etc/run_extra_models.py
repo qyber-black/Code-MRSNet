@@ -22,6 +22,7 @@ Key features:
 - Only benchmarks models that successfully trained
 - Records and reports training failures vs benchmark failures separately
 - Provides detailed summary of which models succeeded/failed at each stage
+- Checks for E14 benchmark completion to avoid re-running completed benchmarks
 """
 
 import os
@@ -30,17 +31,17 @@ import sys
 import time
 
 # Training parameters
-EPOCHS = 3
+EPOCHS = 50
 DS_SIZE = 10000
 SPLIT_K = 0.8
 SPLIT_FOLD = "Split_0.8-1"
 
 # Models to test
 MODELS = {
-    #"fcnn": "fcnn_original",             # Original paper parameters
-    #"qnet": "qnet_original",             # Original paper parameters
-    #"qnet_basis": "qnet_basis_original", # Original paper parameters
-    #"qmrs": "qmrs_original",             # Original paper parameters
+    "fcnn": "fcnn_original",             # Original paper parameters
+    "qmrs": "qmrs_original",             # Original paper parameters
+    "qnet": "qnet_original",             # Original paper parameters
+    "qnet_basis": "qnet_basis_original", # Original paper parameters
     "encdec": "encdec_default",          # Memory-friendly defaults (original too large)
 }
 
@@ -128,7 +129,7 @@ def test_model(model_name, model_string, acquisitions, datatype):
 
     # Model-specific parameters
     if model_name == "encdec":
-        batch_size = 4  # Smaller batch size for memory efficiency
+        batch_size = 2  # Smaller batch size for memory efficiency
         epochs = EPOCHS # More epochs for proper training
     else:
         batch_size = 16 # Larger batch size for other models
@@ -219,13 +220,22 @@ def test_model(model_name, model_string, acquisitions, datatype):
     benchmark_success = False
     if training_success and complete_model_path:
         print("\n📊 Step 3: Benchmark trained model")
-        benchmark_cmd = [
-            "python3", "mrsnet.py", "benchmark",
-            "-m", complete_model_path,
-            "--norm", "max"
-        ]
 
-        benchmark_success = run_command(benchmark_cmd, f"Benchmark {model_name}", fail_on_error=False)
+        # Check if E14 benchmark has already been completed
+        e14_completion_file = os.path.join(complete_model_path, "E14_MEGA_RAW_Combi_WS_ON_max_concentration_errors.json")
+        if os.path.exists(e14_completion_file):
+            print(f"✅ E14 benchmark already completed - found completion file: {e14_completion_file}")
+            print("⏭️  Skipping benchmark to avoid re-running...")
+            benchmark_success = True
+        else:
+            print("⚠️  E14 benchmark completion file not found - proceeding with benchmark...")
+            benchmark_cmd = [
+                "python3", "mrsnet.py", "benchmark",
+                "-m", complete_model_path,
+                "--norm", "max"
+            ]
+
+            benchmark_success = run_command(benchmark_cmd, f"Benchmark {model_name}", fail_on_error=False)
 
         if benchmark_success:
             print(f"✅ SUCCESS: Testing completed for {model_name}")
