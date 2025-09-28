@@ -37,10 +37,10 @@ import sys
 import time
 
 # Training parameters
-EPOCHS = 50
+EPOCHS = 100
 DS_SIZE = 10000
-SPLIT_K = 0.8
-SPLIT_FOLD = "Split_0.8-1"
+SPLIT_K = 5
+SPLIT_FOLD = "KFold_5-1"
 
 # Models to test
 MODELS = {
