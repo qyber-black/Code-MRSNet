@@ -188,7 +188,7 @@ def test_model(model_name, model_string, acquisitions, datatype):
         print("⏭️ Proceeding with training...")
 
         # Step 2: Training with DS_SIZE samples (80/20 train/validation split)
-        print(f"\n🚀 Step 2: Training with {DS_SIZE} samples (80/20 split) and {EPOCHS} epochs")
+        print(f"\n🚀 Step 2: Training with {DS_SIZE} samples ({SPLIT_K}-fold split) and {EPOCHS} epochs; batch size {batch_size}")
         train_cmd = ["python3", "mrsnet.py", "train", "--metabolites", *metabolites, "--acquisitions", *acquisitions, "--datatype", *datatype, "--norm", norm, "--model", model_string, "--batchsize", str(batch_size), "--epochs", str(epochs), "--dataset", dataset, "-k", str(SPLIT_K)]
 
         training_success = run_command(train_cmd, f"Training {model_name}", fail_on_error=False)
@@ -358,17 +358,14 @@ def main():
         print("\n🎉 ALL TESTS PASSED!")
         print("All models trained successfully and benchmarks completed!")
         print("\nTrained models available in:")
-        for model_name, model_string in models.items():
-            metabolites_str = "-".join(["Cr", "GABA", "Gln", "Glu", "NAA"])
+        for model_name, model_results in results.items():
             print(f"\n{model_name.upper()}:")
-            for acquisitions in ACQUISITIONS_LIST:
-                acquisitions_str = "-".join(sorted(acquisitions))
-                print(f"  {acquisitions_str}:")
-                for datatype in DATATYPES_LIST:
-                    datatype_str = "-".join(sorted(datatype))
-                    train_dataset_name = f"fid-a-2d_2000_4096_siemens_123.23_2.0_{metabolites_str}_megapress_sobol_1.0-adc_normal-0.0-0.03_{DS_SIZE}-1"
-                    complete_path = f"data/model/{model_string}/{metabolites_str}/megapress/{acquisitions_str}/{datatype_str}/sum/16/{EPOCHS}/{train_dataset_name}/{SPLIT_FOLD}"
-                    print(f"    {datatype_str}: {complete_path}")
+            for acquisitions_key, acquisitions_results in model_results.items():
+                print(f"  {acquisitions_key}:")
+                for datatype_key, result in acquisitions_results.items():
+                    model_path = result.get("model_path")
+                    if model_path:
+                        print(f"    {datatype_key}: {model_path}")
     else:
         print("\n⚠️  SOME TESTS FAILED")
         print("Please check the error messages above.")
