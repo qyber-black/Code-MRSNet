@@ -32,10 +32,11 @@ MODIFICATIONS FOR MRSNET INTEGRATION:
 
 3. IMPLEMENTATION DETAILS:
    - Custom WaveNetBlock: Dilated convolutions with residual connections (dilation rates: 1, 2, 4)
-   - AttentionGRU: Bidirectional GRU with Bahdanau attention mechanism
+   - AttentionGRU: Bidirectional GRU with attention over acquisitions dimension
    - ContextConverter: Converts MRSNet input format to EncDec-compatible format
    - Multi-head output: Concentrations (primary), FIDs, and phase parameters
-   - Attention mechanism: Softmax over acquisitions dimension (corrected from original implementation)
+   - Skip connections: Concatenate encoder features across dilation stages for decoder conditioning
+   - Attention mechanism: Softmax over acquisitions dimension
 
 4. TRAINING SIMPLIFICATIONS:
    - Output focus: Primary output is metabolite concentrations for MRSNet compatibility
@@ -972,6 +973,7 @@ class EncDec:
             from tensorflow.keras.layers import Dense, Input
             from tensorflow.keras.models import Model
 
+            # Derive input shape from configured attributes
             input_layer = Input(shape=(self.n_freqs, self.n_datatypes), name='encdec_input')
 
             # Encoder: WaveNet blocks

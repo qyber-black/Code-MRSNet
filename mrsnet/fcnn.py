@@ -16,10 +16,13 @@ quantification using CReLU activation and convolutional layers.
 MODIFICATIONS FOR MRSNET INTEGRATION:
 
 1. CONTEXT ADAPTATION (NECESSARY):
-   - Original: Designed for single acquisition input (frequency points only)
+   - Original: Designed for single spectrum with 2 channels (real, imaginary)
    - MRSNet: Adapted for arbitrary acquisition contexts (multiple acquisitions + datatypes)
    - Input format: (batch, freqs, channels) where channels = acquisitions x datatypes
-   - Channel handling: Maps arbitrary acquisitions to 2-channel format (edit_off, difference)
+   - Channel handling: Treats each acquisition/datatype pair as an input channel. For MEGA-PRESS
+     workflows the required channels (e.g., edit-OFF, difference or real/imag components) must be
+     prepared upstream. If more than two channels are present, the first two are used by default; a
+     4-channel (real/imag for two acquisitions) input is also supported and preserved.
    - Context validation: Ensures compatibility with supported datatypes (magnitude, phase, real, imaginary)
    - Flexible processing: Handles any number of acquisitions and datatypes
 
@@ -32,14 +35,14 @@ MODIFICATIONS FOR MRSNET INTEGRATION:
 
 3. IMPLEMENTATION DETAILS:
    - CReLU activation: Custom implementation of concatenated ReLU
-   - CNN architecture: 5 convolutional layers + 2 fully connected layers
-   - Convolutional layers: Conv1D + BatchNorm + CReLU + MaxPooling
+   - CNN architecture: 5 convolutional layers + 2 fully connected layers (7 layers total)
+   - Convolutional layers: Conv1D + CReLU + MaxPooling (no BatchNorm in the core model)
    - FC layers: Dense + Dropout + Dense (output)
    - Default filters: [32, 64, 128, 256, 512] (configurable)
 
-4. TRAINING SIMPLIFICATIONS:
-   - Macromolecule output: Removed (simplified to metabolite concentrations only)
+4. TRAINING/OUTPUT DETAILS:
    - Output focus: Direct metabolite concentration prediction
+   - Macromolecule handling: Included only if listed among metabolites; no separate scaling head
    - Training model: Standard CNN training without additional outputs
    - Loss function: MSE for concentration prediction
 
@@ -132,7 +135,9 @@ class FoundationalCNNModel(Model):
 
     This implements the 7-layer CNN architecture from the MICCAI 2018 paper
     with CReLU activation and convolutional layers for metabolite quantification.
-    Output includes metabolite concentrations plus macromolecule scaling factor.
+    Output provides metabolite concentrations. If the metabolite list provided
+    includes a macromolecule term, it will be part of the outputs; otherwise
+    no separate macromolecule scaling is produced.
     """
 
     def __init__(self, n_freqs, n_metabolites, n_channels=2, conv_filters=None, kernel_size=3,
@@ -630,7 +635,7 @@ class FoundationalCNN:
         return d_res, v_res
 
     def _convert_to_2channel(self, spectra):
-        """Convert spectra to 2-channel format (edit-OFF and DIFF).
+        """Convert spectra to model channels (2-channel typical; preserves 4-channel when present).
 
         Parameters
         ----------
@@ -641,8 +646,8 @@ class FoundationalCNN:
             tensor: 2-channel spectra tensor
         """
         # Input shape: (batch, acquisitions*datatypes, freqs)
-        # Output shape: (batch, freqs, 2)
-        # For MEGA-PRESS: edit_off (channel 0) and difference (channel 1)
+        # Output shape: (batch, freqs, channels)
+        # Typical MEGA-PRESS: 2 channels (e.g., edit_off and difference) or 4 (real/imag across two acquisitions)
 
         # Use static shapes for debugging
         input_shape = spectra.shape
@@ -836,10 +841,27 @@ class FoundationalCNN:
     def _create_architecture_plots(self, folder, image_dpi, verbose):
         """Create comprehensive architecture plots for FoundationalCNN."""
         try:
-            # 1. Main training model architecture
+            # 1. Main training model architecture (wrap subclassed model for plotting if needed)
+            plotting_model = None
+            try:
+                # Try to infer input shape (batch, freqs, channels)
+                input_shape = None
+                if hasattr(self.fcnn_arch, 'input_shape') and self.fcnn_arch.input_shape is not None:
+                    # Keras returns (None, freqs, channels)
+                    if isinstance(self.fcnn_arch.input_shape, list | tuple):
+                        input_shape = self.fcnn_arch.input_shape[1:]
+                if input_shape is not None and all(d is not None for d in input_shape):
+                    inp = Input(shape=input_shape, name='fcnn_plot_input')
+                    out = self.fcnn_arch(inp)
+                    plotting_model = Model(inputs=inp, outputs=out, name='fcnn_training_wrapper')
+                else:
+                    plotting_model = self.fcnn_arch
+            except Exception:
+                plotting_model = self.fcnn_arch
+
             for dpi in image_dpi:
                 try:
-                    plot_model(self.training_model,
+                    plot_model(plotting_model,
                                to_file=os.path.join(folder, f'fcnn_training_architecture@{dpi}.png'),
                                show_shapes=True,
                                show_dtype=True,
@@ -849,7 +871,7 @@ class FoundationalCNN:
                                dpi=dpi)
                 except Exception as e:
                     try:
-                        plot_model(self.training_model,
+                        plot_model(plotting_model,
                                    to_file=os.path.join(folder, f'fcnn_training_architecture@{dpi}.svg'),
                                    show_shapes=True,
                                    show_dtype=True,
@@ -876,51 +898,40 @@ class FoundationalCNN:
     def _plot_enhanced_core_architecture(self, folder, image_dpi, verbose):
         """Create an enhanced plot of the FCNN core architecture showing all layers."""
         try:
-            # Create a detailed model that shows the FCNN architecture step by step
-            from tensorflow.keras.layers import BatchNormalization, Conv1D, Dense, Dropout, Input, MaxPooling1D
+            # Build a detailed functional model that matches the actual core architecture
+            from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten, Input, MaxPooling1D
             from tensorflow.keras.models import Model
 
-            input_layer = Input(shape=(2048, 2), name='fcnn_input')  # 2 channels (edit_off, difference)
+            # Infer input shape (fallback to 2048x2)
+            try:
+                inferred = self.fcnn_arch.input_shape
+                if isinstance(inferred, list | tuple) and len(inferred) == 3:
+                    seq_len = inferred[1] if inferred[1] is not None else 2048
+                    chans = inferred[2] if inferred[2] is not None else 2
+                else:
+                    seq_len, chans = 2048, 2
+            except Exception:
+                seq_len, chans = 2048, 2
 
-            # Conv Layer 1
-            conv1 = Conv1D(filters=32, kernel_size=3, padding='same', name='conv1')(input_layer)
-            bn1 = BatchNormalization(name='bn1')(conv1)
-            crelu1 = CReLU(name='crelu1')(bn1)
-            pool1 = MaxPooling1D(pool_size=2, name='pool1')(crelu1)
+            input_layer = Input(shape=(seq_len, chans), name='fcnn_input')
 
-            # Conv Layer 2
-            conv2 = Conv1D(filters=64, kernel_size=3, padding='same', name='conv2')(pool1)
-            bn2 = BatchNormalization(name='bn2')(conv2)
-            crelu2 = CReLU(name='crelu2')(bn2)
-            pool2 = MaxPooling1D(pool_size=2, name='pool2')(crelu2)
+            x = input_layer
+            # Use configured conv filters and hyperparameters
+            conv_filters = self.conv_filters or [32, 64, 128, 256, 512]
+            kernel_size = self.kernel_size
+            pool_size = self.pool_size
 
-            # Conv Layer 3
-            conv3 = Conv1D(filters=128, kernel_size=3, padding='same', name='conv3')(pool2)
-            bn3 = BatchNormalization(name='bn3')(conv3)
-            crelu3 = CReLU(name='crelu3')(bn3)
-            pool3 = MaxPooling1D(pool_size=2, name='pool3')(crelu3)
+            for idx, filters in enumerate(conv_filters, start=1):
+                x = Conv1D(filters=filters, kernel_size=kernel_size, padding='same', name=f'conv{idx}')(x)
+                x = CReLU(name=f'crelu{idx}')(x)
+                x = MaxPooling1D(pool_size=pool_size, name=f'pool{idx}')(x)
 
-            # Conv Layer 4
-            conv4 = Conv1D(filters=256, kernel_size=3, padding='same', name='conv4')(pool3)
-            bn4 = BatchNormalization(name='bn4')(conv4)
-            crelu4 = CReLU(name='crelu4')(bn4)
-            pool4 = MaxPooling1D(pool_size=2, name='pool4')(crelu4)
+            x = Flatten(name='flatten')(x)
+            x = Dense(units=self.fc_units, activation='relu', name='fc1')(x)
+            x = Dropout(rate=self.dropout_rate, name='dropout')(x)
+            out = Dense(units=len(self.metabolites), activation='linear', name='fc2')(x)
 
-            # Conv Layer 5
-            conv5 = Conv1D(filters=512, kernel_size=3, padding='same', name='conv5')(pool4)
-            bn5 = BatchNormalization(name='bn5')(conv5)
-            crelu5 = CReLU(name='crelu5')(bn5)
-            pool5 = MaxPooling1D(pool_size=2, name='pool5')(crelu5)
-
-            # Flatten and FC layers
-            from tensorflow.keras.layers import Flatten
-            flatten = Flatten(name='flatten')(pool5)
-            fc1 = Dense(units=512, activation='relu', name='fc1')(flatten)
-            dropout = Dropout(rate=0.5, name='dropout')(fc1)
-            fc2 = Dense(units=len(self.metabolites), activation='linear', name='fc2')(dropout)
-
-            # Create the detailed model
-            detailed_model = Model(inputs=input_layer, outputs=fc2, name='FoundationalCNN_Detailed')
+            detailed_model = Model(inputs=input_layer, outputs=out, name='FoundationalCNN_Detailed')
 
             for dpi in image_dpi:
                 try:
@@ -966,14 +977,13 @@ class FoundationalCNN:
         """Create a visual plot of CReLU."""
         try:
             # Create a simple model to demonstrate CReLU
-            from tensorflow.keras.layers import BatchNormalization, Conv1D, Input
+            from tensorflow.keras.layers import Conv1D, Input
+            from tensorflow.keras.models import Model
+
             input_layer = Input(shape=(2048, 1), name='crelu_input')
             conv = Conv1D(filters=32, kernel_size=3, padding='same', name='conv_layer')(input_layer)
-            bn = BatchNormalization(name='batch_norm')(conv)
-            crelu = CReLU(name='block_crelu')
-            output = crelu(bn)
+            output = CReLU(name='block_crelu')(conv)
 
-            from tensorflow.keras.models import Model
             demo_model = Model(inputs=input_layer, outputs=output, name='CReLU_Block')
 
             for dpi in image_dpi:

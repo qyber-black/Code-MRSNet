@@ -157,12 +157,9 @@ class InceptionModule(keras.layers.Layer):
 class MultiHeadMLP(keras.layers.Layer):
     """Multi-headed MLP for QMRS parameter prediction.
 
-    This implements separate heads for different parameter types:
-    - Metabolite amplitudes
-    - Global parameters (line-broadening, phases)
-    - Individual line-broadening
-    - Individual frequency shifts
-    - Baseline coefficients
+    This implements separate heads for different parameter types. In the MRSNet
+    integration the amplitude head is active; other heads are disabled and
+    returned as zero tensors for compatibility with the paper's interface.
     """
 
     def __init__(self, n_metabolites, n_baseline_coeffs=6, mlp_hidden_units=None,
@@ -227,7 +224,8 @@ class MultiHeadMLP(keras.layers.Layer):
 
         # Optimized: Use tf.fill for better performance than tf.zeros
         batch_size = tf.shape(amplitudes)[0]
-        global_params = tf.fill([batch_size, 2], 0.0)
+        # Global parameters placeholder: [G, phi0, phi1]
+        global_params = tf.fill([batch_size, 3], 0.0)
         lorentzian_params = tf.fill([batch_size, self.n_metabolites], 0.0)
         frequency_params = tf.fill([batch_size, self.n_metabolites], 0.0)
         baseline_params = tf.fill([batch_size, self.n_baseline_coeffs], 0.0)
@@ -312,8 +310,9 @@ class QMRSModel(Model):
         self.mlp_hidden_units = mlp_hidden_units
         self.dropout_rate = dropout_rate
 
-        # Input layer - variable channels (2 for real-only, 4 for real+imaginary)
-        self.input_layer = Input(shape=(n_freqs, None), name='spectrum_input')
+        # Input layer - variable channels handled at build time
+        # Use a placeholder channel dimension; real value set in build()
+        self.input_layer = None
 
         # Initial convolution and pooling - will be built with actual input shape
         self.conv1 = None  # Will be created in build() method
@@ -343,6 +342,10 @@ class QMRSModel(Model):
         ----------
             input_shape (tuple): Input tensor shape
         """
+        # Create input placeholder if needed
+        if self.input_layer is None:
+            self.input_layer = Input(shape=input_shape, name='spectrum_input')
+
         # Create the Conv1D layer with the correct input channels
         if self.conv1 is None:
             self.conv1 = Conv1D(self.initial_filters, kernel_size=3, padding='same',
@@ -897,9 +900,14 @@ class QMRS:
         predictions = self.qmrs_arch.predict(data, verbose=(verbose>0)*2)
 
         # Extract metabolite amplitudes from the multi-head output
-        if isinstance(predictions, dict):
-            concentrations = predictions['amplitudes']
-        else:
+        # Keras predict returns numpy arrays; if dict-like is returned by a tf model, adapt gracefully
+        try:
+            if isinstance(predictions, dict):
+                concentrations = predictions['amplitudes']
+            else:
+                # If model outputs a tuple/list/dict, attempt key access via attribute
+                concentrations = predictions
+        except Exception:
             concentrations = predictions
 
         return np.array(concentrations, dtype=np.float64)
@@ -1058,21 +1066,20 @@ class QMRS:
 
             input_layer = Input(shape=(2048, 2), name='qmrs_input')  # 2 channels (edit_off, difference)
 
-            # CNN backbone
-            initial_conv = Conv1D(filters=32, kernel_size=3, padding='same', activation='relu', name='initial_conv')(input_layer)
+            # CNN backbone: initial conv + max pooling
+            conv1 = Conv1D(filters=32, kernel_size=3, padding='same', activation='relu', name='conv1')(input_layer)
+            pool1 = MaxPooling1D(pool_size=2, name='pool1')(conv1)
 
-            # Inception modules
-            inception1 = InceptionModule(filters=32, name='inception1')(initial_conv)
-            inception2 = InceptionModule(filters=32, name='inception2')(inception1)
-
-            # Max pooling
-            max_pool = MaxPooling1D(pool_size=2, name='max_pool')(inception2)
+            # Inception modules (n, n+1, n+2)
+            inception1 = InceptionModule(n_filters=32, name='inception1')(pool1)
+            inception2 = InceptionModule(n_filters=33, name='inception2')(inception1)
+            inception3 = InceptionModule(n_filters=34, name='inception3')(inception2)
 
             # LSTM layer
-            lstm = Bidirectional(LSTM(units=128, return_sequences=False, name='lstm'), merge_mode='concat', name='bidirectional_lstm')(max_pool)
+            lstm = Bidirectional(LSTM(units=128, return_sequences=False, name='lstm'), merge_mode='concat', name='bidirectional_lstm')(inception3)
 
             # Multi-head MLP
-            multihead_mlp = MultiHeadMLP(n_metabolites=len(self.metabolites), n_baseline_coeffs=6, name='multihead_mlp')(lstm)
+            multihead_mlp = MultiHeadMLP(n_metabolites=len(self.metabolites), n_baseline_coeffs=6, name='multi_head_mlp')(lstm)
 
             # Create the detailed model
             detailed_model = Model(inputs=input_layer, outputs=multihead_mlp, name='QMRS_Detailed')
@@ -1126,7 +1133,7 @@ class QMRS:
             # Create a simple model to demonstrate InceptionModule
             from tensorflow.keras.layers import Input
             input_layer = Input(shape=(2048, 1), name='inception_input')
-            inception = InceptionModule(filters=32, name='block_inception')
+            inception = InceptionModule(n_filters=32, name='block_inception')
             output = inception(input_layer)
 
             from tensorflow.keras.models import Model

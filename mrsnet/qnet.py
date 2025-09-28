@@ -1258,26 +1258,30 @@ class QNet:
         """Create an enhanced plot of the QNet core architecture showing all layers."""
         try:
             # Create a detailed model that shows the QNet architecture step by step
-            from tensorflow.keras.layers import Dense, Input
+            from tensorflow.keras.layers import Dense, Input, Lambda
             from tensorflow.keras.models import Model
 
             input_layer = Input(shape=(2048,), name='qnet_input')  # Single acquisition spectrum
 
             # IF Extraction Module
-            if_scb1 = StackedConvolutionalBlock(filters=16, kernel_size=3, name='if_scb1')(input_layer)
+            reshaped = Lambda(lambda x: tf.expand_dims(x, -1), name='input_expand')(input_layer)
+            if_scb1 = StackedConvolutionalBlock(filters=16, kernel_size=3, name='if_scb1')(reshaped)
             if_scb2 = StackedConvolutionalBlock(filters=32, kernel_size=3, name='if_scb2')(if_scb1)
             if_scb3 = StackedConvolutionalBlock(filters=64, kernel_size=3, name='if_scb3')(if_scb2)
-            if_fc1 = Dense(units=128, activation='relu', name='if_fc1')(if_scb3)
+            # Flatten conv output before dense
+            flat = Lambda(lambda x: tf.reshape(x, [tf.shape(x)[0], -1]), name='flatten')(if_scb3)
+            if_fc1 = Dense(units=128, activation='relu', name='if_fc1')(flat)
             if_output = Dense(units=len(self.metabolites) * self.n_if_factors, activation='linear', name='if_output')(if_fc1)
 
             # MM Signal Prediction Module
-            mm_scb1 = StackedConvolutionalBlock(filters=16, kernel_size=3, name='mm_scb1')(input_layer)
+            mm_scb1 = StackedConvolutionalBlock(filters=16, kernel_size=3, name='mm_scb1')(reshaped)
             mm_scb2 = StackedConvolutionalBlock(filters=32, kernel_size=3, name='mm_scb2')(mm_scb1)
             mm_scb3 = StackedConvolutionalBlock(filters=64, kernel_size=3, name='mm_scb3')(mm_scb2)
             mm_scb4 = StackedConvolutionalBlock(filters=128, kernel_size=3, name='mm_scb4')(mm_scb3)
             mm_scb5 = StackedConvolutionalBlock(filters=256, kernel_size=3, name='mm_scb5')(mm_scb4)
             mm_scb6 = StackedConvolutionalBlock(filters=256, kernel_size=3, name='mm_scb6')(mm_scb5)
-            mm_fc1 = Dense(units=512, activation='relu', name='mm_fc1')(mm_scb6)
+            mm_flat = Lambda(lambda x: tf.reshape(x, [tf.shape(x)[0], -1]), name='mm_flatten')(mm_scb6)
+            mm_fc1 = Dense(units=512, activation='relu', name='mm_fc1')(mm_flat)
             mm_output = Dense(units=len(self.metabolites), activation='linear', name='mm_output')(mm_fc1)
 
             # Create outputs dictionary
@@ -1760,7 +1764,7 @@ class QNetBasis(QNet):
             if_factors_combined = IFConcatenator(name='concat_if_factors')(acquisition_outputs)
         else:
             # Only one acquisition, use its IF factors directly
-            if_factors_combined = edit_off_if_factors
+            if_factors_combined = edit_off_if_factors # noqa: F841
 
         # Create basis LLS module locally for the training model
         # This avoids serialization issues by not storing it as an instance attribute

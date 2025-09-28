@@ -249,12 +249,18 @@ class BasisLLSModule(keras.layers.Layer):
         # Compute M'^T M' for each batch element
         MtM = tf.matmul(real_basis, real_basis, transpose_a=True)  # (batch, n_metabolites, n_metabolites)
 
+        # Tikhonov regularization to ensure numerical stability
+        epsilon = tf.constant(1e-8, dtype=real_basis.dtype)
+        batch_size = tf.shape(MtM)[0]
+        n_met = tf.shape(MtM)[-1]
+        identity = tf.eye(n_met, batch_shape=[batch_size], dtype=MtM.dtype)
+        MtM_reg = MtM + epsilon * identity
+
         # Compute M'^T y for each batch element
         Mty = tf.matmul(real_basis, tf.expand_dims(real_observed, -1), transpose_a=True)  # (batch, n_metabolites, 1)
 
-        # Solve linear system: MtM * c = Mty
-        # Use pseudo-inverse for numerical stability
-        concentrations = tf.linalg.solve(MtM, Mty)  # (batch, n_metabolites, 1)
+        # Solve linear system: (MtM + eps I) * c = Mty
+        concentrations = tf.linalg.solve(MtM_reg, Mty)  # (batch, n_metabolites, 1)
 
         # Squeeze the last dimension to get (batch, n_metabolites)
         concentrations = tf.squeeze(concentrations, -1)
