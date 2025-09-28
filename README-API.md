@@ -25,7 +25,8 @@ The main package is located in `mrsnet/` and contains the following modules:
 - `encdec.py` - Encoder-Decoder model with WaveNet blocks and attention
 - `fcnn.py` - FoundationalCNN model with CReLU activation
 - `qmrs.py` - QMRS CNN-LSTM hybrid model
-- `qnet.py` - QNet dual-branch model with LLS quantification
+- `qnet.py` - QNet dual-branch model with LLS quantification (basic and full basis set variants)
+- `basis_lls.py` - Full basis set LLS module for scientifically accurate metabolite quantification
 - `train.py` - Training utilities and validation
 - `analyse.py` - Model analysis and evaluation
 - `compare.py` - Spectrum comparison utilities
@@ -404,6 +405,19 @@ Main QMRS interface for MRSNet integration.
 
 #### QNet Models (`mrsnet.qnet`)
 
+QNet implements the dual-branch architecture from the paper "Quantification of Magnetic Resonance Spectroscopy Data Using Deep Learning" (Chen et al., IEEE Trans Biomed Eng, 2024). MRSNet provides two QNet variants:
+
+##### QNet (Basic Implementation)
+- Uses `BasicLLSModule` with learnable linear combinations
+- Simplified LLS for practical implementation
+- Suitable for general-purpose metabolite quantification
+
+##### QNetBasis (Full Basis Set LLS)
+- Implements the complete LLS approach from the original paper
+- Uses actual metabolite basis spectra with imperfection factor modulation
+- Automatically extracts basis parameters from dataset paths
+- Scientifically accurate metabolite quantification
+
 #### `StackedConvolutionalBlock` Class
 Stacked convolutional block with Conv1D, BatchNorm, and ReLU.
 
@@ -462,6 +476,71 @@ Main QNet interface for MRSNet integration.
 - `_construct(input_shape, output_shape)` - Construct QNet architecture
 - `_validate_context()` - Validate acquisition/datatype context
 - `_save_results(folder, history, d_score, v_score, image_dpi, screen_dpi, verbose)` - Save training results
+
+#### `QNetBasis` Class
+QNet with full basis set LLS for scientifically accurate metabolite quantification.
+
+**Methods:**
+- `__init__(model, metabolites, pulse_sequence, acquisitions, datatype, norm, basis_source, manufacturer, omega, linewidth, dataset_path)` - Initialize QNetBasis
+- `_create_training_model()` - Create training model with full basis set LLS
+- `save(path)` - Save QNetBasis model
+- `load(path)` - Load QNetBasis model
+
+**Key Features:**
+- **Basis Set Matrix Construction**: Converts MRSNet Basis objects to numerical matrices
+- **Imperfection Factor Modulation**: Applies phase, frequency, and linewidth shifts to basis spectra
+- **Analytical LLS Solution**: Uses pseudo-inverse for metabolite concentration estimation
+- **Automatic Parameter Extraction**: Extracts basis parameters from dataset paths
+- **TensorFlow Integration**: Fully differentiable for training
+
+**Basis Parameter Extraction:**
+Automatically extracts basis parameters from MRSNet dataset paths:
+- Format: `source_sample_rate_samples/manufacturer/omega/linewidth/metabolites/pulse_sequence/...`
+- Example: `fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/...`
+- Supported sources: `fid-a`, `fid-a-2d`, `lcmodel`, `pygamma`, `su-*`
+
+#### Basis Set LLS Module (`mrsnet.basis_lls`)
+
+#### `BasisLLSModule` Class
+Full basis set LLS module implementing the complete approach from the original QNet paper.
+
+**Methods:**
+- `__init__(metabolites, basis_source, manufacturer, omega, linewidth, pulse_sequence, acquisitions, n_freqs, sample_rate, name)` - Initialize module
+- `build(input_shape)` - Build basis set matrices and frequency axis
+- `call(if_factors, observed_spectrum, acquisition)` - Apply LLS to estimate concentrations
+- `compute_output_shape(input_shape)` - Compute output shape
+- `get_config()` - Get configuration for serialization
+
+**Private Methods:**
+- `_construct_basis_matrix(basis_obj, acquisition)` - Construct basis matrix for acquisition
+- `_apply_imperfection_factors(basis_matrix, if_factors)` - Apply imperfection factors to basis matrix
+
+#### `extract_basis_params_from_dataset_path` Function
+Extract basis parameters from MRSNet dataset path.
+
+**Parameters:**
+- `dataset_path` (str): Path to the dataset
+
+**Returns:**
+- `dict`: Dictionary containing basis parameters (source, manufacturer, omega, linewidth, metabolites, pulse_sequence, sample_rate, samples)
+
+#### `create_basis_lls_module` Function
+Create a BasisLLSModule with default parameters.
+
+**Parameters:**
+- `metabolites` (list): List of metabolite names
+- `basis_source` (str, optional): Basis source. Defaults to 'lcmodel'
+- `manufacturer` (str, optional): Scanner manufacturer. Defaults to 'siemens'
+- `omega` (float, optional): Larmor frequency in Hz. Defaults to 123.23
+- `linewidth` (float, optional): Linewidth parameter. Defaults to 2.0
+- `pulse_sequence` (str, optional): Pulse sequence type. Defaults to 'megapress'
+- `acquisitions` (list, optional): List of acquisition types. Defaults to ['edit_off', 'difference']
+- `n_freqs` (int, optional): Number of frequency points. Defaults to 2048
+- `sample_rate` (float, optional): Sample rate in Hz. Defaults to 2000
+- `name` (str, optional): Module name. Defaults to 'basis_lls'
+
+**Returns:**
+- `BasisLLSModule`: Configured basis set LLS module
 
 ### Training Utilities (`mrsnet.train`)
 
@@ -626,7 +705,7 @@ from mrsnet.cnn import CNN
 from mrsnet.encdec import EncDec
 from mrsnet.fcnn import FoundationalCNN
 from mrsnet.qmrs import QMRS
-from mrsnet.qnet import QNet
+from mrsnet.qnet import QNet, QNetBasis
 from mrsnet.train import KFold
 
 # Initialize configuration (give absolute path to mrsnet.py to resolve paths)
@@ -646,7 +725,10 @@ models = [
     QMRS('qmrs_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
          'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
     QNet('qnet_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
-         'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum')
+         'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
+    QNetBasis('qnet_basis_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+              'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum',
+              dataset_path='/path/to/dataset')
 ]
 
 # Train with K-fold cross-validation

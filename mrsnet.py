@@ -263,7 +263,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP], or qnet_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or fcnn_[CONV_FILTERS]_[KERNEL]_[POOL]_[FC_UNITS]_[DROPOUT], or qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT], or encdec_[ECHOES]_[FILTERS] - see models in mrsnet for details.')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP], or qnet_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or qnet_basis_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or fcnn_[CONV_FILTERS]_[KERNEL]_[POOL]_[FC_UNITS]_[DROPOUT], or qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT], or encdec_[ECHOES]_[FILTERS] - see models in mrsnet for details.')
   p.add_argument('-a', '--autoencoder', type=str,
                  help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
@@ -757,7 +757,13 @@ def train(args):
       data = [d_noise, d_clean, d_conc]  # output last
       data_name = ds_noisy.name + "_" + ds_rest
   elif args.model[0:4] == 'qnet':
-      from mrsnet.qnet import QNet
+      if args.model.startswith('qnet_basis_'):
+          from mrsnet.qnet import QNetBasis
+          model_class = QNetBasis
+      else:
+          from mrsnet.qnet import QNet
+          model_class = QNet
+
       if args.verbose > 0:
         print(f"# Loading dataset {name} : {ds_rest}")
       ds = None
@@ -773,8 +779,15 @@ def train(args):
             break
       if ds is None:
         raise RuntimeError(f"Dataset {args.dataset} not found")
-      model = QNet(args.model, args.metabolites, ds.pulse_sequence,
-                   args.acquisitions, args.datatype, args.norm)
+
+      if args.model.startswith('qnet_basis_'):
+          model = model_class(args.model, args.metabolites, ds.pulse_sequence,
+                             args.acquisitions, args.datatype, args.norm,
+                             dataset_path=args.dataset)
+      else:
+          model = model_class(args.model, args.metabolites, ds.pulse_sequence,
+                             args.acquisitions, args.datatype, args.norm)
+
       d_inp, d_out = ds.export(metabolites=args.metabolites, norm=args.norm,
                                acquisitions=args.acquisitions, datatype=args.datatype,
                                high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
@@ -993,14 +1006,20 @@ def quantify(args):
         except Exception:
             raise RuntimeError("Model not found") from None
   elif name[0:4] == "qnet":
-    from mrsnet.qnet import QNet
+    if name.startswith('qnet_basis_'):
+        from mrsnet.qnet import QNetBasis
+        load_class = QNetBasis
+    else:
+        from mrsnet.qnet import QNet
+        load_class = QNet
+
     try:
         folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
-        quantifier = QNet.load(folder)
+        quantifier = load_class.load(folder)
     except Exception:
         try:
             folder = os.path.join(Cfg.val['path_model'], name, batchsize, epochs, train_model, trainer, rest)
-            quantifier = QNet.load(folder)
+            quantifier = load_class.load(folder)
         except Exception:
             raise RuntimeError("Model not found") from None
   elif name[0:4] == "fcnn":
@@ -1171,18 +1190,24 @@ def benchmark(args):
       if quantifier is None:
         raise RuntimeError("Model not found")
   elif name[0:4] == "qnet":
-    from mrsnet.qnet import QNet
+    if name.startswith('qnet_basis_'):
+        from mrsnet.qnet import QNetBasis
+        load_class = QNetBasis
+    else:
+        from mrsnet.qnet import QNet
+        load_class = QNet
+
     quantifier = None
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
-      quantifier = QNet.load(folder)
+      quantifier = load_class.load(folder)
     except Exception:
       quantifier = None
     if quantifier is None:
       try:
         for spath in [Cfg.val['path_model'], *Cfg.val['search_model']]:
           folder = os.path.join(spath, name, batchsize, epochs, train_model, trainer, rest)
-          quantifier = QNet.load(folder)
+          quantifier = load_class.load(folder)
           break
       except Exception:
         quantifier = None

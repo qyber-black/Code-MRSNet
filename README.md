@@ -191,12 +191,43 @@ MRSNet supports several deep learning architectures:
 * `fcnn_*` - FoundationalCNN with CReLU activation and 7-layer architecture
 * `qmrs_*` - CNN-LSTM hybrid with multi-headed MLP for parameter prediction
 * `qnet_*` - Dual-branch network with IF extraction and LLS quantification
+* `qnet_basis_*` - QNet with full basis set LLS (scientifically accurate)
 
 Each model supports configurable parameters via model strings. For example:
 * `encdec_default` - Default EncDec configuration
 * `fcnn_32_64_128` - FCNN with custom filter sizes
 * `qmrs_16_32_64_128_0.3` - QMRS with custom architecture parameters
-* `qnet_original` - QNet with original paper parameters
+* `qnet_original` - QNet with simplified LLS (practical implementation)
+* `qnet_basis_original` - QNet with full basis set LLS (scientifically accurate)
+
+### QNet Implementation Variants
+
+MRSNet provides two QNet implementations for different use cases:
+
+#### QNet (Basic Implementation)
+- Uses `BasicLLSModule` with learnable linear combinations
+- Simplified LLS for practical implementation
+- Suitable for general-purpose metabolite quantification
+- Faster training and inference
+
+#### QNetBasis (Full Basis Set LLS)
+- Implements the complete LLS approach from the original QNet paper
+- Uses actual metabolite basis spectra with imperfection factor modulation
+- Automatically extracts basis parameters from dataset paths
+- Scientifically accurate metabolite quantification
+- Requires basis files in `data/basis-dist/`
+
+**Usage Examples:**
+
+```bash
+# Basic QNet (simplified LLS)
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_original -vv
+
+# Full basis set QNet (scientifically accurate)
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_basis_original -vv
+```
+
+The QNetBasis variant automatically extracts basis parameters (source, manufacturer, omega, linewidth) from the training dataset path, ensuring the correct basis set is used for each training run.
 
 See `mrsnet.py train --help` for detailed model configuration options.
 

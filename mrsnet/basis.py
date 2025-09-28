@@ -424,7 +424,7 @@ class Basis:
                   if spec.metabolites[0] not in self.spectra:
                     self.spectra[spec.metabolites[0]] = {}
                   self.spectra[spec.metabolites[0]][spec.acquisition] = spec
-                  if self.path is not None and  self.path != spath:
+                  if self.path is not None and os.path.abspath(self.path) != os.path.abspath(spath):
                     print(f"**WARNING - FID-A basis files in different directories: {self.path!s} and {spath!s}")
                   else:
                     self.path = os.path.join(spath)

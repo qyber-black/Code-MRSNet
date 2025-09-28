@@ -37,10 +37,11 @@ SPLIT_FOLD = "Split_0.8-1"
 
 # Models to test
 MODELS = {
-    "fcnn": "fcnn_original",      # Original paper parameters
-    #"qnet": "qnet_original",      # Original paper parameters
-    #"qmrs": "qmrs_original",      # Original paper parameters
-    #"encdec": "encdec_default",   # Memory-friendly defaults (original too large)
+    #"fcnn": "fcnn_original",             # Original paper parameters
+    #"qnet": "qnet_original",             # Original paper parameters
+    "qnet_basis": "qnet_basis_original", # Original paper parameters
+    #"qmrs": "qmrs_original",             # Original paper parameters
+    #"encdec": "encdec_default",          # Memory-friendly defaults (original too large)
 }
 
 # Multiple acquisitions and datatypes to test
@@ -177,7 +178,7 @@ def test_model(model_name, model_string, acquisitions, datatype):
         training_success = True
     else:
         print("⚠️ Model not found in any expected location")
-        print("🚀 Proceeding with training...")
+        print("⏭️ Proceeding with training...")
 
         # Step 2: Training with DS_SIZE samples (80/20 train/validation split)
         print(f"\n🚀 Step 2: Training with {DS_SIZE} samples (80/20 split) and {EPOCHS} epochs")
