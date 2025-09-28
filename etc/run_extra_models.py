@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+#
+# run_extra_models.py
+#
+# SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """
 Test script for extra MRSNet models.
 

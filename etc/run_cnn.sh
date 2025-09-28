@@ -2,6 +2,9 @@
 #
 # Some CNN runs without a full grid
 #
+# SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # Usage:
 #   bash etc/run_cnn.sh
 

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+#
+# fix_concentration_errors_json.py
+#
+# SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Fix old concentration error analysis JSON files by regenerating analysis and plots.
 
 This script finds concentration error JSON files that are missing the 'norm' field,

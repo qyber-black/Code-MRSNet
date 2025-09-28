@@ -1,5 +1,8 @@
 # Fix Concentration Error JSON Files
 
+> SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+> SPDX-License-Identifier: AGPL-3.0-or-later
+
 This directory contains scripts to fix old concentration error analysis JSON files that are missing the `norm` field.
 
 ## Problem
