@@ -315,9 +315,8 @@ class QMRSModel(Model):
         # Input layer - variable channels (2 for real-only, 4 for real+imaginary)
         self.input_layer = Input(shape=(n_freqs, None), name='spectrum_input')
 
-        # Initial convolution and pooling
-        self.conv1 = Conv1D(self.initial_filters, kernel_size=3, padding='same',
-                           activation='relu', name='conv1')
+        # Initial convolution and pooling - will be built with actual input shape
+        self.conv1 = None  # Will be created in build() method
         self.pool1 = MaxPooling1D(pool_size=2, name='pool1')
 
         # Three inception modules with increasing filters (n, n+1, n+2)
@@ -327,16 +326,15 @@ class QMRSModel(Model):
 
         # Bidirectional LSTM
         self.lstm = Bidirectional(LSTM(self.lstm_units, return_sequences=False),
-                                merge_mode='concat', name='bidirectional_lstm')
+                                  merge_mode='concat', name='bidirectional_lstm')
 
         # Multi-headed MLP
         self.multi_head_mlp = MultiHeadMLP(n_metabolites, n_baseline_coeffs,
-                                          mlp_hidden_units=self.mlp_hidden_units,
-                                          dropout_rate=self.dropout_rate,
-                                          name='multi_head_mlp')
+                                           mlp_hidden_units=self.mlp_hidden_units,
+                                           dropout_rate=self.dropout_rate,
+                                           name='multi_head_mlp')
 
-        # Build the model with default 2-channel input (will be updated during training)
-        self.build((None, n_freqs, 2))
+        # Don't build automatically - will be built with correct input shape later
 
     def build(self, input_shape):
         """Build the model with the given input shape.
@@ -345,8 +343,14 @@ class QMRSModel(Model):
         ----------
             input_shape (tuple): Input tensor shape
         """
+        # Create the Conv1D layer with the correct input channels
+        if self.conv1 is None:
+            self.conv1 = Conv1D(self.initial_filters, kernel_size=3, padding='same',
+                                activation='relu', name='conv1')
+
         # Create a dummy input to build all layers
-        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
+        # input_shape should be (freqs, channels), so we need to add batch dimension
+        dummy_input = tf.keras.Input(shape=input_shape, name='dummy_input')
 
         # Forward pass to build all layers
         # Initial convolution and pooling
@@ -386,17 +390,6 @@ class QMRSModel(Model):
         outputs = self.multi_head_mlp(x)
 
         return outputs
-
-    def compute_output_spec(self, input_spec):
-        """Compute the output spec for the model."""
-        # The model outputs a dictionary with metabolite amplitudes
-        return {
-            'amplitudes': tf.TensorSpec(shape=(input_spec.shape[0], self.n_metabolites), dtype=tf.float32),
-            'global_params': tf.TensorSpec(shape=(input_spec.shape[0], 2), dtype=tf.float32),
-            'lorentzian_params': tf.TensorSpec(shape=(input_spec.shape[0], self.n_metabolites), dtype=tf.float32),
-            'frequency_params': tf.TensorSpec(shape=(input_spec.shape[0], self.n_metabolites), dtype=tf.float32),
-            'baseline_params': tf.TensorSpec(shape=(input_spec.shape[0], self.n_baseline_coeffs), dtype=tf.float32)
-        }
 
     def get_config(self):
         """Get configuration for serialization."""
@@ -627,6 +620,9 @@ class QMRS:
             dropout_rate=dropout_rate,
             name=self.model
         )
+
+        # Rebuild the model with the actual input shape
+        self.qmrs_arch.build(input_shape)
 
         # Create a training model that outputs only metabolite amplitudes
         input_layer = Input(shape=input_shape, name='training_input')

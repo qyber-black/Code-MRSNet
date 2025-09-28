@@ -39,9 +39,9 @@ SPLIT_FOLD = "Split_0.8-1"
 MODELS = {
     #"fcnn": "fcnn_original",             # Original paper parameters
     #"qnet": "qnet_original",             # Original paper parameters
-    "qnet_basis": "qnet_basis_original", # Original paper parameters
+    #"qnet_basis": "qnet_basis_original", # Original paper parameters
     #"qmrs": "qmrs_original",             # Original paper parameters
-    #"encdec": "encdec_default",          # Memory-friendly defaults (original too large)
+    "encdec": "encdec_default",          # Memory-friendly defaults (original too large)
 }
 
 # Multiple acquisitions and datatypes to test
