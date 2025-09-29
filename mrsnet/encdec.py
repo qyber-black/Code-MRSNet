@@ -142,17 +142,8 @@ class WaveNetBlock(keras.layers.Layer):
         ----------
             input_shape (tuple): Input tensor shape
         """
-        # Create a dummy input to build all layers
-        dummy_input = tf.keras.Input(shape=input_shape[1:], name='dummy_input')
-
-        # Forward pass to build all layers
-        filter_out = self.conv_filter(dummy_input)
-        gate_out = self.conv_gate(dummy_input)
-        gated = Multiply()([filter_out, gate_out])
-        residual = self.conv_residual(dummy_input)
-        output = self.add([gated, residual]) # noqa: F841
-
-        # Mark as built
+        # Let Keras handle building automatically when layers are first called
+        # This avoids shape inference issues with dummy inputs
         self.built = True
         self._build_input_shape = input_shape
 
@@ -263,7 +254,8 @@ class AttentionGRU(keras.layers.Layer):
         ----------
             input_shape (tuple): Input tensor shape
         """
-        # Mark as built - the actual forward pass will be done in call()
+        # Let Keras handle building automatically when layers are first called
+        # This avoids shape inference issues
         self.built = True
         self._build_input_shape = input_shape
 
@@ -300,9 +292,6 @@ class EncDecModel(Model):
         self.n_metabolites = n_metabolites
         self.n_datatypes = n_datatypes
         self.filters = filters
-
-        # Input layer - (batch, acquisitions, freqs, datatypes)
-        self.input_layer = Input(shape=(n_acquisitions, n_freqs, n_datatypes), name='context_input')
 
         # Encoder: 3 WaveNet blocks with increasing dilation
         self.wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='wavenet1')
