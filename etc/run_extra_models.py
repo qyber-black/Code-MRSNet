@@ -14,7 +14,7 @@ paper-based configurations on the fid-a-2d simulated dataset and runs benchmarks
 Configuration (see constants in script to adjust):
 - Dataset: fid-a-2d simulated dataset with linewidth 2.0
 - Training: 100K samples with 80/20 train/validation split and 1000 epochs
-- Benchmark: Trained model on same dataset
+- Benchmark: Trained model on same dataset (can be skipped with SKIP_BENCHMARKS=True)
 - Metabolites: Cr, GABA, Gln, Glu, NAA
 - Acquisitions: Multiple combinations (edit_off+edit_on, edit_off+difference)
 - Datatypes: Multiple combinations (real, real+imaginary)
@@ -25,10 +25,15 @@ providing comprehensive coverage of different input configurations.
 
 Key features:
 - Continues training all models even if some fail
-- Only benchmarks models that successfully trained
+- Only benchmarks models that successfully trained (unless SKIP_BENCHMARKS=True)
 - Records and reports training failures vs benchmark failures separately
 - Provides detailed summary of which models succeeded/failed at each stage
 - Checks for E14 benchmark completion to avoid re-running completed benchmarks
+- Option to skip benchmarks entirely for faster training-only runs
+
+Usage:
+- Set SKIP_BENCHMARKS = True to skip all benchmark runs (useful for training-only)
+- Set SKIP_BENCHMARKS = False to run full training + benchmark pipeline
 """
 
 import os
@@ -41,6 +46,9 @@ EPOCHS = 100
 DS_SIZE = 10000
 SPLIT_K = 5
 SPLIT_FOLD = "KFold_5-1"
+
+# Benchmark options
+SKIP_BENCHMARKS = True  # Set to True to skip benchmark runs
 
 # Models to test
 MODELS = {
@@ -169,13 +177,21 @@ def test_model(model_name, model_string, acquisitions, datatype):
             SPLIT_FOLD  # This is the trainer ID from the training command
         )
 
-        candidate_keras_path = os.path.join(candidate_path, "model.keras")
-        if os.path.exists(candidate_keras_path):
-            complete_model_path = candidate_path
-            model_keras_path = candidate_keras_path
-            model_exists = True
-            print(f"✅ Found existing model in: {base_model_dir}")
-            break
+        # For KFold, models are saved in individual fold directories (fold-0, fold-1, etc.)
+        # Check if any fold directory exists and contains a model
+        if os.path.exists(candidate_path):
+            fold_dirs = [d for d in os.listdir(candidate_path) if d.startswith("fold-")]
+            if fold_dirs:
+                # Use the first available fold (typically fold-0)
+                fold_dir = sorted(fold_dirs)[0]  # Sort to ensure consistent selection
+                fold_path = os.path.join(candidate_path, fold_dir)
+                candidate_keras_path = os.path.join(fold_path, "model.keras")
+                if os.path.exists(candidate_keras_path):
+                    complete_model_path = fold_path  # Use the fold path for benchmarking
+                    model_keras_path = candidate_keras_path
+                    model_exists = True
+                    print(f"✅ Found existing model in: {base_model_dir} (using {fold_dir})")
+                    break
 
     training_success = False
     if model_exists:
@@ -194,9 +210,9 @@ def test_model(model_name, model_string, acquisitions, datatype):
         training_success = run_command(train_cmd, f"Training {model_name}", fail_on_error=False)
 
         if training_success:
-            # After training, the model should be in data/model with Split_0.8-1
+            # After training, the model should be in data/model with KFold structure
             base_model_dir = f"data/model/{model_string}"
-            complete_model_path = os.path.join(
+            kfold_path = os.path.join(
                 base_model_dir,
                 metabolites_str,
                 "megapress",
@@ -208,45 +224,65 @@ def test_model(model_name, model_string, acquisitions, datatype):
                 train_dataset_name,
                 SPLIT_FOLD
             )
-            model_keras_path = os.path.join(complete_model_path, "model.keras")
 
-            # Verify the model was created after training
-            if not os.path.exists(model_keras_path):
-                print(f"❌ ERROR: Model was not created after training: {model_keras_path}")
-                print(f"ℹ️  Checking if directory exists: {os.path.exists(complete_model_path)}") # noqa: RUF001
-                if os.path.exists(complete_model_path):
-                    print(f"ℹ️  Directory contents: {os.listdir(complete_model_path)}") # noqa: RUF001
-                training_success = False
+            # For KFold, models are saved in individual fold directories
+            # Find the first available fold directory
+            if os.path.exists(kfold_path):
+                fold_dirs = [d for d in os.listdir(kfold_path) if d.startswith("fold-")]
+                if fold_dirs:
+                    fold_dir = sorted(fold_dirs)[0]  # Use first fold consistently
+                    complete_model_path = os.path.join(kfold_path, fold_dir)
+                    model_keras_path = os.path.join(complete_model_path, "model.keras")
+
+                    # Verify the model was created after training
+                    if not os.path.exists(model_keras_path):
+                        print(f"❌ ERROR: Model was not created after training: {model_keras_path}")
+                        print(f"ℹ️  Checking if directory exists: {os.path.exists(complete_model_path)}") # noqa: RUF001
+                        if os.path.exists(complete_model_path):
+                            print(f"ℹ️  Directory contents: {os.listdir(complete_model_path)}") # noqa: RUF001
+                        training_success = False
+                    else:
+                        print(f"✅ SUCCESS: Model created after training: {model_keras_path}")
+                else:
+                    print(f"❌ ERROR: No fold directories found in: {kfold_path}")
+                    print(f"ℹ️  Directory contents: {os.listdir(kfold_path) if os.path.exists(kfold_path) else 'Directory does not exist'}") # noqa: RUF001
+                    training_success = False
             else:
-                print(f"✅ SUCCESS: Model created after training: {model_keras_path}")
+                print(f"❌ ERROR: KFold directory not found: {kfold_path}")
+                training_success = False
         else:
             print(f"❌ Training failed for {model_name}")
 
-    # Step 3: Benchmark the trained model (only if training succeeded)
+    # Step 3: Benchmark the trained model (only if training succeeded and benchmarks are enabled)
     benchmark_success = False
     if training_success and complete_model_path:
-        print("\n📊 Step 3: Benchmark trained model")
-
-        # Check if E14 benchmark has already been completed
-        e14_completion_file = os.path.join(complete_model_path, "E14_MEGA_RAW_Combi_WS_ON_max_concentration_errors.json")
-        if os.path.exists(e14_completion_file):
-            print(f"✅ E14 benchmark already completed - found completion file: {e14_completion_file}")
-            print("⏭️  Skipping benchmark to avoid re-running...")
-            benchmark_success = True
+        if SKIP_BENCHMARKS:
+            print("\n⏭️  Step 3: Skipping benchmark (SKIP_BENCHMARKS=True)")
+            print("✅ Training completed successfully - benchmark skipped as requested")
+            benchmark_success = True  # Consider it successful since we're skipping intentionally
         else:
-            print("⚠️  E14 benchmark completion file not found - proceeding with benchmark...")
-            benchmark_cmd = [
-                "python3", "mrsnet.py", "benchmark",
-                "-m", complete_model_path,
-                "--norm", "max"
-            ]
+            print("\n📊 Step 3: Benchmark trained model")
 
-            benchmark_success = run_command(benchmark_cmd, f"Benchmark {model_name}", fail_on_error=False)
+            # Check if E14 benchmark has already been completed
+            e14_completion_file = os.path.join(complete_model_path, "E14_MEGA_RAW_Combi_WS_ON_max_concentration_errors.json")
+            if os.path.exists(e14_completion_file):
+                print(f"✅ E14 benchmark already completed - found completion file: {e14_completion_file}")
+                print("⏭️  Skipping benchmark to avoid re-running...")
+                benchmark_success = True
+            else:
+                print("⚠️  E14 benchmark completion file not found - proceeding with benchmark...")
+                benchmark_cmd = [
+                    "python3", "mrsnet.py", "benchmark",
+                    "-m", complete_model_path,
+                    "--norm", "max"
+                ]
 
-        if benchmark_success:
-            print(f"✅ SUCCESS: Testing completed for {model_name}")
-        else:
-            print(f"❌ Benchmark failed for {model_name}")
+                benchmark_success = run_command(benchmark_cmd, f"Benchmark {model_name}", fail_on_error=False)
+
+            if benchmark_success:
+                print(f"✅ SUCCESS: Testing completed for {model_name}")
+            else:
+                print(f"❌ Benchmark failed for {model_name}")
     else:
         print(f"⏭️  Skipping benchmark for {model_name} due to training failure")
 
@@ -262,7 +298,10 @@ def main():
     print("="*60)
     print("This script will:")
     print(f"1. Train {len(MODELS)} models on {DS_SIZE} samples for {EPOCHS} epochs using {SPLIT_K}-fold split")
-    print("2. Run benchmarks on the trained models")
+    if SKIP_BENCHMARKS:
+        print("2. Skip benchmarks (SKIP_BENCHMARKS=True)")
+    else:
+        print("2. Run benchmarks on the trained models")
     print(f"3. Test {len(ACQUISITIONS_LIST)} acquisition combos and {len(DATATYPES_LIST)} datatype combos")
     print(f"   - Acquisitions: {', '.join(['+'.join(sorted(a)) for a in ACQUISITIONS_LIST])}")
     print(f"   - Datatypes: {', '.join(['+'.join(sorted(d)) for d in DATATYPES_LIST])}")
@@ -340,7 +379,10 @@ def main():
     print("OVERALL RESULTS")
     print(f"{'='*100}")
     print(f"Training: {training_success_count}/{total_count} models trained successfully")
-    print(f"Benchmarking: {benchmark_success_count}/{training_success_count} trained models benchmarked successfully")
+    if SKIP_BENCHMARKS:
+        print("Benchmarking: Skipped (SKIP_BENCHMARKS=True)")
+    else:
+        print(f"Benchmarking: {benchmark_success_count}/{training_success_count} trained models benchmarked successfully")
 
     if training_failures:
         print(f"\n❌ TRAINING FAILURES ({len(training_failures)}):")
@@ -354,9 +396,12 @@ def main():
 
     print(f"\n{'='*100}")
 
-    if training_success_count == total_count and benchmark_success_count == training_success_count:
+    if training_success_count == total_count and (SKIP_BENCHMARKS or benchmark_success_count == training_success_count):
         print("\n🎉 ALL TESTS PASSED!")
-        print("All models trained successfully and benchmarks completed!")
+        if SKIP_BENCHMARKS:
+            print("All models trained successfully! (Benchmarks skipped)")
+        else:
+            print("All models trained successfully and benchmarks completed!")
         print("\nTrained models available in:")
         for model_name, model_results in results.items():
             print(f"\n{model_name.upper()}:")
@@ -369,10 +414,13 @@ def main():
     else:
         print("\n⚠️  SOME TESTS FAILED")
         print("Please check the error messages above.")
-        print("\nNote: Only successfully trained models were benchmarked.")
+        if SKIP_BENCHMARKS:
+            print("\nNote: Benchmarks were skipped as requested.")
+        else:
+            print("\nNote: Only successfully trained models were benchmarked.")
 
-    # Return True if at least some models were successfully trained and benchmarked
-    return training_success_count > 0 and benchmark_success_count > 0
+    # Return True if at least some models were successfully trained and (benchmarked or skipped)
+    return training_success_count > 0 and (SKIP_BENCHMARKS or benchmark_success_count > 0)
 
 if __name__ == "__main__":
     success = main()
