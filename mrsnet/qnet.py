@@ -90,10 +90,10 @@ MODIFICATIONS FOR MRSNET INTEGRATION:
 USAGE EXAMPLES:
 
 Basic QNet (simplified LLS):
-    qnet = QNet('qnet_original', metabolites, pulse_sequence, acquisitions, datatype, norm)
+    qnet = QNet('qnet_default', metabolites, pulse_sequence, acquisitions, datatype, norm)
 
 Full Basis Set QNet (scientifically accurate):
-    qnet_basis = QNetBasis('qnet_original', metabolites, pulse_sequence, acquisitions, datatype, norm,
+    qnet_basis = QNetBasis('qnet_default', metabolites, pulse_sequence, acquisitions, datatype, norm,
                           dataset_path='data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/...')
 
 This implementation provides both simplified and full-fidelity QNet variants,
@@ -716,16 +716,8 @@ class QNet:
             if_fc_units = default_if_fc_units
             mm_fc_units = default_mm_fc_units
             n_if_factors = default_n_if_factors
-        elif len(vals) == 2 and vals[1] == 'original':
-            # qnet_original: use original paper parameters (512 frequency points)
-            if_scb_filters = default_if_scb_filters
-            mm_scb_filters = default_mm_scb_filters
-            kernel_size = default_kernel_size
-            if_fc_units = default_if_fc_units
-            mm_fc_units = default_mm_fc_units
-            n_if_factors = default_n_if_factors
-        elif len(vals) == 3 and vals[1] == 'basis' and vals[2] == 'original':
-            # qnet_basis_original: use original paper parameters for basis variant
+        elif len(vals) == 3 and vals[1] == 'basis' and vals[2] == 'default':
+            # qnet_basis_default: use paper parameters for basis variant
             if_scb_filters = default_if_scb_filters
             mm_scb_filters = default_mm_scb_filters
             kernel_size = default_kernel_size
@@ -1615,7 +1607,7 @@ class QNetBasis(QNet):
     --------
     >>> # Automatic parameter extraction from dataset path
     >>> qnet_basis = QNetBasis(
-    ...     model='qnet_original',
+    ...     model='qnet_default',
     ...     metabolites=['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
     ...     pulse_sequence='megapress',
     ...     acquisitions=['edit_off', 'difference'],
@@ -1626,7 +1618,7 @@ class QNetBasis(QNet):
     >>>
     >>> # Manual parameter specification
     >>> qnet_basis = QNetBasis(
-    ...     model='qnet_original',
+    ...     model='qnet_default',
     ...     metabolites=['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
     ...     pulse_sequence='megapress',
     ...     acquisitions=['edit_off', 'difference'],

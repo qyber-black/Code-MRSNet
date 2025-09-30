@@ -52,11 +52,11 @@ SKIP_BENCHMARKS = True  # Set to True to skip benchmark runs
 
 # Models to test
 MODELS = {
-    "fcnn": "fcnn_original",             # Original paper parameters
-    "qmrs": "qmrs_original",             # Original paper parameters
-    "qnet": "qnet_original",             # Original paper parameters
-    "qnet_basis": "qnet_basis_original", # Original paper parameters
-    "encdec": "encdec_default",          # Memory-friendly defaults (original too large)
+    "fcnn": "fcnn_default",
+    "qmrs": "qmrs_default",
+    "qnet": "qnet_default",
+    "qnet_basis": "qnet_basis_default",
+    "encdec": "encdec_default",
 }
 
 # Multiple acquisitions and datatypes to test
@@ -142,12 +142,8 @@ def test_model(model_name, model_string, acquisitions, datatype):
         return {"training_success": False, "benchmark_success": False, "error": "Dataset not found"}
 
     # Model-specific parameters
-    if model_name == "encdec":
-        batch_size = 2  # Smaller batch size for memory efficiency
-        epochs = EPOCHS # More epochs for proper training
-    else:
-        batch_size = 16 # Larger batch size for other models
-        epochs = EPOCHS # More epochs for proper training
+    batch_size = 16
+    epochs = EPOCHS
 
     # Step 1: Check if model already exists and is properly trained
     print("\n🔍 Step 1: Check if model already exists")

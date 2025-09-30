@@ -24,10 +24,8 @@ MODIFICATIONS FOR MRSNET INTEGRATION:
    - Flexible processing: Handles any number of acquisitions and datatypes
 
 2. ARCHITECTURAL SIMPLIFICATIONS (MEMORY CONSTRAINTS):
-   - Original: 128 filters in WaveNet blocks, 32 echoes
-   - MRSNet: Reduced to 16 filters (default) and 2 acquisitions for GPU memory efficiency
-   - Memory-optimized defaults: 'encdec_default' uses minimal parameters
-   - Original parameters available: 'encdec_original' preserves paper architecture
+   - Paper: 128 filters in WaveNet blocks, 32 echoes
+   - Default: Paper parameters (2 acquisitions, 128 filters)
    - Configurable: 'encdec_[ACQUISITIONS]_[FILTERS]' for custom configurations
 
 3. IMPLEMENTATION DETAILS:
@@ -274,7 +272,7 @@ class EncDecModel(Model):
     and GRU for MEGA-PRESS data processing.
     """
 
-    def __init__(self, n_acquisitions, n_freqs, n_metabolites, n_datatypes=1, filters=64, name='EncDecModel', **kwargs):
+    def __init__(self, n_acquisitions, n_freqs, n_metabolites, n_datatypes=1, filters=64, name='EncDecModel', include_fids=True, include_phase=True, **kwargs):
         """Initialize EncDec model.
 
         Parameters
@@ -292,6 +290,8 @@ class EncDecModel(Model):
         self.n_metabolites = n_metabolites
         self.n_datatypes = n_datatypes
         self.filters = filters
+        self.include_fids = include_fids
+        self.include_phase = include_phase
 
         # Encoder: 3 WaveNet blocks with increasing dilation
         self.wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='wavenet1')
@@ -307,9 +307,13 @@ class EncDecModel(Model):
         # Skip connections for decoder
         self.skip_concat = Concatenate(axis=-1, name='skip_concat')
 
-        # Decoder: 2 WaveNet blocks
-        self.decoder_wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='decoder_wavenet1')
-        self.decoder_wavenet2 = WaveNetBlock(filters, dilation_rate=1, name='decoder_wavenet2')
+        # Decoder: 2 WaveNet blocks (optional)
+        if self.include_fids:
+            self.decoder_wavenet1 = WaveNetBlock(filters, dilation_rate=1, name='decoder_wavenet1')
+            self.decoder_wavenet2 = WaveNetBlock(filters, dilation_rate=1, name='decoder_wavenet2')
+        else:
+            self.decoder_wavenet1 = None
+            self.decoder_wavenet2 = None
 
         # Output layers
         # Metabolite concentrations
@@ -319,10 +323,10 @@ class EncDecModel(Model):
         # Calculate the actual decoder output size: batch_size * n_freqs * filters
         #decoder_output_size = n_freqs * filters  # filters from WaveNet decoder
         # FID projection with enhanced reconstruction (tanh for better signal bounds)
-        self.fid_projection = Dense(n_acquisitions * n_freqs * 2, activation='tanh', name='fids')
+        self.fid_projection = Dense(n_acquisitions * n_freqs * 2, activation='tanh', name='fids') if self.include_fids else None
 
-        # Spectral parameters
-        self.phase_dense = Dense(2, activation='linear', name='phase')  # phase shift and frequency offset
+        # Spectral parameters (optional)
+        self.phase_dense = Dense(2, activation='linear', name='phase') if self.include_phase else None  # phase shift and frequency offset
 
     def build(self, input_shape):
         """Build the model with proper input shape."""
@@ -348,30 +352,27 @@ class EncDecModel(Model):
         # Attention GRU integration
         unified_repr = self.attention_gru(pooled)  # (batch, 2*filters)
 
-        # Decoder: Reconstruct FIDs
-        # Expand unified representation for decoder
-        decoder_input = tf.tile(tf.expand_dims(unified_repr, 1), [1, self.n_freqs, 1])
-
-        # Skip connections
-        skip_features = self.skip_concat([x1, x2, x3])
-        skip_features = tf.reshape(skip_features, [batch_size, self.n_freqs, -1])
-
-        # Decoder WaveNet blocks
-        decoder_out1 = self.decoder_wavenet1(decoder_input)
-        decoder_out2 = self.decoder_wavenet2(decoder_out1)
-
         # Outputs
         concentrations = self.concentration_dense(unified_repr)
-        # Reshape decoder output properly: (batch_size, n_freqs, filters) -> (batch_size, n_freqs * filters)
-        decoder_flat = tf.reshape(decoder_out2, [batch_size, self.n_freqs * self.filters])
-        fids = self.fid_projection(decoder_flat)
-        phase_params = self.phase_dense(unified_repr)
-
-        return {
-            'concentrations': concentrations,
-            'fids': fids,
-            'phase': phase_params
+        outputs = {
+            'concentrations': concentrations
         }
+
+        # Decoder/FIDs if enabled
+        if self.decoder_wavenet1 is not None and self.fid_projection is not None:
+            decoder_input = tf.tile(tf.expand_dims(unified_repr, 1), [1, self.n_freqs, 1])
+            skip_features = self.skip_concat([x1, x2, x3])
+            skip_features = tf.reshape(skip_features, [batch_size, self.n_freqs, -1])
+            decoder_out1 = self.decoder_wavenet1(decoder_input)
+            decoder_out2 = self.decoder_wavenet2(decoder_out1)
+            decoder_flat = tf.reshape(decoder_out2, [batch_size, self.n_freqs * self.filters])
+            outputs['fids'] = self.fid_projection(decoder_flat)
+
+        # Phase if enabled
+        if self.phase_dense is not None:
+            outputs['phase'] = self.phase_dense(unified_repr)
+
+        return outputs
 
     def get_config(self):
         """Get configuration for serialization."""
@@ -381,7 +382,9 @@ class EncDecModel(Model):
             'n_freqs': self.n_freqs,
             'n_metabolites': self.n_metabolites,
             'n_datatypes': self.n_datatypes,
-            'filters': self.filters
+            'filters': self.filters,
+            'include_fids': self.include_fids,
+            'include_phase': self.include_phase
         })
         return config
 
@@ -502,18 +505,10 @@ class EncDec:
             raise RuntimeError(f"Unknown model {vals[0]}")
 
         # Parse model parameters
-        if len(vals) == 1:
-            # Default EncDec configuration - memory-friendly defaults
+        if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
+            # Default EncDec configuration - paper parameters
             n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
-            filters = 16  # Minimal filters for memory efficiency
-        elif len(vals) == 2 and vals[1] == 'default':
-            # encdec_default configuration - memory-friendly defaults
-            n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
-            filters = 16  # Minimal filters for memory efficiency
-        elif len(vals) == 2 and vals[1] == 'original':
-            # encdec_original configuration - original paper parameters
-            n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
-            filters = 128  # Original paper filters
+            filters = 128  # Paper filters
         else:
             # Custom EncDec configuration: encdec_[ACQUISITIONS]_[FILTERS]
             n_acquisitions = int(vals[1]) if len(vals) > 1 else 2
@@ -541,9 +536,23 @@ class EncDec:
         n_metabolites = len(self.metabolites)
         n_datatypes = len(self.datatype)
 
-        # Create EncDec model with concrete input shape
+        # Store dimensions for downstream plotting helpers
+        self.n_acquisitions = n_acquisitions
+        self.n_freqs = n_freqs
+        self.n_datatypes = n_datatypes
+
+        # Create EncDec model with concrete input shape (disable heavy heads for training)
         #concrete_input_shape = (None, n_acquisitions, n_freqs, n_datatypes)
-        self.encdec_arch = EncDecModel(n_acquisitions, n_freqs, n_metabolites, n_datatypes=n_datatypes, filters=filters, name=self.model)
+        self.encdec_arch = EncDecModel(
+            n_acquisitions,
+            n_freqs,
+            n_metabolites,
+            n_datatypes=n_datatypes,
+            filters=filters,
+            name=self.model,
+            include_fids=False,
+            include_phase=False
+        )
 
         # Create a training model that outputs only metabolite concentrations
         input_layer = Input(shape=input_shape, name='training_input')
@@ -581,7 +590,10 @@ class EncDec:
         n_freqs = input_shape[1]  # Frequency dimension (second dimension)
         n_metabolites = len(self.metabolites)
 
-        # Create EncDec model
+        # Create EncDec model (default heads enabled for core export if needed)
+        self.n_acquisitions = n_acquisitions
+        self.n_freqs = n_freqs
+        self.n_datatypes = len(self.datatype)
         self.encdec_arch = EncDecModel(n_acquisitions, n_freqs, n_metabolites, filters=filters, name=self.model)
 
     def train(self, d_data, v_data, epochs, batch_size,
@@ -797,7 +809,7 @@ class EncDec:
         # Dataset options
         options = tf.data.Options()
         options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-        data = tf.data.Dataset.from_tensor_slices(d_inp).batch(32).with_options(options)
+        data = tf.data.Dataset.from_tensor_slices(d_inp).batch(16).with_options(options)
 
         # Get predictions
         predictions = self.encdec_arch.predict(data, verbose=(verbose>0)*2)

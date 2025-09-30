@@ -290,7 +290,7 @@ class FoundationalCNN:
 
         Parameters
         ----------
-            model (str): Model architecture identifier (e.g., 'fcnn_default', 'fcnn_original')
+            model (str): Model architecture identifier (e.g., 'fcnn_default')
             metabolites (list): List of metabolite names to predict
             pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
             acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
@@ -352,13 +352,6 @@ class FoundationalCNN:
 
         if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
             # fcnn or fcnn_default: use default parameters
-            conv_filters = default_conv_filters
-            kernel_size = default_kernel_size
-            pool_size = default_pool_size
-            fc_units = default_fc_units
-            dropout_rate = default_dropout_rate
-        elif len(vals) == 2 and vals[1] == 'original':
-            # fcnn_original: use original paper parameters
             conv_filters = default_conv_filters
             kernel_size = default_kernel_size
             pool_size = default_pool_size

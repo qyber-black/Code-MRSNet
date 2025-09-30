@@ -440,7 +440,7 @@ class QMRS:
 
         Parameters
         ----------
-            model (str): Model architecture identifier (e.g., 'qmrs_default', 'qmrs_original')
+            model (str): Model architecture identifier (e.g., 'qmrs_default')
             metabolites (list): List of metabolite names to predict
             pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
             acquisitions (list): List of acquisition types (e.g., ['edit_off', 'difference'])
@@ -550,14 +550,6 @@ class QMRS:
 
         if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
             # qmrs or qmrs_default: use default parameters
-            initial_filters = default_initial_filters
-            inception_filters = default_inception_filters
-            lstm_units = default_lstm_units
-            mlp_hidden_units = default_mlp_hidden_units
-            dropout_rate = default_dropout_rate
-            baseline_coeffs = default_baseline_coeffs
-        elif len(vals) == 2 and vals[1] == 'original':
-            # qmrs_original: use original paper parameters (281 frequency points)
             initial_filters = default_initial_filters
             inception_filters = default_inception_filters
             lstm_units = default_lstm_units
