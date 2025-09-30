@@ -42,10 +42,10 @@ import sys
 import time
 
 # Training parameters
-EPOCHS = 100
-DS_SIZE = 10000
-SPLIT_K = 5
-SPLIT_FOLD = "KFold_5-1"
+EPOCHS = 2000
+DS_SIZE = 100000
+SPLIT_K = 0
+SPLIT_FOLD = "NoValidation-1"
 
 # Benchmark options
 SKIP_BENCHMARKS = True  # Set to True to skip benchmark runs

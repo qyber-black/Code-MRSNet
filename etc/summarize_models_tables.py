@@ -304,7 +304,7 @@ def _make_combined_table_figure(rows_input: list[tuple[RunMeta, RunMetrics]], ou
   # Columns: max number of info columns across the two header rows | Val/Train | Plot
   info_cols = max(len(header_row1_fields), len(header_row2_fields))
   columns = [""] * info_cols + ["Validation/Training", "Plot"]
-  col_widths = [1.2] * info_cols + [1.5, 4.0]
+  col_widths = [1.6] * info_cols + [1.7, 4.0]
 
   # Determine x-limits
   x_vals_all: list[float] = []
