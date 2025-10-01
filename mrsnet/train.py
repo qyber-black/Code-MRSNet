@@ -650,18 +650,43 @@ class DuplexSplit(Train):
     self._bucket_idx = -np.ones((data_dim),dtype=np.int64)
     if verbose > 0:
       print("    Pairwise distances")
-    dm = squareform(pdist(data[-1],'mahalanobis'))
-    dm[np.isnan(dm)] = -1.0
+    try:
+      dm = squareform(pdist(data[-1],'mahalanobis'))
+    except Exception as e:
+      if verbose > 0:
+        print("    WARNING: Mahalanobis distance failed; falling back to seeded random split:", e)
+      dm = None
+    if dm is not None:
+      dm[~np.isfinite(dm)] = -1.0
+      np.fill_diagonal(dm, -1.0)
     if verbose > 0:
       print("    Init buckets")
     last_pt_idx = np.ndarray(2,dtype=np.int64)
     k_b = 0
-    ddm = dm.copy()
-    while k_b < 2:
-      idx = np.where(ddm == np.amax(ddm))
-      row_i = idx[0][0]
-      col_i = idx[1][0]
-      if ddm[row_i,col_i] > 0.0:
+    success = True
+    if dm is not None:
+      ddm = dm.copy()
+      # Select initial pairs for both buckets by farthest distance (allowing zero)
+      guard = 0
+      while k_b < 2:
+        guard += 1
+        if guard > data_dim * 4:
+          success = False
+          break
+        max_val = np.max(ddm)
+        if max_val < 0:
+          success = False
+          break
+        pairs = np.argwhere(ddm == max_val)
+        # Pick first off-diagonal pair
+        row_i, col_i = -1, -1
+        for r, c in pairs:
+          if r != c:
+            row_i, col_i = int(r), int(c)
+            break
+        if row_i < 0 or col_i < 0:
+          success = False
+          break
         self._bucket_idx[row_i] = k_b
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
@@ -674,7 +699,7 @@ class DuplexSplit(Train):
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
         k_b += 1
-    del ddm
+      del ddm
     if verbose > 0:
       print("    Adding points to buckets")
     k_b = 0
@@ -685,10 +710,18 @@ class DuplexSplit(Train):
     else:
       bucket_small = 1
       n_expected_small = data_dim * (1.0-self.p)
-    while n_selected_small < n_expected_small:
-      row_i = last_pt_idx[k_b]
-      col_i = np.argmax(dm[row_i,:],axis=-1)
-      if dm[row_i,col_i] > 0.0:
+    if dm is not None and success:
+      while n_selected_small < n_expected_small:
+        row_i = int(last_pt_idx[k_b])
+        # Candidate columns: not assigned, not the same row, and with non-negative distance
+        candidates = np.where((self._bucket_idx < 0) & (dm[row_i,:] >= 0.0))[0]
+        candidates = candidates[candidates != row_i]
+        if candidates.size == 0:
+          success = False
+          break
+        # Pick the farthest candidate from current row
+        best_idx = candidates[np.argmax(dm[row_i, candidates])]
+        col_i = int(best_idx)
         if k_b == bucket_small:
           n_selected_small += 1
         self._bucket_idx[col_i] = k_b
@@ -698,9 +731,21 @@ class DuplexSplit(Train):
         dm[:,col_i] = -1.0
         dm[row_i,:] = -1.0
         k_b = (k_b + 1) % 2
-    sel = np.where(self._bucket_idx < 0)
-    self._bucket_idx[sel] = (bucket_small + 1) % 2
-    del dm
+    if not success or dm is None:
+      # Seeded random fallback maintaining requested split ratio
+      if verbose > 0:
+        print("    WARNING: Falling back to seeded random split (duplex selection failed)")
+      idx = np.arange(0, data_dim)
+      if shuffle:
+        rng = np.random.default_rng(getattr(self, 'seed', None))
+        rng.shuffle(idx)
+      n_small = int(np.round(n_expected_small))
+      self._bucket_idx[idx[:n_small]] = bucket_small
+      self._bucket_idx[idx[n_small:]] = (bucket_small + 1) % 2
+    else:
+      sel = np.where(self._bucket_idx < 0)
+      self._bucket_idx[sel] = (bucket_small + 1) % 2
+      del dm
     if verbose > 0:
       print(f"  Split {np.where(self._bucket_idx==0)[0].shape[0]} / {np.where(self._bucket_idx==1)[0].shape[0]}")
     folder = get_folder(os.path.join(path_model,str(model),str(batch_size),str(epochs),
@@ -845,19 +890,42 @@ class DuplexKFold(Train):
     self._bucket_idx = -np.ones((data_dim),dtype=np.int64)
     if verbose > 0:
       print("    Pairwise distances")
-    dm = squareform(pdist(data[-1],'mahalanobis'))
-    dm[np.isnan(dm)] = -1.0
+    try:
+      dm = squareform(pdist(data[-1],'mahalanobis'))
+    except Exception as e:
+      if verbose > 0:
+        print("    WARNING: Mahalanobis distance failed; falling back to seeded random k-fold:", e)
+      dm = None
+    if dm is not None:
+      dm[~np.isfinite(dm)] = -1.0
+      np.fill_diagonal(dm, -1.0)
     if verbose > 0:
       print("    Init buckets")
     n_selected = 0
     last_pt_idx = np.ndarray((self.k),dtype=np.int64)
     k_b = 0
-    ddm = dm.copy()
-    while k_b < self.k:
-      idx = np.where(ddm == np.amax(ddm))
-      row_i = idx[0][0]
-      col_i = idx[1][0]
-      if ddm[row_i,col_i] > 0.0:
+    success = True
+    if dm is not None:
+      ddm = dm.copy()
+      guard = 0
+      while k_b < self.k:
+        guard += 1
+        if guard > data_dim * 4:
+          success = False
+          break
+        max_val = np.max(ddm)
+        if max_val < 0:
+          success = False
+          break
+        pairs = np.argwhere(ddm == max_val)
+        row_i, col_i = -1, -1
+        for r, c in pairs:
+          if r != c:
+            row_i, col_i = int(r), int(c)
+            break
+        if row_i < 0 or col_i < 0:
+          success = False
+          break
         n_selected += 2
         self._bucket_idx[row_i] = k_b
         self._bucket_idx[col_i] = k_b
@@ -871,18 +939,25 @@ class DuplexKFold(Train):
         ddm[row_i,:] = -1.0
         ddm[col_i,:] = -1.0
         if n_selected > data_dim:
-          raise RuntimeError("Insufficient data-points for finding buckets")
+          success = False
+          break
         k_b += 1
-    del ddm
+      del ddm
     if verbose > 2:
       print("      Selected:", n_selected)
     if verbose > 0:
       print("    Adding points to buckets")
     k_b = 0
-    while n_selected < data_dim:
-      row_i = last_pt_idx[k_b]
-      col_i = np.argmax(dm[row_i,:],axis=-1)
-      if dm[row_i,col_i] > 0.0:
+    if dm is not None and success:
+      while n_selected < data_dim:
+        row_i = int(last_pt_idx[k_b])
+        candidates = np.where((self._bucket_idx < 0) & (dm[row_i,:] >= 0.0))[0]
+        candidates = candidates[candidates != row_i]
+        if candidates.size == 0:
+          success = False
+          break
+        best_idx = candidates[np.argmax(dm[row_i, candidates])]
+        col_i = int(best_idx)
         n_selected += 1
         self._bucket_idx[col_i] = k_b
         last_pt_idx[k_b] = col_i
@@ -891,7 +966,16 @@ class DuplexKFold(Train):
         dm[:,col_i] = -1.0
         dm[row_i,:] = -1.0
         k_b = (k_b + 1) % self.k
-    del dm
+      del dm
+    if not success or dm is None:
+      # Seeded random k-fold fallback respecting shuffled order
+      if verbose > 0:
+        print("    WARNING: Falling back to seeded random k-fold (duplex selection failed)")
+      idx = np.arange(0, data_dim)
+      if shuffle:
+        rng = np.random.default_rng(getattr(self, 'seed', None))
+        rng.shuffle(idx)
+      self._bucket_idx[idx] = (np.arange(data_dim) % self.k).astype(np.int64)
     if verbose > 1:
       for b in range(0,self.k):
         print(f"    Bucket {b}: {np.where(self._bucket_idx == b)[0].shape[0]}")

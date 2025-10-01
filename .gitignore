@@ -10,6 +10,7 @@ __pycache__
 /data/model*
 /data/sim-spectra*
 /data/data-exp*
+/local/**
 /mrsnet/simulators/pygamma/gamma/
 /.idea
 /venv
