@@ -73,6 +73,14 @@ class Train:
     """
     self.k=k
     self._bucket_idx = []
+    # Generate and store a per-run seed for deterministic splits; this is
+    # persisted with the model so runs can be reproduced.
+    try:
+      # Prefer high-quality seed from OS entropy via SeedSequence
+      self.seed = int(np.random.SeedSequence().generate_state(1)[0])
+    except Exception:
+      # Fallback to default_rng
+      self.seed = int(np.random.default_rng().integers(0, 2**31 - 1))
 
   def _plot_distributions(self,d_out,folder,image_dpi,screen_dpi,verbose):
     """Plot output value distributions across buckets.
@@ -158,6 +166,11 @@ class Train:
                                            fold_folder,verbose=verbose,
                                            image_dpi=image_dpi,screen_dpi=screen_dpi,
                                            train_dataset_name=train_dataset_name)
+      # Persist seed on the model for reproducibility in saved metadata
+      try:
+        model.seed = getattr(self, 'seed', None)
+      except Exception:  # noqa: S110
+        pass
       model.save(fold_folder)
       # Analyse result of fold
       for k in train_score.keys():
@@ -478,6 +491,11 @@ class NoValidation(Train):
     model.train(data,None,epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
+    # Persist seed on the model for reproducibility in saved metadata
+    try:
+      model.seed = getattr(self, 'seed', None)
+    except Exception:  # noqa: S110
+      pass
     model.save(folder)
     # Analyse model with training/test datasets
     # Check if clean spectra are available (different from noisy spectra)
@@ -535,7 +553,8 @@ class Split(Train):
     if shuffle:
       if verbose > 0:
         print("  Shuffle data")
-      rng = np.random.default_rng()
+      # Deterministic shuffle using per-run seed
+      rng = np.random.default_rng(getattr(self, 'seed', None))
       rng.shuffle(idx)
     # Split
     split = np.round(data_dim * self.p).astype(np.int64)
@@ -560,6 +579,11 @@ class Split(Train):
                 epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
+    # Persist seed on the model for reproducibility in saved metadata
+    try:
+      model.seed = getattr(self, 'seed', None)
+    except Exception:  # noqa: S110
+      pass
     model.save(folder)
     # Analyse model with training/test datasets
     # data = [d_noise, d_clean, d_conc] - concentrations are always last
@@ -692,6 +716,11 @@ class DuplexSplit(Train):
                 epochs,batch_size,
                 folder,verbose=verbose,image_dpi=image_dpi,screen_dpi=screen_dpi,
                 train_dataset_name=train_dataset_name)
+    # Persist seed on the model for reproducibility in saved metadata
+    try:
+      model.seed = getattr(self, 'seed', None)
+    except Exception:  # noqa: S110
+      pass
     model.save(folder)
     # Analyse model with training/test datasets
     # data = [d_noise, d_clean, d_conc] - concentrations are always last
@@ -750,7 +779,8 @@ class KFold(Train):
     if shuffle:
       if verbose > 0:
         print("  Shuffle data")
-      rng = np.random.default_rng()
+      # Deterministic shuffle using per-run seed
+      rng = np.random.default_rng(getattr(self, 'seed', None))
       rng.shuffle(idx)
     # Venetian blinds splitting into buckets
     if verbose > 0:

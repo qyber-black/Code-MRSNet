@@ -895,6 +895,8 @@ class EncDec:
                 'datatype': self.datatype,
                 'norm': self.norm,
                 'train_dataset_name': self.train_dataset_name,
+                'output': self.output,
+                'seed': getattr(self, 'seed', None),
                 'trainable_params': trainable_params,
                 'non_trainable_params': non_trainable_params,
                 'total_params': trainable_params + non_trainable_params,
