@@ -98,8 +98,7 @@ class Cfg:
     'disable_gpu': False, # Disable gpu for tensorflow (for testing)
     # Training control defaults
     'early_stopping_patience': 25,
-    'reduce_lr_min_lr': 1e-7
-    ,
+    'reduce_lr_min_lr': 1e-7,
     # Prediction pipeline batch sizes
     'predict_batch_size': 32,
     # Monitoring preferences for callbacks
@@ -114,8 +113,7 @@ class Cfg:
     'mixed_precision_policy': 'mixed_float16',
     'optimizer_clipnorm': 1.0,          # sensible default for gradient clipping by norm; set 0.0 to disable
     'optimizer_clipvalue': 0.0,         # >0 enables gradient clipping by value
-    'cache_datasets': True              # cache tf.data pipelines before shuffle/batch
-    ,
+    'cache_datasets': True,             # cache tf.data pipelines before shuffle/batch
     # Determinism and AMP policy
     'deterministic_ops': False,         # enable deterministic TF ops (may reduce performance)
     'mixed_precision_auto_policy': True,# choose AMP policy automatically based on hardware

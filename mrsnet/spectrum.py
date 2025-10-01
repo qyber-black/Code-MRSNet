@@ -1337,3 +1337,186 @@ class Spectrum:
         axs[0].set_title("Filtered Dicom Data")
     spec.set_t(data,1/dt,center_ppm=center_ppm,remove_water_peak=True,phase_correct=True)
     return spec, cs
+
+  def estimate_linewidth(self, method='water_peak', verbose=0):
+    """Estimate linewidth from experimental spectrum.
+
+    Parameters
+    ----------
+    method : str, optional
+        Estimation method: 'water_peak', 'metabolite_peak', 'auto'. Defaults to 'water_peak'
+    verbose : int, optional
+        Verbosity level. Defaults to 0
+
+    Returns
+    -------
+    float
+        Estimated linewidth in Hz, or None if estimation fails
+
+    Raises
+    ------
+    RuntimeError
+        If spectrum data is not available or method is not supported
+    """
+    if self.fft is None:
+      raise RuntimeError("Spectrum data not available for linewidth estimation")
+
+    if verbose > 0:
+      print(f"# Estimating linewidth using method: {method}")
+
+    # Get frequency domain data
+    fft_data, nu = self.get_f()
+    magnitude = np.abs(fft_data)
+
+    if method == 'water_peak':
+      return self._estimate_linewidth_water_peak(magnitude, nu, verbose)
+    elif method == 'metabolite_peak':
+      return self._estimate_linewidth_metabolite_peak(magnitude, nu, verbose)
+    elif method == 'auto':
+      # Try water peak first, fall back to metabolite peak
+      lw = self._estimate_linewidth_water_peak(magnitude, nu, verbose)
+      if lw is None:
+        lw = self._estimate_linewidth_metabolite_peak(magnitude, nu, verbose)
+      return lw
+    else:
+      raise RuntimeError(f"Unknown linewidth estimation method: {method}")
+
+  def _estimate_linewidth_water_peak(self, magnitude, nu, verbose):
+    """Estimate linewidth from water peak (4.7 ppm region).
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if water peak not found
+    """
+    # Look for water peak around 4.7 ppm
+    water_region = (nu >= 4.0) & (nu <= 5.5)
+    if not np.any(water_region):
+      if verbose > 0:
+        print("# Water peak region (4.0-5.5 ppm) not found in spectrum")
+      return None
+
+    water_magnitude = magnitude[water_region]
+    water_nu = nu[water_region]
+
+    # Find peak maximum
+    peak_idx = np.argmax(water_magnitude)
+    peak_ppm = water_nu[peak_idx]
+    peak_magnitude = water_magnitude[peak_idx]
+
+    if verbose > 1:
+      print(f"# Water peak found at {peak_ppm:.2f} ppm with magnitude {peak_magnitude:.2e}")
+
+    # Find FWHM
+    half_max = peak_magnitude / 2.0
+
+    # Find left and right half-maximum points
+    left_idx = None
+    right_idx = None
+
+    # Search left from peak
+    for i in range(peak_idx - 1, -1, -1):
+      if water_magnitude[i] <= half_max:
+        left_idx = i
+        break
+
+    # Search right from peak
+    for i in range(peak_idx + 1, len(water_magnitude)):
+      if water_magnitude[i] <= half_max:
+        right_idx = i
+        break
+
+    if left_idx is None or right_idx is None:
+      if verbose > 0:
+        print("# Could not determine FWHM of water peak")
+      return None
+
+    # Calculate FWHM in ppm
+    fwhm_ppm = water_nu[right_idx] - water_nu[left_idx]
+
+    # Convert to Hz
+    fwhm_hz = fwhm_ppm * self.omega
+
+    if verbose > 0:
+      print(f"# Water peak FWHM: {fwhm_ppm:.3f} ppm ({fwhm_hz:.1f} Hz)")
+
+    return fwhm_hz
+
+  def _estimate_linewidth_metabolite_peak(self, magnitude, nu, verbose):
+    """Estimate linewidth from metabolite peaks (NAA, Cr, etc.).
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if suitable peaks not found
+    """
+    # Look for metabolite peaks in the typical MRS range
+    metabolite_region = (nu >= -1.0) & (nu <= 4.5)
+    if not np.any(metabolite_region):
+      if verbose > 0:
+        print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
+      return None
+
+    metabolite_magnitude = magnitude[metabolite_region]
+    metabolite_nu = nu[metabolite_region]
+
+    # Find the strongest peak in the metabolite region
+    peak_idx = np.argmax(metabolite_magnitude)
+    peak_ppm = metabolite_nu[peak_idx]
+    peak_magnitude = metabolite_magnitude[peak_idx]
+
+    if verbose > 1:
+      print(f"# Strongest metabolite peak found at {peak_ppm:.2f} ppm with magnitude {peak_magnitude:.2e}")
+
+    # Find FWHM
+    half_max = peak_magnitude / 2.0
+
+    # Find left and right half-maximum points
+    left_idx = None
+    right_idx = None
+
+    # Search left from peak
+    for i in range(peak_idx - 1, -1, -1):
+      if metabolite_magnitude[i] <= half_max:
+        left_idx = i
+        break
+
+    # Search right from peak
+    for i in range(peak_idx + 1, len(metabolite_magnitude)):
+      if metabolite_magnitude[i] <= half_max:
+        right_idx = i
+        break
+
+    if left_idx is None or right_idx is None:
+      if verbose > 0:
+        print("# Could not determine FWHM of metabolite peak")
+      return None
+
+    # Calculate FWHM in ppm
+    fwhm_ppm = metabolite_nu[right_idx] - metabolite_nu[left_idx]
+
+    # Convert to Hz
+    fwhm_hz = fwhm_ppm * self.omega
+
+    if verbose > 0:
+      print(f"# Metabolite peak FWHM: {fwhm_ppm:.3f} ppm ({fwhm_hz:.1f} Hz)")
+
+    return fwhm_hz

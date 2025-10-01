@@ -32,6 +32,7 @@ except Exception:
 from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
 from mrsnet.train import (
+  LrHistory,
   calculate_flops,
   enable_deterministic_ops_if_configured,
   reshape_spectra_data,
@@ -54,19 +55,50 @@ def _dense_layer(m,units, activation, dropout, name=None):
   -------
       tensor: Output tensor
   """
-  x = Dense(units, name=name)(m)
+  # Last layer name must be name to match output / loss name
+  if name is None:
+    # No name
+    dense_name = None
+    bn_name = None
+    act_name = None
+    dropout_name = None
+  elif dropout > 0.0:
+    # Dropout is last, so it gets the name
+    dense_name = name + "_dense"
+    bn_name = name + "_bn"
+    act_name = name + "_act"
+    dropout_name = name
+  elif activation != "None":
+    # Activation is last, so it gets the name
+    dense_name = name + "_dense"
+    bn_name = name + "_bn"
+    act_name = name
+    dropout_name = None
+  elif dropout == 0.0:
+    # BatchNorm is last, so it gets the name
+    dense_name = name + "_dense"
+    bn_name = name
+    act_name = None
+    dropout_name = None
+  else:
+    # Dense is last, so it gets the name
+    dense_name = name
+    bn_name = None
+    act_name = None
+    dropout_name = None
+  x = Dense(units, name=dense_name)(m)
   if dropout == 0.0:
-    x = BatchNormalization()(x)
+    x = BatchNormalization(name=bn_name)(x)
   if isinstance(activation, str) and activation.startswith("leakyrelu") and len(activation) > 9:
     try:
       alpha = float(activation[9:])
-      x = LeakyReLU(alpha=alpha)(x)
+      x = LeakyReLU(alpha=alpha, name=act_name)(x)
     except ValueError as err:
       raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
   elif activation != "None":
-    x = Activation(activation)(x)
+    x = Activation(activation, name=act_name)(x)
   if dropout > 0.0:
-    x = Dropout(dropout)(x)
+    x = Dropout(dropout, name=dropout_name)(x)
   return x
 
 @register_keras_serializable(package="mrsnet", name="FCAutoEncQuant")
@@ -483,19 +515,6 @@ class AutoencoderQuantifier:
 
 
     timer = TimeHistory(epochs)
-    class _LrHistory(keras.callbacks.Callback):
-      def on_epoch_end(self, epoch, logs=None):
-        try:
-          lr = self.caeq.optimizer.learning_rate
-          try:
-            lr = float(lr.numpy())
-          except Exception:
-            import tensorflow as _tf
-            lr = float(_tf.keras.backend.get_value(lr))
-        except Exception:
-          lr = None
-        if logs is not None:
-          logs['lr'] = lr
     # Prefer quantification MAE when available; fallback to loss
     if v_data is not None:
       monitor_metric = f"val_{Cfg.val.get('monitor_metric_caeq','q_mae')}"
@@ -515,7 +534,7 @@ class AutoencoderQuantifier:
                                         min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
                                         mode='min',
                                         verbose=(verbose > 0)),
-      _LrHistory(),
+      LrHistory(),
       *( [weight_ramp_cb] if 'weight_ramp_cb' in locals() else [] ),
       timer
     ]

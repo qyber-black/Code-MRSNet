@@ -65,7 +65,7 @@ class LrHistory(tf.keras.callbacks.Callback):
         lr = float(tf.keras.backend.get_value(lr))
     except Exception:
       lr = None
-    if logs is not None:
+    if logs is not None and lr is not None:
       logs['lr'] = lr
 
 def set_auto_mixed_precision_policy_if_enabled(verbose=0):
