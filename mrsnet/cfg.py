@@ -95,7 +95,34 @@ class Cfg:
     'analysis_spectra_error_dist_sampling': 5, # Percentage of error samples to estimate
                                                # error distribution for spectra matching (for autoencoders)
     'analysis_predicted_spectra_samples': 10, # Max. number of predicted spectra plotted when ground truth available
-    'disable_gpu': False # Disable gpu for tensorflow (for testing)
+    'disable_gpu': False, # Disable gpu for tensorflow (for testing)
+    # Training control defaults
+    'early_stopping_patience': 25,
+    'reduce_lr_min_lr': 1e-7
+    ,
+    # Prediction pipeline batch sizes
+    'predict_batch_size': 32,
+    # Monitoring preferences for callbacks
+    'monitor_metric_quant': 'mae',      # used by quantification models (cnn, fcnn, qnet, qmrs, encdec)
+    'monitor_metric_caeq': 'q_mae',     # used by combined CAEQ model (autoencoder-quantifier)
+    'monitor_metric_ae': 'loss',        # used by pure autoencoders
+    # CAEQ head loss weights (hardcoded interface for now; future: per-run)
+    'caeq_weight_ae': 1.0,
+    'caeq_weight_q': 1.0,
+    # Training stability/perf
+    'mixed_precision': True,            # enable global mixed precision policy before model build
+    'mixed_precision_policy': 'mixed_float16',
+    'optimizer_clipnorm': 1.0,          # sensible default for gradient clipping by norm; set 0.0 to disable
+    'optimizer_clipvalue': 0.0,         # >0 enables gradient clipping by value
+    'cache_datasets': True              # cache tf.data pipelines before shuffle/batch
+    ,
+    # Determinism and AMP policy
+    'deterministic_ops': False,         # enable deterministic TF ops (may reduce performance)
+    'mixed_precision_auto_policy': True,# choose AMP policy automatically based on hardware
+    # CAEQ quantifier weight ramp
+    'caeq_weight_ramp': True,
+    'caeq_weight_ramp_warmup_epochs': 10,
+    'caeq_weight_q_start': 0.1         # starting weight for quantifier during ramp (target: caeq_weight_q)
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment variable MRSNET_DEV (colon separated list),

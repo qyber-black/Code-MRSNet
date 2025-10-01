@@ -39,7 +39,11 @@ except Exception:
 
 from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
-from mrsnet.train import calculate_flops
+from mrsnet.train import (
+  calculate_flops,
+  enable_deterministic_ops_if_configured,
+  set_auto_mixed_precision_policy_if_enabled,
+)
 
 # Global load context for subclassed model deserialization
 _FCAE_LOAD_CTX = None
@@ -435,6 +439,9 @@ class Autoencoder:
     -------
         tuple: (train_results, validation_results)
     """
+    # Deterministic ops and AMP policy (auto) per config
+    enable_deterministic_ops_if_configured()
+    set_auto_mixed_precision_policy_if_enabled(verbose)
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -490,7 +497,9 @@ class Autoencoder:
         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
-                                          epsilon=Cfg.val['epsilon'])
+                                          epsilon=Cfg.val['epsilon'],
+                                          clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                          clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
         self.ae.compile(loss=loss,
                         optimizer=optimiser,
                         metrics=['mae'])
@@ -500,17 +509,22 @@ class Autoencoder:
       self._construct(d_spectra_in.shape[1:])
       # Store input shape for FLOPs calculation during save
       self._last_input_shape = d_spectra_in.shape[1:]
-      print("Set the self.output to spectra")
+      # Set model output type for downstream prediction
       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
-                                        epsilon=Cfg.val['epsilon'])
+                                        epsilon=Cfg.val['epsilon'],
+                                        clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                        clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
       self.ae.compile(loss=loss,
                       optimizer=optimiser,
                       metrics=['mae'])
 
     # Calculate FLOPs
-    self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
+    try:
+      self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
+    except Exception:
+      self.flops = None
 
     for dpi in image_dpi:
       try:
@@ -560,22 +574,44 @@ class Autoencoder:
       self.ae.decoder.summary()
 
     timer = TimeHistory(epochs)
-    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                               min_delta=1e-8,
-                                               patience=25,
-                                               mode='min',
-                                               verbose=(verbose > 0),
-                                               restore_best_weights=True),
-                 timer]
+    if val_data is not None:
+      monitor_metric = f"val_{Cfg.val.get('monitor_metric_ae','loss')}"
+    else:
+      metric_ae = Cfg.val.get('monitor_metric_ae','loss')
+      monitor_metric = metric_ae if (metric_ae == 'loss' or metric_ae in getattr(self.ae, 'metrics_names', [])) else 'loss'
+    callbacks = [
+      keras.callbacks.EarlyStopping(monitor=monitor_metric,
+                                     min_delta=1e-8,
+                                     patience=Cfg.val.get('early_stopping_patience', 25),
+                                     mode='min',
+                                     verbose=(verbose > 0),
+                                     restore_best_weights=True),
+      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+                                        factor=0.5,
+                                        patience=10,
+                                        min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
+                                        mode='min',
+                                        verbose=(verbose > 0)),
+      timer
+    ]
 
     # Dataset options
     # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
     # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    shuffle_buffer = max(1024, batch_size * dev_multiplier * 8)
+    shuffle_seed = getattr(self, 'shuffle_seed', getattr(self, 'seed', None))
+    train_data = (train_data
+                    .shuffle(shuffle_buffer, seed=shuffle_seed, reshuffle_each_iteration=True)
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
     if val_data is not None:
-      val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = (val_data
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
 
     # Train
     history = self.ae.fit(train_data,
@@ -625,6 +661,9 @@ class Autoencoder:
     -------
         tuple: (train_results, validation_results)
     """
+    # Deterministic ops and AMP policy (auto) per config
+    enable_deterministic_ops_if_configured()
+    set_auto_mixed_precision_policy_if_enabled(verbose)
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -672,7 +711,9 @@ class Autoencoder:
         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
-                                          epsilon=Cfg.val['epsilon'])
+                                          epsilon=Cfg.val['epsilon'],
+                                          clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                          clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
         self.ae.compile(loss=loss,
                         optimizer=optimiser,
                         metrics=['mae'])
@@ -684,13 +725,18 @@ class Autoencoder:
       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
-                                        epsilon=Cfg.val['epsilon'])
+                                        epsilon=Cfg.val['epsilon'],
+                                        clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                        clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
       self.ae.compile(loss=loss,
                       optimizer=optimiser,
                       metrics=['mae'])
 
     # Calculate FLOPs
-    self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
+    try:
+      self.flops = calculate_flops(self.ae, d_spectra_in.shape[1:])
+    except Exception:
+      self.flops = None
 
     for dpi in image_dpi:
       try:
@@ -739,22 +785,40 @@ class Autoencoder:
       self.ae.quantifier.summary()
 
     timer = TimeHistory(epochs)
-    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                                min_delta=1e-8,
-                                                patience=25,
-                                                mode='min',
-                                                verbose=(verbose > 0),
-                                                restore_best_weights=True),
-                  timer]
+    monitor_metric = 'val_loss' if val_data is not None else 'loss'
+    callbacks = [
+      keras.callbacks.EarlyStopping(monitor=monitor_metric,
+                                     min_delta=1e-8,
+                                     patience=Cfg.val.get('early_stopping_patience', 25),
+                                     mode='min',
+                                     verbose=(verbose > 0),
+                                     restore_best_weights=True),
+      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+                                        factor=0.5,
+                                        patience=10,
+                                        min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
+                                        mode='min',
+                                        verbose=(verbose > 0)),
+      timer
+    ]
 
     # Dataset options
     # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
     # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    shuffle_buffer = max(1024, batch_size * dev_multiplier * 8)
+    shuffle_seed = getattr(self, 'shuffle_seed', getattr(self, 'seed', None))
+    train_data = (train_data
+                    .shuffle(shuffle_buffer, seed=shuffle_seed, reshuffle_each_iteration=True)
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
     if val_data is not None:
-      val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = (val_data
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
 
     # Train
     history = self.ae.fit(train_data,
@@ -806,7 +870,8 @@ class Autoencoder:
     # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
+    bsz = Cfg.val.get('predict_batch_size', 32)
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(bsz).with_options(options).prefetch(tf.data.AUTOTUNE)
     if self.output == "spectra":
       return np.array(tf.reshape(self.ae.predict(data,verbose=(verbose>0)*2),out_shape),dtype=np.float64)
     if self.output == "concentrations":
@@ -877,7 +942,7 @@ class Autoencoder:
     if hasattr(self, 'flops'):
       flops = self.flops
     else:
-      flops = 0
+      flops = None
 
     with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
@@ -893,6 +958,7 @@ class Autoencoder:
             'train_dataset_name': self.train_dataset_name,
             'output': self.output,
             'seed': getattr(self, 'seed', None),
+            'shuffle_seed': getattr(self, 'shuffle_seed', None),
             'trainable_params': trainable_params,
             'non_trainable_params': non_trainable_params,
             'total_params': trainable_params + non_trainable_params,

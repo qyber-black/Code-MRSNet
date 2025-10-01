@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.layers import BatchNormalization, Dense, Dropout, Flatten
+from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, LeakyReLU
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 
@@ -31,7 +31,12 @@ except Exception:
 
 from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
-from mrsnet.train import calculate_flops, reshape_spectra_data
+from mrsnet.train import (
+  calculate_flops,
+  enable_deterministic_ops_if_configured,
+  reshape_spectra_data,
+  set_auto_mixed_precision_policy_if_enabled,
+)
 
 
 def _dense_layer(m,units, activation, dropout, name=None):
@@ -49,16 +54,19 @@ def _dense_layer(m,units, activation, dropout, name=None):
   -------
       tensor: Output tensor
   """
-  if activation == "None":
-    x = Dense(units, name=name)(m)
-  else:
-    x = Dense(units, activation=activation, name=name)(m)
+  x = Dense(units, name=name)(m)
   if dropout == 0.0:
     x = BatchNormalization()(x)
-  elif dropout > 0.0:
+  if isinstance(activation, str) and activation.startswith("leakyrelu") and len(activation) > 9:
+    try:
+      alpha = float(activation[9:])
+      x = LeakyReLU(alpha=alpha)(x)
+    except ValueError as err:
+      raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
+  elif activation != "None":
+    x = Activation(activation)(x)
+  if dropout > 0.0:
     x = Dropout(dropout)(x)
-  else:
-    x = x
   return x
 
 @register_keras_serializable(package="mrsnet", name="FCAutoEncQuant")
@@ -289,6 +297,9 @@ class AutoencoderQuantifier:
     if v_data is not None and len(v_data) != 3:
       raise RuntimeError(f"AutoencoderQuantifier validation data requires 3 elements [spectra_in, spectra_out, concentrations], got {len(v_data)}")
 
+    # Deterministic ops and AMP policy (auto) per config
+    enable_deterministic_ops_if_configured()
+    set_auto_mixed_precision_policy_if_enabled(verbose)
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -335,7 +346,6 @@ class AutoencoderQuantifier:
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
     loss_huber = keras.losses.Huber(name='huber_loss')
-    loss_mae = keras.losses.MeanAbsoluteError(name='mae_loss')
 
     if len(devices) > 1:
       # Multi-GPU training
@@ -347,9 +357,43 @@ class AutoencoderQuantifier:
         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
-                                          epsilon=Cfg.val['epsilon'])
-        self.caeq.compile(loss=[loss_huber,loss_mae],
+                                          epsilon=Cfg.val['epsilon'],
+                                          clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                          clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
+        # NOTE: loss_weights are hardcoded for the two-head CAEQ at present.
+        # Consider making these per-model or per-training-run tunables in future.
+        # CAEQ loss weights with optional ramp of quantifier weight during warmup
+        if Cfg.val.get('caeq_weight_ramp', True):
+          # Use callback to ramp quantifier weight from start to target over warmup epochs
+          warmup = int(Cfg.val.get('caeq_weight_ramp_warmup_epochs', 10))
+          q_start = float(Cfg.val.get('caeq_weight_q_start', 0.1))
+          q_target = float(Cfg.val.get('caeq_weight_q', 1.0))
+          ae_w = float(Cfg.val.get('caeq_weight_ae', 1.0))
+          class _CaeqWeightRamp(keras.callbacks.Callback):
+            def __init__(self, warmup_epochs, w_start, w_target, ae_weight):
+              super().__init__()
+              self.warmup = max(1, warmup_epochs)
+              self.w_start = w_start
+              self.w_target = w_target
+              self.ae_weight = ae_weight
+            def on_epoch_begin(self, epoch, logs=None):
+              alpha = min(1.0, epoch / float(self.warmup))
+              q_w = self.w_start + (self.w_target - self.w_start) * alpha
+              try:
+                self.model.loss_weights = {'ae': self.ae_weight, 'q': float(q_w)}
+              except Exception as e:
+                if verbose > 0:
+                  print(f"WARNING: Could not update CAEQ loss_weights during ramp: {e}")
+          weight_ramp_cb = _CaeqWeightRamp(warmup, q_start, q_target, ae_w)
+          loss_w = {'ae': ae_w, 'q': q_start}
+        else:
+          loss_w = {
+            'ae': Cfg.val.get('caeq_weight_ae', 1.0),
+            'q':  Cfg.val.get('caeq_weight_q', 1.0)
+          }
+        self.caeq.compile(loss={'ae': loss_huber, 'q': loss_huber},
                           optimizer=optimiser,
+                          loss_weights=loss_w,
                           metrics={
                             'ae': ['mae'],
                             'q': ['mae']
@@ -362,16 +406,51 @@ class AutoencoderQuantifier:
       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
-                                        epsilon=Cfg.val['epsilon'])
-      self.caeq.compile(loss=[loss_huber,loss_mae],
+                                        epsilon=Cfg.val['epsilon'],
+                                        clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                        clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
+      # NOTE: loss_weights are hardcoded for the two-head CAEQ at present.
+      # Consider making these per-model or per-training-run tunables in future.
+      if Cfg.val.get('caeq_weight_ramp', True):
+        warmup = int(Cfg.val.get('caeq_weight_ramp_warmup_epochs', 10))
+        q_start = float(Cfg.val.get('caeq_weight_q_start', 0.1))
+        q_target = float(Cfg.val.get('caeq_weight_q', 1.0))
+        ae_w = float(Cfg.val.get('caeq_weight_ae', 1.0))
+        class _CaeqWeightRamp(keras.callbacks.Callback):
+          def __init__(self, warmup_epochs, w_start, w_target, ae_weight):
+            super().__init__()
+            self.warmup = max(1, warmup_epochs)
+            self.w_start = w_start
+            self.w_target = w_target
+            self.ae_weight = ae_weight
+          def on_epoch_begin(self, epoch, logs=None):
+            alpha = min(1.0, epoch / float(self.warmup))
+            q_w = self.w_start + (self.w_target - self.w_start) * alpha
+            try:
+              self.model.loss_weights = {'ae': self.ae_weight, 'q': float(q_w)}
+            except Exception as e:
+              if verbose > 0:
+                print(f"WARNING: Could not update CAEQ loss_weights during ramp: {e}")
+        weight_ramp_cb = _CaeqWeightRamp(warmup, q_start, q_target, ae_w)
+        loss_w = {'ae': ae_w, 'q': q_start}
+      else:
+        loss_w = {
+          'ae': Cfg.val.get('caeq_weight_ae', 1.0),
+          'q':  Cfg.val.get('caeq_weight_q', 1.0)
+        }
+      self.caeq.compile(loss={'ae': loss_huber, 'q': loss_huber},
                         optimizer=optimiser,
+                        loss_weights=loss_w,
                         metrics={
                           'ae': ['mae'],
                           'q': ['mae']
                         })
 
     # Calculate FLOPs
-    self.flops = calculate_flops(self.caeq, d_spectra_in.shape[1:])
+    try:
+      self.flops = calculate_flops(self.caeq, d_spectra_in.shape[1:])
+    except Exception:
+      self.flops = None
 
     for dpi in image_dpi:
       try:
@@ -404,13 +483,42 @@ class AutoencoderQuantifier:
 
 
     timer = TimeHistory(epochs)
-    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                               min_delta=1e-8,
-                                               patience=25,
-                                               mode='min',
-                                               verbose=(verbose > 0),
-                                               restore_best_weights=True),
-                 timer]
+    class _LrHistory(keras.callbacks.Callback):
+      def on_epoch_end(self, epoch, logs=None):
+        try:
+          lr = self.caeq.optimizer.learning_rate
+          try:
+            lr = float(lr.numpy())
+          except Exception:
+            import tensorflow as _tf
+            lr = float(_tf.keras.backend.get_value(lr))
+        except Exception:
+          lr = None
+        if logs is not None:
+          logs['lr'] = lr
+    # Prefer quantification MAE when available; fallback to loss
+    if v_data is not None:
+      monitor_metric = f"val_{Cfg.val.get('monitor_metric_caeq','q_mae')}"
+    else:
+      # For CAEQ training model, metrics are a dict per output; fall back to loss on training-only
+      monitor_metric = 'loss'
+    callbacks = [
+      keras.callbacks.EarlyStopping(monitor=monitor_metric,
+                                    min_delta=1e-8,
+                                    patience=Cfg.val.get('early_stopping_patience', 25),
+                                    mode='min',
+                                    verbose=(verbose > 0),
+                                    restore_best_weights=True),
+      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+                                        factor=0.5,
+                                        patience=10,
+                                        min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
+                                        mode='min',
+                                        verbose=(verbose > 0)),
+      _LrHistory(),
+      *( [weight_ramp_cb] if 'weight_ramp_cb' in locals() else [] ),
+      timer
+    ]
 
     # Dataset options
     train_data=tf.data.Dataset.zip((train_data_spectra,train_data_target))
@@ -424,9 +532,22 @@ class AutoencoderQuantifier:
     # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    if Cfg.val.get('cache_datasets', False):
+      train_data = train_data.cache()
+      if val_data is not None:
+        val_data = val_data.cache()
+    shuffle_buffer = max(1024, batch_size * dev_multiplier * 8)
+    shuffle_seed = getattr(self, 'shuffle_seed', getattr(self, 'seed', None))
+    train_data = (train_data
+                    .shuffle(shuffle_buffer, seed=shuffle_seed, reshuffle_each_iteration=True)
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
     if val_data is not None:
-      val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = (val_data
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
 
     # Train
     history = self.caeq.fit(train_data,
@@ -459,7 +580,7 @@ class AutoencoderQuantifier:
 
     return d_res, v_res
 
-  def predict(self, spec_in, reshape=True, verbose=0):
+  def predict(self, spec_in, reshape=True, verbose=0, return_both=False):
     """Predict concentrations or spectra from input spectra.
 
     Parameters
@@ -481,7 +602,13 @@ class AutoencoderQuantifier:
     # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(32).with_options(options)
+    bsz = Cfg.val.get('predict_batch_size', 32)
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(bsz).with_options(options).prefetch(tf.data.AUTOTUNE)
+    if return_both:
+      ae_pred, q_pred = self.caeq.predict(data, verbose=(verbose > 0) * 2)
+      spectra = np.array(tf.reshape(ae_pred, out_shape), dtype=np.float64)
+      conc = np.array(q_pred, dtype=np.float64)
+      return spectra, conc
     if self.output == "concentrations":
       return np.array(self.caeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
     if self.output == "spectra":
@@ -552,7 +679,7 @@ class AutoencoderQuantifier:
     if hasattr(self, 'flops'):
       flops = self.flops
     else:
-      flops = 0
+      flops = None
 
     with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
@@ -565,6 +692,7 @@ class AutoencoderQuantifier:
           'train_dataset_name': self.train_dataset_name,
           'output': self.output,
           'seed': getattr(self, 'seed', None),
+          'shuffle_seed': getattr(self, 'shuffle_seed', None),
           'trainable_params': trainable_params,
           'non_trainable_params': non_trainable_params,
           'total_params': trainable_params + non_trainable_params,

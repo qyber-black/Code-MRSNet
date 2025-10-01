@@ -26,6 +26,79 @@ from mrsnet.cfg import Cfg
 from mrsnet.getfolder import get_folder
 
 
+def enable_deterministic_ops_if_configured(verbose=0):
+  """Enable deterministic TF ops when configured in Cfg."""
+  if Cfg.val.get('deterministic_ops', False):
+    try:
+      import tensorflow as _tf
+      try:
+        _tf.config.experimental.enable_op_determinism(True)
+      except Exception:
+        # Older TF versions
+        os.environ['TF_DETERMINISTIC_OPS'] = '1'
+    except Exception as e:
+      if verbose > 0:
+        print(f"WARNING: Could not enable deterministic ops: {e}")
+
+class LrHistory(tf.keras.callbacks.Callback):
+  """Callback to record the optimizer learning rate into logs/history."""
+
+  def on_epoch_end(self, epoch, logs=None):
+    """Record the current learning rate into the training logs.
+
+    This callback method is called at the end of each training epoch
+    to capture the optimizer's learning rate and add it to the logs
+    for monitoring and analysis purposes.
+
+    Parameters
+    ----------
+        epoch (int): The current epoch number (0-indexed)
+        logs (dict, optional): Dictionary of logs from the training epoch.
+            The learning rate will be added to this dictionary under the 'lr' key.
+            Defaults to None
+    """
+    try:
+      lr = self.model.optimizer.learning_rate
+      try:
+        lr = float(lr.numpy())
+      except Exception:
+        lr = float(tf.keras.backend.get_value(lr))
+    except Exception:
+      lr = None
+    if logs is not None:
+      logs['lr'] = lr
+
+def set_auto_mixed_precision_policy_if_enabled(verbose=0):
+  """Enable mixed precision and set policy automatically or from config.
+
+  - Requires Cfg.mixed_precision to be True to activate
+  - If Cfg.mixed_precision_auto_policy is True, selects policy from hardware
+    (mixed_bfloat16 on CPU/TPU, mixed_float16 on GPU)
+  - Otherwise uses Cfg.mixed_precision_policy
+  """
+  if not Cfg.val.get('mixed_precision', False):
+    return
+  try:
+    import tensorflow as _tf
+    from tensorflow.keras import mixed_precision as _mp
+    if Cfg.val.get('mixed_precision_auto_policy', True):
+      devs = _tf.config.list_physical_devices()
+      names = [d.device_type.lower() for d in devs]
+      policy = None
+      # Prefer bfloat16 if CPU/TPU present
+      if any('tpu' in n for n in names) or any('cpu' in n for n in names):
+        policy = 'mixed_bfloat16'
+      # Prefer float16 on GPUs
+      if any('gpu' in n for n in names):
+        policy = 'mixed_float16'
+      if policy is not None:
+        _mp.set_global_policy(policy)
+    else:
+      _mp.set_global_policy(Cfg.val.get('mixed_precision_policy', 'mixed_float16'))
+  except Exception as e:
+    if verbose > 0:
+      print(f"WARNING: AMP policy selection failed: {e}")
+
 def reshape_spectra_data(spectra_tensor, add_channel_dim=False):
     """Reshape spectra data from (batch, acquisition, datatype, frequency) to (batch, acquisition*datatype, frequency).
 
@@ -81,6 +154,12 @@ class Train:
     except Exception:
       # Fallback to default_rng
       self.seed = int(np.random.default_rng().integers(0, 2**31 - 1))
+    # Derive a separate shuffle seed deterministically from split seed
+    try:
+      rng = np.random.default_rng(self.seed)
+      self.shuffle_seed = int(rng.integers(0, 2**31 - 1))
+    except Exception:
+      self.shuffle_seed = int(np.random.default_rng().integers(0, 2**31 - 1))
 
   def _plot_distributions(self,d_out,folder,image_dpi,screen_dpi,verbose):
     """Plot output value distributions across buckets.
@@ -169,6 +248,7 @@ class Train:
       # Persist seed on the model for reproducibility in saved metadata
       try:
         model.seed = getattr(self, 'seed', None)
+        model.shuffle_seed = getattr(self, 'shuffle_seed', None)
       except Exception:  # noqa: S110
         pass
       model.save(fold_folder)
@@ -494,6 +574,7 @@ class NoValidation(Train):
     # Persist seed on the model for reproducibility in saved metadata
     try:
       model.seed = getattr(self, 'seed', None)
+      model.shuffle_seed = getattr(self, 'shuffle_seed', None)
     except Exception:  # noqa: S110
       pass
     model.save(folder)

@@ -82,7 +82,12 @@ except Exception:
 
 from mrsnet.cfg import Cfg
 from mrsnet.cnn import TimeHistory
-from mrsnet.train import calculate_flops, reshape_spectra_data
+from mrsnet.train import (
+    calculate_flops,
+    enable_deterministic_ops_if_configured,
+    reshape_spectra_data,
+    set_auto_mixed_precision_policy_if_enabled,
+)
 
 
 @register_keras_serializable(package="mrsnet", name="WaveNetBlock")
@@ -669,6 +674,10 @@ class EncDec:
 
         learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
 
+        # Deterministic ops and AMP policy (auto) per config
+        enable_deterministic_ops_if_configured()
+        set_auto_mixed_precision_policy_if_enabled(verbose)
+
         if len(devices) > 1:
             # Multi-GPU training
             dev_multiplier = len(devices)
@@ -678,10 +687,12 @@ class EncDec:
                 optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                                   beta_1=Cfg.val['beta1'],
                                                   beta_2=Cfg.val['beta2'],
-                                                  epsilon=Cfg.val['epsilon'])
+                                                  epsilon=Cfg.val['epsilon'],
+                                                  clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                                  clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
                 self.training_model.compile(loss='mse',
-                                          optimizer=optimiser,
-                                          metrics=['mae'])
+                                            optimizer=optimiser,
+                                            metrics=['mae'])
         else:
             # Single GPU / CPU training
             dev_multiplier = 1
@@ -689,10 +700,12 @@ class EncDec:
             optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                               beta_1=Cfg.val['beta1'],
                                               beta_2=Cfg.val['beta2'],
-                                              epsilon=Cfg.val['epsilon'])
+                                              epsilon=Cfg.val['epsilon'],
+                                              clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                              clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
             self.training_model.compile(loss='mse',
-                                      optimizer=optimiser,
-                                      metrics=['mae'])
+                                        optimizer=optimiser,
+                                        metrics=['mae'])
 
         # Calculate FLOPs
         try:
@@ -709,20 +722,60 @@ class EncDec:
             self.training_model.summary()
 
         timer = TimeHistory(epochs)
-        callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                                   min_delta=1e-8,
-                                                   patience=25,
-                                                   mode='min',
-                                                   verbose=(verbose > 0)*2,
-                                                   restore_best_weights=True),
-                     timer]
+        class _LrHistory(keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                try:
+                    lr = self.model.optimizer.learning_rate
+                    try:
+                        lr = float(lr.numpy())
+                    except Exception:
+                        import tensorflow as _tf
+                        lr = float(_tf.keras.backend.get_value(lr))
+                except Exception:
+                    lr = None
+                if logs is not None:
+                    logs['lr'] = lr
+        # Prefer quantification MAE when available; fallback to loss
+        if validation_data is not None:
+            monitor_metric = f"val_{Cfg.val.get('monitor_metric_quant','mae')}"
+        else:
+            monitor_metric = Cfg.val.get('monitor_metric_quant','mae') if 'mae' in self.training_model.metrics_names else 'loss'
+        callbacks = [
+            keras.callbacks.EarlyStopping(monitor=monitor_metric,
+                                          min_delta=1e-8,
+                                          patience=Cfg.val.get('early_stopping_patience', 25),
+                                          mode='min',
+                                          verbose=(verbose > 0)*2,
+                                          restore_best_weights=True),
+            keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+                                              factor=0.5,
+                                              patience=10,
+                                              min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
+                                              mode='min',
+                                              verbose=(verbose > 0)*2),
+            _LrHistory(),
+            timer
+        ]
 
         # Dataset options
         options = tf.data.Options()
         options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-        train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+        if Cfg.val.get('cache_datasets', False):
+            train_data = train_data.cache()
+            if validation_data is not None:
+                validation_data = validation_data.cache()
+        shuffle_buffer = max(1024, batch_size * dev_multiplier * 8)
+        shuffle_seed = getattr(self, 'shuffle_seed', getattr(self, 'seed', None))
+        train_data = (train_data
+                        .shuffle(shuffle_buffer, seed=shuffle_seed, reshuffle_each_iteration=True)
+                        .batch(batch_size * dev_multiplier)
+                        .with_options(options)
+                        .prefetch(tf.data.AUTOTUNE))
         if validation_data is not None:
-            validation_data = validation_data.batch(batch_size * dev_multiplier).with_options(options)
+            validation_data = (validation_data
+                                 .batch(batch_size * dev_multiplier)
+                                 .with_options(options)
+                                 .prefetch(tf.data.AUTOTUNE))
 
         # Train
         history = self.training_model.fit(train_data,
@@ -809,7 +862,8 @@ class EncDec:
         # Dataset options
         options = tf.data.Options()
         options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-        data = tf.data.Dataset.from_tensor_slices(d_inp).batch(16).with_options(options)
+        bsz = Cfg.val.get('predict_batch_size', 32)
+        data = tf.data.Dataset.from_tensor_slices(d_inp).batch(bsz).with_options(options).prefetch(tf.data.AUTOTUNE)
 
         # Get predictions
         predictions = self.encdec_arch.predict(data, verbose=(verbose>0)*2)
@@ -832,10 +886,10 @@ class EncDec:
         os.makedirs(folder, exist_ok=True)
         self.encdec_arch.save(os.path.join(folder, "model.keras"))
 
-        # Calculate model metrics from summary
+        # Calculate model metrics from summary (use the model we saved)
         old_stdout = sys.stdout
         sys.stdout = buffer = io.StringIO()
-        self.training_model.summary()
+        self.encdec_arch.summary()
         sys.stdout = old_stdout
         summary_output = buffer.getvalue()
 
@@ -897,6 +951,7 @@ class EncDec:
                 'train_dataset_name': self.train_dataset_name,
                 'output': self.output,
                 'seed': getattr(self, 'seed', None),
+                'shuffle_seed': getattr(self, 'shuffle_seed', None),
                 'trainable_params': trainable_params,
                 'non_trainable_params': non_trainable_params,
                 'total_params': trainable_params + non_trainable_params,
