@@ -343,7 +343,7 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
       os.remove(f)
     for dpi in image_dpi:
       plt.savefig(os.path.join(folder, prefix + '_concentration_errors@'+str(dpi)+'.png'), dpi=dpi)
-    if verbose > 1:
+    if verbose >= 2:
       fig.set_dpi(screen_dpi)
       plt.show()
 

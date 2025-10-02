@@ -43,12 +43,12 @@ import time
 
 # Training parameters
 EPOCHS = 2000
-DS_SIZE = 100000
+DS_SIZE = 10000
 SPLIT_K = 0
 SPLIT_FOLD = "NoValidation-1"
 
 # Benchmark options
-SKIP_BENCHMARKS = True  # Set to True to skip benchmark runs
+SKIP_BENCHMARKS = False  # Set to True to skip benchmark runs
 
 # Models to test
 MODELS = {
@@ -173,12 +173,12 @@ def test_model(model_name, model_string, acquisitions, datatype):
             SPLIT_FOLD  # This is the trainer ID from the training command
         )
 
-        # For KFold, models are saved in individual fold directories (fold-0, fold-1, etc.)
-        # Check if any fold directory exists and contains a model
+        # Check if model exists - handle both KFold and non-KFold cases
         if os.path.exists(candidate_path):
+            # Check if this is a KFold validation (has fold directories)
             fold_dirs = [d for d in os.listdir(candidate_path) if d.startswith("fold-")]
             if fold_dirs:
-                # Use the first available fold (typically fold-0)
+                # KFold case: models are saved in individual fold directories (fold-0, fold-1, etc.)
                 fold_dir = sorted(fold_dirs)[0]  # Sort to ensure consistent selection
                 fold_path = os.path.join(candidate_path, fold_dir)
                 candidate_keras_path = os.path.join(fold_path, "model.keras")
@@ -186,7 +186,16 @@ def test_model(model_name, model_string, acquisitions, datatype):
                     complete_model_path = fold_path  # Use the fold path for benchmarking
                     model_keras_path = candidate_keras_path
                     model_exists = True
-                    print(f"✅ Found existing model in: {base_model_dir} (using {fold_dir})")
+                    print(f"✅ Found existing KFold model in: {base_model_dir} (using {fold_dir})")
+                    break
+            else:
+                # Non-KFold case: model is saved directly in the trainer directory
+                candidate_keras_path = os.path.join(candidate_path, "model.keras")
+                if os.path.exists(candidate_keras_path):
+                    complete_model_path = candidate_path  # Use the trainer path directly
+                    model_keras_path = candidate_keras_path
+                    model_exists = True
+                    print(f"✅ Found existing non-KFold model in: {base_model_dir}")
                     break
 
     training_success = False
@@ -221,30 +230,37 @@ def test_model(model_name, model_string, acquisitions, datatype):
                 SPLIT_FOLD
             )
 
-            # For KFold, models are saved in individual fold directories
-            # Find the first available fold directory
+            # Check if model was created after training - handle both KFold and non-KFold cases
             if os.path.exists(kfold_path):
+                # Check if this is a KFold validation (has fold directories)
                 fold_dirs = [d for d in os.listdir(kfold_path) if d.startswith("fold-")]
                 if fold_dirs:
+                    # KFold case: models are saved in individual fold directories
                     fold_dir = sorted(fold_dirs)[0]  # Use first fold consistently
                     complete_model_path = os.path.join(kfold_path, fold_dir)
                     model_keras_path = os.path.join(complete_model_path, "model.keras")
 
                     # Verify the model was created after training
                     if not os.path.exists(model_keras_path):
-                        print(f"❌ ERROR: Model was not created after training: {model_keras_path}")
+                        print(f"❌ ERROR: KFold model was not created after training: {model_keras_path}")
                         print(f"ℹ️  Checking if directory exists: {os.path.exists(complete_model_path)}") # noqa: RUF001
                         if os.path.exists(complete_model_path):
                             print(f"ℹ️  Directory contents: {os.listdir(complete_model_path)}") # noqa: RUF001
                         training_success = False
                     else:
-                        print(f"✅ SUCCESS: Model created after training: {model_keras_path}")
+                        print(f"✅ SUCCESS: KFold model created after training: {model_keras_path}")
                 else:
-                    print(f"❌ ERROR: No fold directories found in: {kfold_path}")
-                    print(f"ℹ️  Directory contents: {os.listdir(kfold_path) if os.path.exists(kfold_path) else 'Directory does not exist'}") # noqa: RUF001
-                    training_success = False
+                    # Non-KFold case: model is saved directly in the trainer directory
+                    model_keras_path = os.path.join(kfold_path, "model.keras")
+                    if not os.path.exists(model_keras_path):
+                        print(f"❌ ERROR: Non-KFold model was not created after training: {model_keras_path}")
+                        print(f"ℹ️  Directory contents: {os.listdir(kfold_path)}") # noqa: RUF001
+                        training_success = False
+                    else:
+                        complete_model_path = kfold_path  # Use the trainer path directly
+                        print(f"✅ SUCCESS: Non-KFold model created after training: {model_keras_path}")
             else:
-                print(f"❌ ERROR: KFold directory not found: {kfold_path}")
+                print(f"❌ ERROR: Trainer directory not found: {kfold_path}")
                 training_success = False
         else:
             print(f"❌ Training failed for {model_name}")

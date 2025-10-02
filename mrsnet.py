@@ -455,11 +455,11 @@ def simulate(args):
       os.remove(f)
     for dpi in Cfg.val['image_dpi']:
       plt.savefig(os.path.join(path,f"concentrations-{norm}@{dpi}.png"), dpi=dpi)
-    if args.verbose > 3 or (args.verbose > 1 and norm == "none"):
+    if args.verbose >= 2:
       fig.set_dpi(Cfg.val['screen_dpi'])
       plt.show(block=True)
     plt.close()
-  if args.verbose > 3:
+  if args.verbose >= 4:
     for s,c in zip(dataset.spectra,dataset.concentrations, strict=False):
       spectrum.Spectrum.plot_full_spectrum(s,c,screen_dpi=Cfg.val['screen_dpi'])
       plt.show(block=True)
@@ -1219,7 +1219,9 @@ def benchmark(args):
     try:
       folder = os.path.join(model_path, name, batchsize, epochs, train_model, trainer, rest)
       quantifier = load_class.load(folder)
-    except Exception:
+    except Exception as e:
+      if args.verbose > 0:
+        print(f"# Failed to load from {folder}: {e}")
       quantifier = None
     if quantifier is None:
       try:
@@ -1311,7 +1313,7 @@ def benchmark(args):
                                                                          b_id, 'concentrations.json'),
                                              metabolites=quantifier.metabolites,
                                              verbose=args.verbose)
-      if args.verbose > 3:
+      if args.verbose >= 4:
         for s,c in zip(bm.spectra,bm.concentrations, strict=False):
           for a in s.keys():
             s[a].plot_spectrum(c,screen_dpi=Cfg.val['screen_dpi'])
@@ -1563,6 +1565,13 @@ if __name__ == '__main__':
   # Only print warnings and errors for tf (set before importing tf)
   if 'TF_CPP_MIN_LOG_LEVEL' not in os.environ:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+  if 'TF_ENABLE_ONEDNN_OPTS' not in os.environ:
+    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '2'  # Disable oneDNN optimizations that cause warnings
+  if 'TF_CPP_MIN_VLOG_LEVEL' not in os.environ:
+    os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '0'  # Suppress all verbose logging
+  # Suppress TensorFlow deprecation warnings at the C++ level
+  import logging
+  logging.getLogger('tensorflow').setLevel(logging.ERROR)
   # Headless mode
   if "DISPLAY" not in os.environ:
     from matplotlib import use

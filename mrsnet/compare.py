@@ -102,7 +102,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     print(f"             Phase: {dd[2,1]:12f} {m[2,1]:12f} {s[2,1]:12f}")
     print(f"              Real: {dd[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f}")
     print(f"         Imaginary: {dd[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f}")
-    if verbose > 1:
+    if verbose >= 2:
       plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],nu,
                         ds.metabolites,basis.source,screen_dpi)
       plt.show(block=True)
