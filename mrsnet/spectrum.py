@@ -1341,6 +1341,9 @@ class Spectrum:
   def estimate_linewidth(self, method='water_peak', verbose=0):
     """Estimate linewidth from experimental spectrum.
 
+    For MEGAPRESS spectra, this should ideally be called on edit_off spectra
+    which have the best SNR and no editing artifacts.
+
     Parameters
     ----------
     method : str, optional
@@ -1362,7 +1365,7 @@ class Spectrum:
       raise RuntimeError("Spectrum data not available for linewidth estimation")
 
     if verbose > 0:
-      print(f"# Estimating linewidth using method: {method}")
+      print(f"# Estimating linewidth using method: {method} for {self.acquisition} spectrum")
 
     # Get frequency domain data
     fft_data, nu = self.get_f()

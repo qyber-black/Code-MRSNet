@@ -13,6 +13,7 @@ __pycache__
 /data/sim2real*
 /local/**
 /mrsnet/simulators/pygamma/gamma/
+/.cursor/**
 /.idea
 /venv
 cfg.json
