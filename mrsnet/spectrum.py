@@ -1338,7 +1338,7 @@ class Spectrum:
     spec.set_t(data,1/dt,center_ppm=center_ppm,remove_water_peak=True,phase_correct=True)
     return spec, cs
 
-  def estimate_linewidth(self, method='water_peak', verbose=0):
+  def estimate_linewidth(self, method='water_peak', verbose=0, min_snr=3.0, max_peaks=3):
     """Estimate linewidth from experimental spectrum.
 
     For MEGAPRESS spectra, this should ideally be called on edit_off spectra
@@ -1350,6 +1350,10 @@ class Spectrum:
         Estimation method: 'water_peak', 'metabolite_peak', 'auto'. Defaults to 'water_peak'
     verbose : int, optional
         Verbosity level. Defaults to 0
+    min_snr : float, optional
+        Minimum SNR threshold for peak detection. Defaults to 3.0
+    max_peaks : int, optional
+        Maximum number of peaks to use for averaging. Defaults to 3
 
     Returns
     -------
@@ -1364,7 +1368,7 @@ class Spectrum:
     if self.fft is None:
       raise RuntimeError("Spectrum data not available for linewidth estimation")
 
-    if verbose > 0:
+    if verbose > 2:
       print(f"# Estimating linewidth using method: {method} for {self.acquisition} spectrum")
 
     # Get frequency domain data
@@ -1372,14 +1376,14 @@ class Spectrum:
     magnitude = np.abs(fft_data)
 
     if method == 'water_peak':
-      return self._estimate_linewidth_water_peak(magnitude, nu, verbose)
+      return self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
     elif method == 'metabolite_peak':
-      return self._estimate_linewidth_metabolite_peak(magnitude, nu, verbose)
+      return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
     elif method == 'auto':
       # Try water peak first, fall back to metabolite peak
-      lw = self._estimate_linewidth_water_peak(magnitude, nu, verbose)
+      lw = self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
       if lw is None:
-        lw = self._estimate_linewidth_metabolite_peak(magnitude, nu, verbose)
+        lw = self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
       return lw
     else:
       raise RuntimeError(f"Unknown linewidth estimation method: {method}")
@@ -1404,7 +1408,7 @@ class Spectrum:
     # Look for water peak around 4.7 ppm
     water_region = (nu >= 4.0) & (nu <= 5.5)
     if not np.any(water_region):
-      if verbose > 0:
+      if verbose > 2:
         print("# Water peak region (4.0-5.5 ppm) not found in spectrum")
       return None
 
@@ -1416,7 +1420,7 @@ class Spectrum:
     peak_ppm = water_nu[peak_idx]
     peak_magnitude = water_magnitude[peak_idx]
 
-    if verbose > 1:
+    if verbose > 2:
       print(f"# Water peak found at {peak_ppm:.2f} ppm with magnitude {peak_magnitude:.2e}")
 
     # Find FWHM
@@ -1439,7 +1443,7 @@ class Spectrum:
         break
 
     if left_idx is None or right_idx is None:
-      if verbose > 0:
+      if verbose > 2:
         print("# Could not determine FWHM of water peak")
       return None
 
@@ -1449,7 +1453,7 @@ class Spectrum:
     # Convert to Hz
     fwhm_hz = fwhm_ppm * self.omega
 
-    if verbose > 0:
+    if verbose > 2:
       print(f"# Water peak FWHM: {fwhm_ppm:.3f} ppm ({fwhm_hz:.1f} Hz)")
 
     return fwhm_hz
@@ -1474,7 +1478,7 @@ class Spectrum:
     # Look for metabolite peaks in the typical MRS range
     metabolite_region = (nu >= -1.0) & (nu <= 4.5)
     if not np.any(metabolite_region):
-      if verbose > 0:
+      if verbose > 2:
         print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
       return None
 
@@ -1486,7 +1490,7 @@ class Spectrum:
     peak_ppm = metabolite_nu[peak_idx]
     peak_magnitude = metabolite_magnitude[peak_idx]
 
-    if verbose > 1:
+    if verbose > 2:
       print(f"# Strongest metabolite peak found at {peak_ppm:.2f} ppm with magnitude {peak_magnitude:.2e}")
 
     # Find FWHM
@@ -1509,7 +1513,7 @@ class Spectrum:
         break
 
     if left_idx is None or right_idx is None:
-      if verbose > 0:
+      if verbose > 2:
         print("# Could not determine FWHM of metabolite peak")
       return None
 
@@ -1519,7 +1523,291 @@ class Spectrum:
     # Convert to Hz
     fwhm_hz = fwhm_ppm * self.omega
 
-    if verbose > 0:
+    if verbose > 2:
       print(f"# Metabolite peak FWHM: {fwhm_ppm:.3f} ppm ({fwhm_hz:.1f} Hz)")
 
     return fwhm_hz
+
+  def _estimate_linewidth_water_peak_robust(self, magnitude, nu, verbose, min_snr=3.0, max_peaks=3):
+    """Robust estimate linewidth from water peak with improved peak detection and SNR filtering.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+    min_snr : float
+        Minimum SNR threshold for peak detection
+    max_peaks : int
+        Maximum number of peaks to use for averaging
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if water peak not found
+    """
+    # Look for water peak around 4.7 ppm with dynamic range
+    water_region = (nu >= 4.0) & (nu <= 5.5)
+    if not np.any(water_region):
+      if verbose > 2:
+        print("# Water peak region (4.0-5.5 ppm) not found in spectrum")
+      return None
+
+    water_magnitude = magnitude[water_region]
+    water_nu = nu[water_region]
+
+    # Estimate noise level from baseline
+    noise_region = (nu >= 8.0) & (nu <= 12.0)  # High ppm noise region
+    if np.any(noise_region):
+      noise_level = np.std(magnitude[noise_region])
+    else:
+      noise_level = np.std(water_magnitude) * 0.1  # Fallback estimate
+
+    # Find multiple peaks above SNR threshold
+    peaks = self._find_peaks_robust(water_magnitude, water_nu, noise_level, min_snr, max_peaks, verbose)
+
+    if len(peaks) == 0:
+      if verbose > 2:
+        print("# No water peaks found above SNR threshold")
+      return None
+
+    # Calculate FWHM for each peak and average
+    fwhm_values = []
+    for peak_ppm, peak_magnitude, peak_idx in peaks:
+      fwhm_hz = self._calculate_fwhm_interpolated(water_magnitude, water_nu, peak_idx, peak_magnitude, verbose)
+      if fwhm_hz is not None:
+        fwhm_values.append(fwhm_hz)
+        if verbose > 2:
+          print(f"# Water peak at {peak_ppm:.2f} ppm: {fwhm_hz:.1f} Hz")
+
+    if len(fwhm_values) == 0:
+      if verbose > 2:
+        print("# Could not determine FWHM for any water peaks")
+      return None
+
+    # Use median for robustness against outliers
+    median_fwhm = np.median(fwhm_values)
+    if verbose > 2:
+      print(f"# Water peak FWHM: {median_fwhm:.1f} Hz (from {len(fwhm_values)} peaks)")
+
+    return median_fwhm
+
+  def _estimate_linewidth_metabolite_peak_robust(self, magnitude, nu, verbose, min_snr=3.0, max_peaks=3):
+    """Robust estimate linewidth from metabolite peaks with improved peak detection.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+    min_snr : float
+        Minimum SNR threshold for peak detection
+    max_peaks : int
+        Maximum number of peaks to use for averaging
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if suitable peaks not found
+    """
+    # Look for metabolite peaks in the typical MRS range
+    metabolite_region = (nu >= -1.0) & (nu <= 4.5)
+    if not np.any(metabolite_region):
+      if verbose > 2:
+        print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
+      return None
+
+    metabolite_magnitude = magnitude[metabolite_region]
+    metabolite_nu = nu[metabolite_region]
+
+    # Estimate noise level from baseline
+    noise_region = (nu >= 8.0) & (nu <= 12.0)  # High ppm noise region
+    if np.any(noise_region):
+      noise_level = np.std(magnitude[noise_region])
+    else:
+      noise_level = np.std(metabolite_magnitude) * 0.1  # Fallback estimate
+
+    # Find multiple peaks above SNR threshold
+    peaks = self._find_peaks_robust(metabolite_magnitude, metabolite_nu, noise_level, min_snr, max_peaks, verbose)
+
+    if len(peaks) == 0:
+      if verbose > 2:
+        print("# No metabolite peaks found above SNR threshold")
+      return None
+
+    # Calculate FWHM for each peak and average
+    fwhm_values = []
+    for peak_ppm, peak_magnitude, peak_idx in peaks:
+      fwhm_hz = self._calculate_fwhm_interpolated(metabolite_magnitude, metabolite_nu, peak_idx, peak_magnitude, verbose)
+      if fwhm_hz is not None:
+        fwhm_values.append(fwhm_hz)
+        if verbose > 1:
+          print(f"# Metabolite peak at {peak_ppm:.2f} ppm: {fwhm_hz:.1f} Hz")
+
+    if len(fwhm_values) == 0:
+      if verbose > 2:
+        print("# Could not determine FWHM for any metabolite peaks")
+      return None
+
+    # Use median for robustness against outliers
+    median_fwhm = np.median(fwhm_values)
+    if verbose > 2:
+      print(f"# Metabolite peak FWHM: {median_fwhm:.1f} Hz (from {len(fwhm_values)} peaks)")
+
+    return median_fwhm
+
+  def _find_peaks_robust(self, magnitude, nu, noise_level, min_snr, max_peaks, verbose):
+    """Find peaks above SNR threshold with proper peak detection.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    noise_level : float
+        Estimated noise level
+    min_snr : float
+        Minimum SNR threshold
+    max_peaks : int
+        Maximum number of peaks to return
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    list
+        List of (peak_ppm, peak_magnitude, peak_idx) tuples
+    """
+    # Find local maxima
+    from scipy.signal import find_peaks
+
+    # Ensure minimum peak height based on SNR
+    min_height = noise_level * min_snr
+
+    # Find peaks with minimum distance between them
+    min_distance = max(1, len(magnitude) // 100)  # At least 1% of spectrum width
+
+    peaks_idx, properties = find_peaks(magnitude, height=min_height, distance=min_distance)
+
+    if len(peaks_idx) == 0:
+      return []
+
+    # Sort peaks by magnitude (strongest first)
+    peak_magnitudes = magnitude[peaks_idx]
+    sort_indices = np.argsort(peak_magnitudes)[::-1]  # Descending order
+
+    # Select top peaks
+    selected_peaks = []
+    for i in sort_indices[:max_peaks]:
+      peak_idx = peaks_idx[i]
+      peak_ppm = nu[peak_idx]
+      peak_magnitude = magnitude[peak_idx]
+      snr = peak_magnitude / noise_level
+
+      if snr >= min_snr:
+        selected_peaks.append((peak_ppm, peak_magnitude, peak_idx))
+        if verbose > 2:
+          print(f"# Peak at {peak_ppm:.2f} ppm: SNR={snr:.1f}, magnitude={peak_magnitude:.2e}")
+
+    return selected_peaks
+
+  def _calculate_fwhm_interpolated(self, magnitude, nu, peak_idx, peak_magnitude, verbose):
+    """Calculate FWHM with interpolation for better accuracy.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    peak_idx : int
+        Index of peak maximum
+    peak_magnitude : float
+        Peak magnitude
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    float or None
+        FWHM in Hz, or None if calculation fails
+    """
+    half_max = peak_magnitude / 2.0
+
+    # Find left and right half-maximum points with interpolation
+    left_ppm = self._find_half_max_interpolated(magnitude, nu, peak_idx, half_max, direction='left')
+    right_ppm = self._find_half_max_interpolated(magnitude, nu, peak_idx, half_max, direction='right')
+
+    if left_ppm is None or right_ppm is None:
+      return None
+
+    # Calculate FWHM in ppm
+    fwhm_ppm = right_ppm - left_ppm
+
+    # Convert to Hz
+    fwhm_hz = fwhm_ppm * self.omega
+
+    return fwhm_hz
+
+  def _find_half_max_interpolated(self, magnitude, nu, peak_idx, half_max, direction='left'):
+    """Find half-maximum point with linear interpolation.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    peak_idx : int
+        Index of peak maximum
+    half_max : float
+        Half-maximum value
+    direction : str
+        'left' or 'right' to search from peak
+
+    Returns
+    -------
+    float or None
+        Interpolated ppm value, or None if not found
+    """
+    if direction == 'left':
+      search_range = range(peak_idx - 1, -1, -1)
+    else:
+      search_range = range(peak_idx + 1, len(magnitude))
+
+    for i in search_range:
+      if direction == 'left' and magnitude[i] <= half_max:
+        # Linear interpolation between i and i+1
+        if i + 1 < len(magnitude):
+          x1, y1 = nu[i], magnitude[i]
+          x2, y2 = nu[i + 1], magnitude[i + 1]
+          # Interpolate to find x where y = half_max
+          if y2 != y1:
+            x_interp = x1 + (half_max - y1) * (x2 - x1) / (y2 - y1)
+            return x_interp
+          else:
+            return x1
+        else:
+          return nu[i]
+      elif direction == 'right' and magnitude[i] <= half_max:
+        # Linear interpolation between i-1 and i
+        if i - 1 >= 0:
+          x1, y1 = nu[i - 1], magnitude[i - 1]
+          x2, y2 = nu[i], magnitude[i]
+          # Interpolate to find x where y = half_max
+          if y2 != y1:
+            x_interp = x1 + (half_max - y1) * (x2 - x1) / (y2 - y1)
+            return x_interp
+          else:
+            return x1
+        else:
+          return nu[i]
+
+    return None

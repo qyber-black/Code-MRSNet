@@ -326,6 +326,10 @@ def add_arguments_linewidth_estimation(p):
                  help='Estimate linewidth from only the first spectrum (faster but less accurate).')
   p.add_argument('--linewidth_use_fixed', action='store_true',
                  help='Use fixed linewidth for basis generation instead of estimated values (default: use estimated).')
+  p.add_argument('--linewidth_min_snr', type=float, default=3.0,
+                 help='Minimum SNR threshold for peak detection in linewidth estimation.')
+  p.add_argument('--linewidth_max_peaks', type=int, default=3,
+                 help='Maximum number of peaks to use for averaging in linewidth estimation.')
 
 def gen_basis(args):
   """Generate basis set for MRS spectra.
@@ -1409,32 +1413,66 @@ def sim2real(args):
             print(f"# Estimated linewidth for {b_id}/{variant}: {estimated_lw:.2f} Hz")
         else:
           if args.verbose > 0:
-            print(f"# Linewidth estimation failed for {b_id}/{variant}, would use fallback: {args.linewidth_fallback:.2f} Hz")
+            print(f"# Linewidth estimation failed for {b_id}/{variant}, use fallback: {args.linewidth_fallback:.2f} Hz")
 
-      # Prepare basis with appropriate linewidth
+      # Prepare individual bases with per-spectrum linewidths
+      individual_bases = []
+      individual_linewidths = []
+
       if args.estimate_linewidth and not args.linewidth_use_fixed:
-        # Use estimated linewidth for basis generation
-        basis_linewidth = estimated_lw if estimated_lw is not None else args.linewidth_fallback
+        # Use individual estimated linewidths for each spectrum
         if args.verbose > 0:
-          print(f"# Using estimated linewidth {basis_linewidth:.2f} Hz for basis generation")
-      else:
-        # Use fixed linewidth
-        basis_linewidth = lw
-        if args.verbose > 0:
-          print(f"# Using fixed linewidth {basis_linewidth:.2f} Hz for basis generation")
+          print("# Creating individual basis sets with per-spectrum linewidths")
 
-      ba = basis.Basis(metabolites=combined.metabolites,
-                       source=src, manufacturer=man,
-                       omega=omg, linewidth=basis_linewidth,
-                       pulse_sequence=ps,
-                       sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+        for i, s in enumerate(bm.spectra):
+          # Estimate linewidth for this specific spectrum
+          spectrum_lw = estimate_linewidth_for_spectrum(s, args, verbose=0)  # Silent estimation
+
+          if spectrum_lw is not None:
+            individual_linewidths.append(spectrum_lw)
+            # Create basis with this spectrum's linewidth
+            ba_i = basis.Basis(metabolites=combined.metabolites,
+                               source=src, manufacturer=man,
+                               omega=omg, linewidth=spectrum_lw,
+                               pulse_sequence=ps,
+                               sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+            individual_bases.append(ba_i)
+            if args.verbose > 1:
+              print(f"# Spectrum {i}: using linewidth {spectrum_lw:.2f} Hz")
+          else:
+            # Fallback to averaged or fixed linewidth
+            fallback_lw = estimated_lw if estimated_lw is not None else args.linewidth_fallback
+            individual_linewidths.append(fallback_lw)
+            ba_i = basis.Basis(metabolites=combined.metabolites,
+                               source=src, manufacturer=man,
+                               omega=omg, linewidth=fallback_lw,
+                               pulse_sequence=ps,
+                               sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+            individual_bases.append(ba_i)
+            if args.verbose > 1:
+              print(f"# Spectrum {i}: estimation failed, using fallback {fallback_lw:.2f} Hz")
+      else:
+        # Use fixed linewidth for all spectra
+        if args.verbose > 0:
+          print(f"# Using fixed linewidth {lw:.2f} Hz for all spectra")
+
+        for _ in enumerate(bm.spectra):
+          individual_linewidths.append(lw)
+          ba_i = basis.Basis(metabolites=combined.metabolites,
+                             source=src, manufacturer=man,
+                             omega=omg, linewidth=lw,
+                             pulse_sequence=ps,
+                             sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+          individual_bases.append(ba_i)
 
       # Store results in path_sim2real/basis_tag, include series and variant in filenames
       out_dir = out_base
       save_prefix = f"{b_id}_{variant}"
-      _ = compare_basis(bm, ba, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
-                         out_dir=out_dir, save_prefix=save_prefix,
-                         noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu)
+
+      _ = compare_basis(bm, individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
+                        out_dir=out_dir, save_prefix=save_prefix,
+                        noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu,
+                        individual_linewidths=individual_linewidths, overall_linewidth=estimated_lw)
 
       # Append to combined dataset
       for s, c in zip(bm.spectra, bm.concentrations, strict=False):
@@ -1447,34 +1485,68 @@ def sim2real(args):
     if args.estimate_linewidth:
       estimated_lw = estimate_linewidth_from_dataset(combined, args, verbose=args.verbose)
       if estimated_lw is not None:
-        if args.verbose > 0:
-          print(f"# Estimated linewidth for combined analysis: {estimated_lw:.2f} Hz")
+        if args.verbose > 2:
+          print(f"# Estimated mean linewidth for combined analysis: {estimated_lw:.2f} Hz")
       else:
         if args.verbose > 0:
-          print(f"# Linewidth estimation failed for combined analysis, would use fallback: {args.linewidth_fallback:.2f} Hz")
+          print(f"# Linewidth estimation failed for combined analysis, use fallback: {args.linewidth_fallback:.2f} Hz")
 
-    # Prepare basis for combined analysis with appropriate linewidth
+    # Prepare individual bases for combined analysis with per-spectrum linewidths
+    combined_individual_bases = []
+    combined_individual_linewidths = []
+
     if args.estimate_linewidth and not args.linewidth_use_fixed:
-      # Use estimated linewidth for basis generation
-      basis_linewidth = estimated_lw if estimated_lw is not None else args.linewidth_fallback
-      if args.verbose > 0:
-        print(f"# Using estimated linewidth {basis_linewidth:.2f} Hz for combined analysis basis generation")
-    else:
-      # Use fixed linewidth
-      basis_linewidth = lw
-      if args.verbose > 0:
-        print(f"# Using fixed linewidth {basis_linewidth:.2f} Hz for combined analysis basis generation")
+      # Use individual estimated linewidths for each spectrum in combined analysis
+      if args.verbose > 2:
+        print("# Creating individual basis sets for combined analysis with per-spectrum linewidths")
 
-    ba = basis.Basis(metabolites=combined.metabolites,
-                     source=src, manufacturer=man,
-                     omega=omg, linewidth=basis_linewidth,
-                     pulse_sequence=ps,
-                     sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+      for i, s in enumerate(combined.spectra):
+        # Estimate linewidth for this specific spectrum
+        spectrum_lw = estimate_linewidth_for_spectrum(s, args, verbose=0)  # Silent estimation
+
+        if spectrum_lw is not None:
+          combined_individual_linewidths.append(spectrum_lw)
+          # Create basis with this spectrum's linewidth
+          ba_i = basis.Basis(metabolites=combined.metabolites,
+                             source=src, manufacturer=man,
+                             omega=omg, linewidth=spectrum_lw,
+                             pulse_sequence=ps,
+                             sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+          combined_individual_bases.append(ba_i)
+          if args.verbose > 1:
+            print(f"# Combined spectrum {i}: using linewidth {spectrum_lw:.2f} Hz")
+        else:
+          # Fallback to averaged or fixed linewidth
+          fallback_lw = estimated_lw if estimated_lw is not None else args.linewidth_fallback
+          combined_individual_linewidths.append(fallback_lw)
+          ba_i = basis.Basis(metabolites=combined.metabolites,
+                             source=src, manufacturer=man,
+                             omega=omg, linewidth=fallback_lw,
+                             pulse_sequence=ps,
+                             sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+          combined_individual_bases.append(ba_i)
+          if args.verbose > 1:
+            print(f"# Combined spectrum {i}: estimation failed, using fallback {fallback_lw:.2f} Hz")
+    else:
+      # Use fixed linewidth for all spectra in combined analysis
+      if args.verbose > 0:
+        print(f"# Using fixed linewidth {lw:.2f} Hz for all combined analysis spectra")
+
+        for _ in enumerate(combined.spectra):
+          combined_individual_linewidths.append(lw)
+          ba_i = basis.Basis(metabolites=combined.metabolites,
+                             source=src, manufacturer=man,
+                             omega=omg, linewidth=lw,
+                             pulse_sequence=ps,
+                             sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+          combined_individual_bases.append(ba_i)
 
     save_prefix = "all"
-    _ = compare_basis(combined, ba, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
+
+    _ = compare_basis(combined, combined_individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
                       out_dir=out_base, save_prefix=save_prefix,
-                      noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu)
+                      noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu,
+                      individual_linewidths=combined_individual_linewidths, overall_linewidth=estimated_lw)
 
 def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
   """Estimate linewidth for a single spectrum (individual acquisition).
@@ -1607,7 +1679,8 @@ def estimate_linewidth_from_dataset(dataset, args, verbose=0):
 
     try:
       # Estimate linewidth for this spectrum
-      estimated_lw = spectrum.estimate_linewidth(method=args.linewidth_method, verbose=verbose)
+      estimated_lw = spectrum.estimate_linewidth(method=args.linewidth_method, verbose=verbose,
+                                                 min_snr=args.linewidth_min_snr, max_peaks=args.linewidth_max_peaks)
 
       if estimated_lw is None:
         if verbose > 0:
@@ -1636,7 +1709,7 @@ def estimate_linewidth_from_dataset(dataset, args, verbose=0):
 
   else:
     # Per-spectrum estimation (default behavior)
-    if verbose > 0:
+    if verbose > 2:
       print("# Using per-spectrum linewidth estimation (recommended for MEGAPRESS)")
 
     # Collect linewidth estimates from all spectra
@@ -1666,7 +1739,8 @@ def estimate_linewidth_from_dataset(dataset, args, verbose=0):
 
       try:
         # Estimate linewidth for this spectrum
-        estimated_lw = spectrum.estimate_linewidth(method=args.linewidth_method, verbose=verbose)
+        estimated_lw = spectrum.estimate_linewidth(method=args.linewidth_method, verbose=verbose,
+                                                   min_snr=args.linewidth_min_snr, max_peaks=args.linewidth_max_peaks)
 
         if estimated_lw is not None:
           # Validate range
@@ -1705,9 +1779,6 @@ def estimate_linewidth_from_dataset(dataset, args, verbose=0):
 
     # Round to nearest step
     rounded_lw = round(estimated_lw / args.linewidth_step) * args.linewidth_step
-
-    if verbose > 0:
-      print(f"# Final linewidth estimate: {estimated_lw:.2f} Hz -> {rounded_lw:.2f} Hz (rounded to {args.linewidth_step} Hz steps)")
 
     return rounded_lw
 

@@ -24,7 +24,8 @@ from mrsnet.dataset import Dataset
 
 def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, screen_dpi=96,
                  out_dir=None, save_prefix=None,
-                 noise_mc_trials=0, noise_sigma=0.03, noise_mu=0.0):
+                 noise_mc_trials=0, noise_sigma=0.03, noise_mu=0.0,
+                 individual_linewidths=None, overall_linewidth=None):
   """Compare dataset spectra to spectra generated from basis.
 
   Generates reference spectra from a basis set using the dataset's concentrations
@@ -43,21 +44,41 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
       save_prefix (str, optional): Filename prefix for saved artifacts. Defaults to basis parameters
   """
   # Compare dataset to spectra generated from basis
-  # Setup basis
+  # Setup basis - handle both single basis and list of bases
   if verbose > 0:
     print("# Preparing reference spectra from basis")
   ref_spectra = Dataset("Basis Spectra")
   diff = 0.0
-  if verbose > 3:
-    basis.plot('magnitude','fft')
-    plt.show(block=True)
-    plt.close()
-  for l in range(len(ds.concentrations)):
-    s,c = basis.combine(ds.concentrations[l],"ref_"+ds.spectra[l]["edit_off"].id)
-    ref_spectra.spectra.append(s)
-    ref_spectra.concentrations.append(c)
-    for m in ds.metabolites:
-      diff += np.abs(c[m] - ds.concentrations[l][m])
+
+  # Check if basis is a list (individual bases) or single basis
+  if isinstance(basis, list):
+    # Individual bases for each spectrum
+    if len(basis) != len(ds.concentrations):
+      raise ValueError(f"Number of individual bases ({len(basis)}) must match number of spectra ({len(ds.concentrations)})")
+
+    for l in range(len(ds.concentrations)):
+      if verbose > 3:
+        basis[l].plot('magnitude','fft')
+        plt.show(block=True)
+        plt.close()
+      s,c = basis[l].combine(ds.concentrations[l],"ref_"+ds.spectra[l]["edit_off"].id)
+      ref_spectra.spectra.append(s)
+      ref_spectra.concentrations.append(c)
+      for m in ds.metabolites:
+        diff += np.abs(c[m] - ds.concentrations[l][m])
+  else:
+    # Single basis for all spectra
+    if verbose > 3:
+      basis.plot('magnitude','fft')
+      plt.show(block=True)
+      plt.close()
+    for l in range(len(ds.concentrations)):
+      s,c = basis.combine(ds.concentrations[l],"ref_"+ds.spectra[l]["edit_off"].id)
+      ref_spectra.spectra.append(s)
+      ref_spectra.concentrations.append(c)
+      for m in ds.metabolites:
+        diff += np.abs(c[m] - ds.concentrations[l][m])
+
   if diff > 1e-12:
     print(f"Warning, difference in concentrations between dataset and reference: {diff}")
 
@@ -85,7 +106,11 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     all_diff[:,:,l*r_inp.shape[3]:(l+1)*r_inp.shape[3]] = diff
     all_ref[:,:,l*r_inp.shape[3]:(l+1)*r_inp.shape[3]] = r_inp[l,:,:,:]
     all_dat[:,:,l*r_inp.shape[3]:(l+1)*r_inp.shape[3]] = d_inp[l,:,:,:]
-    print(f"## Spectra differences {l}: {ds.spectra[l][next(iter(ds.spectra[l].keys()))].id}")
+    # Add linewidth info to header if available
+    lw_info = ""
+    if individual_linewidths is not None and l < len(individual_linewidths) and individual_linewidths[l] is not None:
+      lw_info = f" (LW: {individual_linewidths[l]:.1f} Hz)"
+    print(f"## Spectra differences {l}: {ds.spectra[l][next(iter(ds.spectra[l].keys()))].id}{lw_info}")
     dd = np.sum(np.abs(diff),axis=2) / diff.shape[2]
     m = np.mean(diff, axis=2)
     s = np.std(diff, axis=2)
@@ -108,7 +133,11 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
       plt.show(block=True)
       plt.close()
 
-  print("# Differences over all spectra (max normalised to 1)")
+  # Add overall linewidth info to header if available
+  lw_info = ""
+  if overall_linewidth is not None:
+    lw_info = f" (Mean LW: {overall_linewidth:.1f} Hz)"
+  print(f"# Differences over all spectra (max normalised to 1){lw_info}")
   dd = np.sum(np.abs(all_diff),axis=2) / all_diff.shape[2]
   m = np.mean(all_diff, axis=2)
   s = np.std(all_diff, axis=2)
