@@ -191,6 +191,14 @@ class BasisLLSModule(keras.layers.Layer):
         freq_shifts = tf.expand_dims(freq_shifts, 1)  # (batch, 1, n_metabolites)
         linewidth_devs = tf.expand_dims(linewidth_devs, 1)  # (batch, 1, n_metabolites)
 
+        # Apply imperfection factors with consistent dtypes for complex operations
+        # Cast inputs to float32 to ensure dtype consistency when mixed precision is enabled
+        if Cfg.val.get('mixed_precision', False):
+            phase_shifts = tf.cast(phase_shifts, tf.float32)
+            freq_shifts = tf.cast(freq_shifts, tf.float32)
+            linewidth_devs = tf.cast(linewidth_devs, tf.float32)
+            freq_axis = tf.cast(freq_axis, tf.float32)
+
         # Apply phase shift: multiply by exp(i * phase_shift)
         phase_modulation = tf.exp(tf.complex(0.0, phase_shifts))
 
@@ -242,6 +250,10 @@ class BasisLLSModule(keras.layers.Layer):
         # Take real part of both basis and observed spectrum
         real_basis = tf.math.real(modulated_basis)  # (batch, n_freqs, n_metabolites)
         real_observed = tf.math.real(observed_spectrum)  # (batch, n_freqs)
+
+        # Ensure consistent dtypes for matrix operations when mixed precision is enabled
+        if Cfg.val.get('mixed_precision', False):
+            real_observed = tf.cast(real_observed, real_basis.dtype)
 
         # Solve LLS: min ||M'c - y||²
         # Solution: c = (M'^T M')^(-1) M'^T y

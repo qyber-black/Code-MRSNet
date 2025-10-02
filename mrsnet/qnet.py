@@ -424,7 +424,7 @@ class QNetModel(Model):
 
     def __init__(self, n_freqs, n_metabolites, n_if_factors=3,
                  if_scb_filters=None, mm_scb_filters=None, kernel_size=3,
-                 if_fc_units=128, mm_fc_units=512, name='QNetModel', **kwargs):
+                 if_fc_units=128, mm_fc_units=512, use_basic_lls=True, name='QNetModel', **kwargs):
         """Initialize QNet model.
 
         Parameters
@@ -455,6 +455,7 @@ class QNetModel(Model):
         self.kernel_size = kernel_size
         self.if_fc_units = if_fc_units
         self.mm_fc_units = mm_fc_units
+        self.use_basic_lls = use_basic_lls
 
         # Input layer - QNet expects 1D spectrum input
         self.input_layer = Input(shape=(n_freqs,), name='spectrum_input')
@@ -471,12 +472,15 @@ class QNetModel(Model):
         self.if_fc1 = Dense(self.if_fc_units, activation='relu', name='if_fc1')
         self.if_fc2 = Dense(n_metabolites * n_if_factors, name='if_output')
 
-        # LLS Module for concentration estimation
-        self.lls_module = BasicLLSModule(
-            n_metabolites=n_metabolites,
-            n_if_factors=n_if_factors,
-            name='basic_lls'
-        )
+        # LLS Module for concentration estimation (optional for QNetBasis)
+        if use_basic_lls:
+            self.lls_module = BasicLLSModule(
+                n_metabolites=n_metabolites,
+                n_if_factors=n_if_factors,
+                name='basic_lls'
+            )
+        else:
+            self.lls_module = None
 
         # MM Signal Prediction Module: Dynamic SCBs + 2 FCLs - DISABLED
         # Commented out to eliminate gradient warnings since MM branch is not used
@@ -516,11 +520,12 @@ class QNetModel(Model):
         self.if_fc1.build((if_input_shape[0], flattened_size))
         self.if_fc2.build((if_input_shape[0], self.if_fc_units))
 
-        # Build LLS module
+        # Build LLS module (if it exists)
         # LLS module expects input from all acquisitions combined
         # The actual input shape will be adjusted when the model is used
-        lls_input_shape = (if_input_shape[0], self.n_metabolites * self.n_if_factors)
-        self.lls_module.build(lls_input_shape)
+        if self.lls_module is not None:
+            lls_input_shape = (if_input_shape[0], self.n_metabolites * self.n_if_factors)
+            self.lls_module.build(lls_input_shape)
 
         # Mark as built
         self.built = True
@@ -567,7 +572,8 @@ class QNetModel(Model):
             'mm_scb_filters': self.mm_scb_filters,
             'kernel_size': self.kernel_size,
             'if_fc_units': self.if_fc_units,
-            'mm_fc_units': self.mm_fc_units
+            'mm_fc_units': self.mm_fc_units,
+            'use_basic_lls': self.use_basic_lls
         })
         return config
 
@@ -1771,6 +1777,7 @@ class QNetBasis(QNet):
         acquisition_outputs = []
 
         # Create a new QNetModel instance for the training model to avoid serialization issues
+        # For QNetBasis, disable BasicLLSModule since we use BasisLLSModule instead
         qnet_model = QNetModel(
             n_freqs=self.qnet_arch.n_freqs,
             n_metabolites=len(self.metabolites),
@@ -1778,6 +1785,7 @@ class QNetBasis(QNet):
             if_scb_filters=self.qnet_arch.if_scb_filters,
             kernel_size=self.qnet_arch.kernel_size,
             if_fc_units=self.qnet_arch.if_fc_units,
+            use_basic_lls=False,  # Disable BasicLLSModule for QNetBasis
             name=f'{self.model}_training'
         )
 
@@ -1970,17 +1978,17 @@ class QNetBasis(QNet):
 
         # Load the training model (which contains the BasisLLSModule)
         model.training_model = load_model(os.path.join(path, "model.keras"),
-                                         custom_objects={
-                                             "QNetModel": QNetModel,
-                                             "StackedConvolutionalBlock": StackedConvolutionalBlock,
-                                             "BasicLLSModule": BasicLLSModule,
-                                             "BasisLLSModule": BasisLLSModule,
-                                             "AcquisitionSplitter": AcquisitionSplitter,
-                                             "AcquisitionDatatypeSplitter": AcquisitionDatatypeSplitter,
-                                             "DatatypeProcessor": DatatypeProcessor,
-                                             "IFConcatenator": IFConcatenator
-                                         },
-                                         safe_mode=False)
+                                            custom_objects={
+                                                "QNetModel": QNetModel,
+                                                "StackedConvolutionalBlock": StackedConvolutionalBlock,
+                                                "BasicLLSModule": BasicLLSModule,
+                                                "BasisLLSModule": BasisLLSModule,
+                                                "AcquisitionSplitter": AcquisitionSplitter,
+                                                "AcquisitionDatatypeSplitter": AcquisitionDatatypeSplitter,
+                                                "DatatypeProcessor": DatatypeProcessor,
+                                                "IFConcatenator": IFConcatenator
+                                            },
+                                            safe_mode=False)
 
         # Extract the QNet architecture from the training model
         # The training model contains the QNetModel as a sub-model

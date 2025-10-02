@@ -106,7 +106,7 @@ class Cfg:
     'es_monitor_metric_quant': 'mae',   # used by quantification models (cnn, fcnn, qnet, qmrs, encdec)
     'es_monitor_metric_caeq': 'q_mae',  # used by combined CAEQ model (autoencoder-quantifier)
     'es_monitor_metric_ae': 'loss',     # used by pure autoencoders
-    'es_min_delta': '1e-8',             # min delta
+    'es_min_delta': 1e-8,               # min delta
     # Learning-rate scheduler monitors (ReduceLROnPlateau)
     'lr_monitor_metric_quant': 'loss',  # drive LR by optimised loss for quantifiers
     'lr_monitor_metric_caeq': 'loss',   # drive LR by total loss for CAEQ
@@ -125,9 +125,9 @@ class Cfg:
     'cache_datasets': True,             # cache tf.data pipelines before shuffle/batch
     'mixed_precision': True,            # enable global mixed precision policy before model build
     'mixed_precision_policy': 'mixed_float16',
+    'mixed_precision_auto_policy': True, # choose AMP policy automatically based on hardware
     # Determinism and AMP policy
     'deterministic_ops': False,         # enable deterministic TF ops (may reduce performance)
-    'mixed_precision_auto_policy': True # choose AMP policy automatically based on hardware
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment variable MRSNET_DEV (colon separated list),
