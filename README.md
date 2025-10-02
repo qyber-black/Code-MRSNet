@@ -293,6 +293,12 @@ sub-command only).
 
 Note, loading of non-Siemens DICOM files has not been tested.
 
+## Run command
+
+For orchestrating multiple runs via JSON, see `run.py` and the companion guide `README-run.md`.
+  * `run.py` lets you define common and per-run arguments, skips already-completed results, and handles dependencies.
+  * Example configs: `example_config.json`, `example_common_command.json`, `example_mixed_command.json`.
+
 ## Issues
 
 * If GPyOpt for gpo selection fails with "not positive definite, even with jitter.",
@@ -329,6 +335,7 @@ The mirrors are only for convenience, accessibility and backup.
 
 ## People
 
+* [Zien Ma](https://qyber.blck/zien),  [School of Computer Science and Informatics](https://www.cardiff.ac.uk/computer-science), [Cardiff University](https://www.cardiff.ac.uk/)
 * [Max Chandler](https://qyber.black/max), [School of Computer Science and Informatics](https://www.cardiff.ac.uk/computer-science), [Cardiff University](https://www.cardiff.ac.uk/)
 * [Frank C Langbein](https://qyber.black/xis10z), [School of Computer Science and Informatics](https://www.cardiff.ac.uk/computer-science), [Cardiff University](https://www.cardiff.ac.uk/); [langbein.org](https://langbein.org/)
 * [Sophie M Shermer](https://qyber.black/lw1660), [Physics](https://www.swansea.ac.uk/physics), [Swansea University](https://www.swansea.ac.uk/)
@@ -344,6 +351,6 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2025.
+Z Ma, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2025.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)

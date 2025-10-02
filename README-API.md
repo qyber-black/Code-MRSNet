@@ -753,6 +753,133 @@ for model in models:
 predictions = model.predict(inp, reshape=True)
 ```
 
+### Example: Display a spectrum (etc/display_spectrum.py)
+
+A minimal end-to-end example that loads either a simulated dataset or DICOM spectra and plots the acquisitions of a single spectrum.
+
+```python
+from mrsnet.dataset import Dataset
+import matplotlib.pyplot as plt
+
+simulated = False  # toggle between simulated and DICOM spectra
+
+if simulated:
+    path = '/absolute/path/to/data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/10000-1/'
+    ds = Dataset.load(path)
+else:
+    path = '/absolute/path/to/data/benchmark/E16/MEGA_RAW_Combi_WS_ON'
+    ds = Dataset('dicom dataset').load_dicoms(
+        path,
+        metabolites=sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA'])
+    )
+
+show_spec = 0  # index of spectrum to show
+print(f"Showing spectrum {ds.spectra[show_spec]['edit_on'].id}")
+for acq in ds.spectra[show_spec]:
+    fig = ds.spectra[show_spec][acq].plot_spectrum()
+    plt.show()
+```
+
+### Example: Export basis spectra to JSON (etc/export_bases_json.py)
+
+This example initializes configuration, constructs basis sets from multiple sources/linewidths, and saves each acquisition to JSON. The JSON contains FFT data encoded as pairs of real/imag values.
+
+```python
+import os
+from mrsnet.cfg import Cfg
+import mrsnet.basis as basis
+
+# Initialize configuration so MRSNet can resolve data/basis paths
+# If running from the repo root, you can pass the absolute path to mrsnet.py
+# e.g., Cfg.init('/absolute/path/to/repo/mrsnet.py')
+Cfg.init(os.path.dirname(os.path.realpath(__file__)))
+
+metabolites = sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA'])
+
+for source, linewidth in [
+    ('lcmodel', None),
+    ('pygamma', 1.0),
+    ('pygamma', 2.0),
+    ('pygamma', 3.0),
+    ('pygamma', 4.0),
+]:
+    ba = basis.Basis(
+        metabolites=metabolites,
+        source=source,
+        manufacturer='siemens',
+        omega=123.23,
+        linewidth=linewidth,
+        pulse_sequence='megapress',
+        sample_rate=2000,
+        samples=4096,
+    ).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+
+    for m in metabolites:
+        print(f"{source} - {linewidth}: {m}")
+        conc = {mm: 0.0 for mm in metabolites}
+        conc[m] = 1.0
+        name = "_".join([
+            ba.source,
+            ba.manufacturer,
+            str(ba.omega),
+            str(ba.linewidth),
+            ba.pulse_sequence,
+            str(ba.sample_rate),
+            str(ba.samples),
+            m,
+        ])
+        spectra, _ = ba.combine(conc, name)
+        for acq in spectra:
+            spectra[acq].save_json(f"{name}_{acq}.json")
+```
+
+### Example: Construct a spectrum from a basis (etc/construct_spectrum.py)
+
+This example normalizes user-specified metabolite concentrations, loads a chosen basis set, combines them to construct a spectrum, and plots all acquisitions.
+
+```python
+#!/usr/bin/env python3
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+from mrsnet.cfg import Cfg
+import mrsnet.basis as basis
+
+# Metabolites (sorted) and target concentrations
+metabolites = sorted(['Cr', 'GABA', 'Glu', 'Gln', 'NAA'])
+concentrations = {'Cr': 8, 'GABA': 3, 'Glu': 12, 'Gln': 3, 'NAA': 15}
+
+# Normalize concentrations (sum to 1.0)
+total = np.sum([concentrations[m] for m in concentrations])
+concentrations = {m: concentrations[m] / total for m in concentrations}
+print(f"Requested concentrations: {concentrations}")
+
+# Initialize configuration to resolve search paths
+Cfg.init(os.path.dirname(os.path.realpath(__file__)))
+
+# Create and setup a basis
+ba = basis.Basis(
+    metabolites=metabolites,
+    source='fid-a-2d',
+    manufacturer='siemens',
+    omega=123.23,
+    linewidth=2.0,
+    pulse_sequence='megapress',
+    sample_rate=2000,
+    samples=4096,
+).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+
+# Combine concentrations with basis to create a spectrum
+spectra, created_conc = ba.combine(concentrations, 'test_spectrum_id')
+print(f"Created concentrations: {created_conc}")
+
+# Plot all acquisitions
+for acq in spectra:
+    fig = spectra[acq].plot_spectrum()
+    plt.show()
+```
+
 ### Command Line Usage
 
 ```bash
