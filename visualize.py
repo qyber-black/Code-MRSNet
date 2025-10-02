@@ -5,6 +5,8 @@
 # SPDX-FileCopyrightText: Copyright (C) 2025
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Visualize aggregate results into PDF tables/plots."""
+
 from __future__ import annotations
 
 import argparse
@@ -477,7 +479,7 @@ def _render_architecture_analysis(df: pd.DataFrame, out_dir: Path, dpi: int, log
       if params:
         params['model'] = model_name
         params['val_mae_mean'] = row.get('val_mae_mean')
-        params['train_mae'] = row.get('train_mae_mean')
+        params['train_mae_mean'] = row.get('train_mae_mean')
         param_data.append(params)
 
     if not param_data:
@@ -514,8 +516,10 @@ def _create_parameter_coverage_plot(param_df: pd.DataFrame, arch: str, out_dir: 
   fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
   if n_params == 1:
     axes = [axes]
-  elif n_rows == 1:
+  elif n_rows == 1 and n_cols == 1:
     axes = [axes]
+  elif n_rows == 1 or n_cols == 1:
+    axes = axes.flatten()
   else:
     axes = axes.flatten()
 
@@ -588,8 +592,10 @@ def _create_parameter_impact_plot(param_df: pd.DataFrame, arch: str, out_dir: Pa
   fig, axes = plt.subplots(n_rows, n_cols, figsize=(8 * n_cols, 6 * n_rows))
   if n_params == 1:
     axes = [axes]
-  elif n_rows == 1:
+  elif n_rows == 1 and n_cols == 1:
     axes = [axes]
+  elif n_rows == 1 or n_cols == 1:
+    axes = axes.flatten()
   else:
     axes = axes.flatten()
 
@@ -673,21 +679,21 @@ def _create_parameter_impact_plot(param_df: pd.DataFrame, arch: str, out_dir: Pa
 
 def _create_parameter_correlation_plot(param_df: pd.DataFrame, arch: str, out_dir: Path, dpi: int) -> None:
   """Create correlation matrix plot showing relationships between parameters and performance."""
-  # Find numeric parameters and performance metrics
+  # Find numeric parameters (exclude performance metrics)
   numeric_params = []
   for col in param_df.columns:
-    if col not in ['model', 'val_mae', 'train_mae', 'simplified_name'] and param_df[col].dtype in ['int64', 'float64']:
+    if (col not in ['model', 'val_mae_mean', 'train_mae_mean', 'simplified_name'] and
+        not col.startswith('val_mae_fold') and
+        not col.startswith('train_mae_fold') and
+        not col.endswith('_std') and
+        param_df[col].dtype in ['int64', 'float64']):
       numeric_params.append(col)
 
-  # Add performance metrics
-  performance_cols = ['val_mae_mean', 'train_mae_mean']
-  available_perf = [col for col in performance_cols if col in param_df.columns]
-
-  if not numeric_params or not available_perf:
+  if not numeric_params:
     return
 
-  # Create correlation matrix
-  corr_data = param_df[numeric_params + available_perf].corr()
+  # Create correlation matrix (only architecture parameters)
+  corr_data = param_df[numeric_params].corr()
 
   # Create the plot
   fig, ax = plt.subplots(figsize=(10, 8))
@@ -817,8 +823,10 @@ def _create_parameter_value_performance_plot(param_df: pd.DataFrame, arch: str, 
   fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
   if n_params == 1:
     axes = [axes]
-  elif n_rows == 1:
+  elif n_rows == 1 and n_cols == 1:
     axes = [axes]
+  elif n_rows == 1 or n_cols == 1:
+    axes = axes.flatten()
   else:
     axes = axes.flatten()
 
@@ -914,14 +922,26 @@ def _create_parameter_value_performance_plot(param_df: pd.DataFrame, arch: str, 
 
 def _create_parameter_interaction_plot(param_df: pd.DataFrame, arch: str, out_dir: Path, dpi: int) -> None:
   """Create heatmap showing parameter interaction effects on performance."""
-  # Find numeric parameters
+  # Find numeric parameters (exclude performance metrics)
   numeric_params = []
   for col in param_df.columns:
-    if col not in ['model', 'val_mae', 'train_mae', 'simplified_name'] and param_df[col].dtype in ['int64', 'float64']:
+    if (col not in ['model', 'val_mae_mean', 'train_mae_mean', 'simplified_name'] and
+        not col.startswith('val_mae_fold') and
+        not col.startswith('train_mae_fold') and
+        not col.endswith('_std') and
+        param_df[col].dtype in ['int64', 'float64']):
       numeric_params.append(col)
 
-  if len(numeric_params) < 2 or 'val_mae_mean' not in param_df.columns:
+  if len(numeric_params) < 2:
     return
+
+  # Determine performance column to use
+  if 'val_mae_mean' in param_df.columns and not param_df['val_mae_mean'].isna().all():
+    perf_col = 'val_mae_mean'
+  elif 'train_mae_mean' in param_df.columns and not param_df['train_mae_mean'].isna().all():
+    perf_col = 'train_mae_mean'
+  else:
+    return  # No valid performance data
 
   # Create interaction matrix
   n_params = len(numeric_params)
@@ -932,10 +952,10 @@ def _create_parameter_interaction_plot(param_df: pd.DataFrame, arch: str, out_di
       if i != j:
         # Calculate interaction effect (correlation between param1*param2 and performance)
         interaction_term = param_df[param1] * param_df[param2]
-        interaction_matrix[i, j] = interaction_term.corr(param_df['val_mae_mean'])
+        interaction_matrix[i, j] = interaction_term.corr(param_df[perf_col])
       else:
-        # Diagonal: individual parameter correlation
-        interaction_matrix[i, j] = param_df[param1].corr(param_df['val_mae_mean'])
+        # Diagonal: individual parameter correlation with performance
+        interaction_matrix[i, j] = param_df[param1].corr(param_df[perf_col])
 
   # Create the plot
   fig, ax = plt.subplots(figsize=(max(8, n_params * 0.8), max(6, n_params * 0.8)))
@@ -960,7 +980,8 @@ def _create_parameter_interaction_plot(param_df: pd.DataFrame, arch: str, out_di
 
   # Add colorbar
   cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-  cbar.set_label('Correlation with Validation MAE', rotation=270, labelpad=20)
+  perf_label = 'Validation MAE' if perf_col == 'val_mae_mean' else 'Training MAE'
+  cbar.set_label(f'Correlation with {perf_label}', rotation=270, labelpad=20)
 
   ax.set_title(f'{arch.upper()}: Parameter Interaction Effects', fontsize=14, fontweight='bold')
 
@@ -972,10 +993,15 @@ def _create_parameter_interaction_plot(param_df: pd.DataFrame, arch: str, out_di
 
 def _create_coverage_gaps_plot(param_df: pd.DataFrame, arch: str, out_dir: Path, dpi: int) -> None:
   """Create plot showing parameter space coverage gaps and completeness."""
-  # Find numeric parameters
+  # Find numeric parameters (exclude performance metrics)
   numeric_params = []
   for col in param_df.columns:
-    if col not in ['model', 'val_mae_mean', 'train_mae_mean', 'simplified_name'] and param_df[col].dtype in ['int64', 'float64']:
+    # Exclude performance metrics and fold data
+    if (col not in ['model', 'val_mae_mean', 'train_mae_mean', 'train_mae', 'simplified_name'] and
+        not col.startswith('val_mae_fold') and
+        not col.startswith('train_mae_fold') and
+        not col.endswith('_std') and
+        param_df[col].dtype in ['int64', 'float64']):
       numeric_params.append(col)
 
   if len(numeric_params) < 2:
@@ -1016,14 +1042,16 @@ def _create_coverage_gaps_plot(param_df: pd.DataFrame, arch: str, out_dir: Path,
   fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
   if n_pairs == 1:
     axes = [axes]
-  elif n_rows == 1:
+  elif n_rows == 1 and n_cols == 1:
     axes = [axes]
+  elif n_rows == 1 or n_cols == 1:
+    axes = axes.flatten()
   else:
     axes = axes.flatten()
 
   pair_idx = 0
   for i, param1 in enumerate(top_params):
-    for j, param2 in enumerate(top_params[i+1:], i+1):
+    for _j, param2 in enumerate(top_params[i+1:], i+1):
       if pair_idx >= n_pairs:
         break
 
@@ -1452,6 +1480,7 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
 
 
 def main() -> None:
+  """Visualize aggregate CSV into PDF plots/tables."""
   parser = argparse.ArgumentParser(description='Visualize aggregate CSV into PDF plots/tables.')
   parser.add_argument('root', type=str, help='Model root folder')
   parser.add_argument('--top_n', type=int, default=25, help='Top N entries to show')

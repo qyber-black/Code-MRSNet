@@ -2,7 +2,7 @@
   "common": {
     "metabolites": ["Cr", "GABA", "Gln", "Glu", "NAA"],
     "dataset": "data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/10000-1",
-    "epochs": 3,
+    "epochs": 2000,
     "validate": 0,
     "batchsize": 16,
     "norm": "sum"
