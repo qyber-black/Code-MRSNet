@@ -574,21 +574,24 @@ class Autoencoder:
       self.ae.decoder.summary()
 
     timer = TimeHistory(epochs)
+    # Decouple ES and LR monitors: both loss by default for AE, but keep config flexibility
     if val_data is not None:
-      monitor_metric = f"val_{Cfg.val.get('monitor_metric_ae','loss')}"
+      es_monitor_metric = f"val_{Cfg.val.get('es_monitor_metric_ae','loss')}"
+      lr_monitor_metric = f"val_{Cfg.val.get('lr_monitor_metric_ae','loss')}"
     else:
-      metric_ae = Cfg.val.get('monitor_metric_ae','loss')
-      monitor_metric = metric_ae if (metric_ae == 'loss' or metric_ae in getattr(self.ae, 'metrics_names', [])) else 'loss'
+      metric_ae = Cfg.val.get('es_monitor_metric_ae','loss')
+      es_monitor_metric = metric_ae if (metric_ae == 'loss' or metric_ae in getattr(self.ae, 'metrics_names', [])) else 'loss'
+      lr_monitor_metric = Cfg.val.get('lr_monitor_metric_ae','loss')
     callbacks = [
-      keras.callbacks.EarlyStopping(monitor=monitor_metric,
-                                     min_delta=1e-8,
+      keras.callbacks.EarlyStopping(monitor=es_monitor_metric,
+                                     min_delta=Cfg.val.get('es_min_delta', 1e-8),
                                      patience=Cfg.val.get('early_stopping_patience', 25),
                                      mode='min',
                                      verbose=(verbose > 0),
                                      restore_best_weights=True),
-      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+      keras.callbacks.ReduceLROnPlateau(monitor=lr_monitor_metric,
                                         factor=0.5,
-                                        patience=10,
+                                        patience=Cfg.val.get('reduce_lr_patience', 20),
                                         min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
                                         mode='min',
                                         verbose=(verbose > 0)),
@@ -785,17 +788,23 @@ class Autoencoder:
       self.ae.quantifier.summary()
 
     timer = TimeHistory(epochs)
-    monitor_metric = 'val_loss' if val_data is not None else 'loss'
+    # AE Quantifier training part: keep loss for both ES and LR by default
+    if val_data is not None:
+      es_monitor_metric = 'val_loss'
+      lr_monitor_metric = f"val_{Cfg.val.get('lr_monitor_metric_ae','loss')}"
+    else:
+      es_monitor_metric = 'loss'
+      lr_monitor_metric = Cfg.val.get('lr_monitor_metric_ae','loss')
     callbacks = [
-      keras.callbacks.EarlyStopping(monitor=monitor_metric,
-                                     min_delta=1e-8,
+      keras.callbacks.EarlyStopping(monitor=es_monitor_metric,
+                                     min_delta=Cfg.val.get('es_min_delta', 1e-8),
                                      patience=Cfg.val.get('early_stopping_patience', 25),
                                      mode='min',
                                      verbose=(verbose > 0),
                                      restore_best_weights=True),
-      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+      keras.callbacks.ReduceLROnPlateau(monitor=lr_monitor_metric,
                                         factor=0.5,
-                                        patience=10,
+                                        patience=Cfg.val.get('reduce_lr_patience', 20),
                                         min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
                                         mode='min',
                                         verbose=(verbose > 0)),

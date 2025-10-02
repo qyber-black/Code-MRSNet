@@ -515,22 +515,25 @@ class AutoencoderQuantifier:
 
 
     timer = TimeHistory(epochs)
-    # Prefer quantification MAE when available; fallback to loss
+    # Decouple monitors: ES on q_mae, LR on total loss. Gate ES until after ramp warmup.
     if v_data is not None:
-      monitor_metric = f"val_{Cfg.val.get('monitor_metric_caeq','q_mae')}"
+      es_monitor_metric = f"val_{Cfg.val.get('es_monitor_metric_caeq','q_mae')}"
+      lr_monitor_metric = f"val_{Cfg.val.get('lr_monitor_metric_caeq','loss')}"
     else:
       # For CAEQ training model, metrics are a dict per output; fall back to loss on training-only
-      monitor_metric = 'loss'
+      es_monitor_metric = 'loss'
+      lr_monitor_metric = Cfg.val.get('lr_monitor_metric_caeq','loss')
     callbacks = [
-      keras.callbacks.EarlyStopping(monitor=monitor_metric,
-                                    min_delta=1e-8,
+      keras.callbacks.EarlyStopping(monitor=es_monitor_metric,
+                                    min_delta=Cfg.val.get('es_min_delta', 1e-8),
                                     patience=Cfg.val.get('early_stopping_patience', 25),
+                                    start_from_epoch=Cfg.val.get('caeq_weight_ramp_warmup_epochs', 25),
                                     mode='min',
                                     verbose=(verbose > 0),
                                     restore_best_weights=True),
-      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+      keras.callbacks.ReduceLROnPlateau(monitor=lr_monitor_metric,
                                         factor=0.5,
-                                        patience=10,
+                                        patience=max(Cfg.val.get('reduce_lr_patience', 20), Cfg.val.get('caeq_weight_ramp_warmup_epochs', 25)) + Cfg.val.get('caeq_weight_ramp_cooldown', 5),
                                         min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
                                         mode='min',
                                         verbose=(verbose > 0)),

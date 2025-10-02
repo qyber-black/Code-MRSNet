@@ -99,28 +99,35 @@ class Cfg:
     # Training control defaults
     'early_stopping_patience': 25,
     'reduce_lr_min_lr': 1e-7,
+    'reduce_lr_patience': 20,           # default patience for ReduceLROnPlateau
     # Prediction pipeline batch sizes
     'predict_batch_size': 32,
-    # Monitoring preferences for callbacks
-    'monitor_metric_quant': 'mae',      # used by quantification models (cnn, fcnn, qnet, qmrs, encdec)
-    'monitor_metric_caeq': 'q_mae',     # used by combined CAEQ model (autoencoder-quantifier)
-    'monitor_metric_ae': 'loss',        # used by pure autoencoders
+    # EarlyStopping monitors
+    'es_monitor_metric_quant': 'mae',   # used by quantification models (cnn, fcnn, qnet, qmrs, encdec)
+    'es_monitor_metric_caeq': 'q_mae',  # used by combined CAEQ model (autoencoder-quantifier)
+    'es_monitor_metric_ae': 'loss',     # used by pure autoencoders
+    'es_min_delta': '1e-8',             # min delta
+    # Learning-rate scheduler monitors (ReduceLROnPlateau)
+    'lr_monitor_metric_quant': 'loss',  # drive LR by optimised loss for quantifiers
+    'lr_monitor_metric_caeq': 'loss',   # drive LR by total loss for CAEQ
+    'lr_monitor_metric_ae': 'loss',     # drive LR by loss for autoencoders
     # CAEQ head loss weights (hardcoded interface for now; future: per-run)
     'caeq_weight_ae': 1.0,
     'caeq_weight_q': 1.0,
+    # CAEQ quantifier weight ramp
+    'caeq_weight_ramp': True,
+    'caeq_weight_ramp_warmup_epochs': 25,
+    'caeq_weight_ramp_cooldown': 5,
+    'caeq_weight_q_start': 0.1,         # starting weight for quantifier during ramp (target: caeq_weight_q)
     # Training stability/perf
-    'mixed_precision': True,            # enable global mixed precision policy before model build
-    'mixed_precision_policy': 'mixed_float16',
     'optimizer_clipnorm': 1.0,          # sensible default for gradient clipping by norm; set 0.0 to disable
     'optimizer_clipvalue': 0.0,         # >0 enables gradient clipping by value
     'cache_datasets': True,             # cache tf.data pipelines before shuffle/batch
+    'mixed_precision': True,            # enable global mixed precision policy before model build
+    'mixed_precision_policy': 'mixed_float16',
     # Determinism and AMP policy
     'deterministic_ops': False,         # enable deterministic TF ops (may reduce performance)
-    'mixed_precision_auto_policy': True,# choose AMP policy automatically based on hardware
-    # CAEQ quantifier weight ramp
-    'caeq_weight_ramp': True,
-    'caeq_weight_ramp_warmup_epochs': 10,
-    'caeq_weight_q_start': 0.1         # starting weight for quantifier during ramp (target: caeq_weight_q)
+    'mixed_precision_auto_policy': True # choose AMP policy automatically based on hardware
   }
   # Development flags for extra functionalities and test (not relevant for use).
   # These are set via the environment variable MRSNET_DEV (colon separated list),

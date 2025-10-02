@@ -350,21 +350,23 @@ class CNN:
       self.cnn_arch.summary()
 
     timer = TimeHistory(epochs)
-    # Prefer quantification MAE when available; fallback to loss
+    # Decoupled monitors for EarlyStopping and ReduceLROnPlateau
     if validation_data is not None:
-      monitor_metric = f"val_{Cfg.val.get('monitor_metric_quant','mae')}"
+      es_monitor_metric = f"val_{Cfg.val.get('es_monitor_metric_quant','mae')}"
+      lr_monitor_metric = f"val_{Cfg.val.get('lr_monitor_metric_quant','loss')}"
     else:
-      monitor_metric = Cfg.val.get('monitor_metric_quant','mae') if 'mae' in self.cnn_arch.metrics_names else 'loss'
+      es_monitor_metric = Cfg.val.get('es_monitor_metric_quant','mae') if 'mae' in self.cnn_arch.metrics_names else 'loss'
+      lr_monitor_metric = Cfg.val.get('lr_monitor_metric_quant','loss')
     callbacks = [
-      keras.callbacks.EarlyStopping(monitor=monitor_metric,
-                                    min_delta=1e-8,
+      keras.callbacks.EarlyStopping(monitor=es_monitor_metric,
+                                    min_delta=Cfg.val.get('es_min_delta', 1e-8),
                                     patience=Cfg.val.get('early_stopping_patience', 25),
                                     mode='min',
                                     verbose=(verbose > 0),
                                     restore_best_weights=True),
-      keras.callbacks.ReduceLROnPlateau(monitor=monitor_metric,
+      keras.callbacks.ReduceLROnPlateau(monitor=lr_monitor_metric,
                                         factor=0.5,
-                                        patience=10,
+                                        patience=Cfg.val.get('reduce_lr_patience', 20),
                                         min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
                                         mode='min',
                                         verbose=(verbose > 0)),
