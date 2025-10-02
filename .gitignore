@@ -10,6 +10,7 @@ __pycache__
 /data/model*
 /data/sim-spectra*
 /data/data-exp*
+/data/sim2real*
 /local/**
 /mrsnet/simulators/pygamma/gamma/
 /.idea

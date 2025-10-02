@@ -299,6 +299,16 @@ For orchestrating multiple runs via JSON, see `run.py` and the companion guide `
   * `run.py` lets you define common and per-run arguments, skips already-completed results, and handles dependencies.
   * Example configs: `example_config.json`, `example_common_command.json`, `example_mixed_command.json`.
 
+### Aggregating results
+
+After you have training/validation and benchmark outputs, you can aggregate results into a single CSV per model root:
+
+```
+./aggregate.py PATH_TO_MODEL_ROOT
+```
+
+This writes `PATH_TO_MODEL_ROOT/aggregate/all_results.csv` (overwriting if it exists).
+
 ## Issues
 
 * If GPyOpt for gpo selection fails with "not positive definite, even with jitter.",
