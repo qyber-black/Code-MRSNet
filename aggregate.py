@@ -59,6 +59,36 @@ class ModelProps:
   flops: float | int | None
 
 
+@dataclass
+class GroupedRun:
+  """Represents a group of runs for the same model configuration across different trainer types."""
+
+  # Model configuration (excluding trainer)
+  model_name: str
+  dataset_name: str
+  metabolites: str | None
+  pulse_sequence: str | None
+  acquisitions: str | None
+  datatype: str | None
+  norm: str | None
+  batchsize: str | None
+  epochs: str | None
+
+  # Combined trainer information
+  trainer_types: list[str]  # List of trainer types found (e.g., ["KFold_", "Split_"])
+  trainer_paths: list[str]  # List of paths to trainer directories
+
+  # Combined model properties (should be identical across runs)
+  model_props: ModelProps
+
+  # Combined training/validation data
+  all_val_maes: list[float | None]  # All validation MAEs from all trainer types
+  all_train_maes: list[float | None]  # All training MAEs from all trainer types
+
+  # Combined benchmark data
+  combined_benchmarks: dict[str, dict[str, float | None]]
+
+
 def _iter_trainer_dirs(root: Path) -> Iterable[Path]:
   for p in root.rglob("*"):
     if p.is_dir() and p.name.startswith(TRAINER_PREFIXES):
@@ -208,6 +238,21 @@ def _safe_float(v) -> float | None:
     return None
 
 
+def _create_grouping_key(meta: RunMeta) -> tuple:
+  """Create a grouping key for runs based on model configuration (excluding trainer type)."""
+  return (
+    meta.model_name,
+    meta.dataset_name,
+    meta.metabolites,
+    meta.pulse_sequence,
+    meta.acquisitions,
+    meta.datatype,
+    meta.norm,
+    meta.batchsize,
+    meta.epochs,
+  )
+
+
 def _extract_mae(j: dict | None) -> float | None:
   try:
     return float(j["total"]["abserror"]["mean"]) if j else None
@@ -269,41 +314,38 @@ def _collect_benchmarks(trainer_dir: Path) -> dict[str, dict[str, float | None]]
   return res
 
 
-def _flatten_row(
-  meta: RunMeta,
-  props: ModelProps,
-  val_maes: list[float | None],
-  train_maes: list[float | None],
-  bench: dict[str, dict[str, float | None]],
+def _flatten_grouped_row(
+  grouped_run: GroupedRun,
   bench_keys_all: list[str],
 ) -> dict:
   row: dict[str, object] = {}
   # Meta
   row.update(
     {
-      "model": meta.model_name,
-      "trainer": meta.trainer,
-      "dataset": meta.dataset_name,
-      "metabolites": meta.metabolites,
-      "pulse": meta.pulse_sequence,
-      "acq": meta.acquisitions,
-      "datatype": meta.datatype,
-      "norm": meta.norm,
-      "batch": meta.batchsize,
-      "epochs": meta.epochs,
+      "model": grouped_run.model_name,
+      "trainer": "+".join(sorted(grouped_run.trainer_types)),  # Combined trainer types
+      "dataset": grouped_run.dataset_name,
+      "metabolites": grouped_run.metabolites,
+      "pulse": grouped_run.pulse_sequence,
+      "acq": grouped_run.acquisitions,
+      "datatype": grouped_run.datatype,
+      "norm": grouped_run.norm,
+      "batch": grouped_run.batchsize,
+      "epochs": grouped_run.epochs,
     }
   )
 
   # Trainer summary
-  row["num_folds"] = len(val_maes) if val_maes else (len(train_maes) if train_maes else 0)
+  row["num_folds"] = len(grouped_run.all_val_maes) if grouped_run.all_val_maes else (len(grouped_run.all_train_maes) if grouped_run.all_train_maes else 0)
+  row["num_trainer_types"] = len(grouped_run.trainer_types)
 
-  # Per-fold columns: ordered and contiguous
-  for i, v in enumerate(val_maes):
+  # Per-fold columns: ordered and contiguous (all folds from all trainer types)
+  for i, v in enumerate(grouped_run.all_val_maes):
     row[f"val_mae_fold{i}"] = None if v is None else float(v)
-  for i, t in enumerate(train_maes):
+  for i, t in enumerate(grouped_run.all_train_maes):
     row[f"train_mae_fold{i}"] = None if t is None else float(t)
 
-  # Aggregates (mean/std) when multi-fold available
+  # Aggregates (mean/std) across all folds from all trainer types
   def _safe_mean(xs: list[float | None]) -> float | None:
     vals = [float(x) for x in xs if x is not None]
     return (sum(vals) / len(vals)) if vals else None
@@ -315,24 +357,24 @@ def _flatten_row(
     m = sum(vals) / len(vals)
     return (sum((x - m) ** 2 for x in vals) / len(vals)) ** 0.5
 
-  row["val_mae_mean"] = _safe_mean(val_maes)
-  row["val_mae_std"] = _safe_std(val_maes)
-  row["train_mae_mean"] = _safe_mean(train_maes)
-  row["train_mae_std"] = _safe_std(train_maes)
+  row["val_mae_mean"] = _safe_mean(grouped_run.all_val_maes)
+  row["val_mae_std"] = _safe_std(grouped_run.all_val_maes)
+  row["train_mae_mean"] = _safe_mean(grouped_run.all_train_maes)
+  row["train_mae_std"] = _safe_std(grouped_run.all_train_maes)
 
   # Model props
   row.update(
     {
-      "total_params": props.total_params,
-      "trainable_params": props.trainable_params,
-      "non_trainable_params": props.non_trainable_params,
-      "flops": props.flops,
+      "total_params": grouped_run.model_props.total_params,
+      "trainable_params": grouped_run.model_props.trainable_params,
+      "non_trainable_params": grouped_run.model_props.non_trainable_params,
+      "flops": grouped_run.model_props.flops,
     }
   )
 
   # Benchmarks: ensure stable set of columns across rows
   for bk in bench_keys_all:
-    m = bench.get(bk, {})
+    m = grouped_run.combined_benchmarks.get(bk, {})
     row[f"bench_{bk}_mae"] = m.get("mae")
     row[f"bench_{bk}_mae_std"] = m.get("mae_std")
     row[f"bench_{bk}_mae_min"] = m.get("mae_min")
@@ -387,16 +429,69 @@ def main() -> None:
     bench_keys_all.update(bench.keys())
   bench_keys_list = sorted(bench_keys_all)
 
-  # Second pass: assemble rows
-  rows: list[dict] = []
+  # Group runs by model configuration (excluding trainer type)
+  grouped_runs: dict[tuple, GroupedRun] = {}
+
   for td in trainer_dirs:
     meta = _load_meta(td, root)
     if meta is None:
       continue
-    props = _load_model_props(td)
-    val_maes, train_maes = _collect_train_val_maes(td)
-    bench = bench_cache.get(str(td), {})
-    row = _flatten_row(meta, props, val_maes, train_maes, bench, bench_keys_list)
+
+    grouping_key = _create_grouping_key(meta)
+
+    if grouping_key not in grouped_runs:
+      # Create new grouped run
+      props = _load_model_props(td)
+      val_maes, train_maes = _collect_train_val_maes(td)
+      bench = bench_cache.get(str(td), {})
+
+      grouped_runs[grouping_key] = GroupedRun(
+        model_name=meta.model_name,
+        dataset_name=meta.dataset_name,
+        metabolites=meta.metabolites,
+        pulse_sequence=meta.pulse_sequence,
+        acquisitions=meta.acquisitions,
+        datatype=meta.datatype,
+        norm=meta.norm,
+        batchsize=meta.batchsize,
+        epochs=meta.epochs,
+        trainer_types=[meta.trainer],
+        trainer_paths=[meta.path],
+        model_props=props,
+        all_val_maes=val_maes.copy(),
+        all_train_maes=train_maes.copy(),
+        combined_benchmarks=bench.copy(),
+      )
+    else:
+      # Add to existing grouped run
+      existing = grouped_runs[grouping_key]
+      existing.trainer_types.append(meta.trainer)
+      existing.trainer_paths.append(meta.path)
+
+      # Collect additional MAEs
+      val_maes, train_maes = _collect_train_val_maes(td)
+      existing.all_val_maes.extend(val_maes)
+      existing.all_train_maes.extend(train_maes)
+
+      # Combine benchmark data (average across trainer types)
+      bench = bench_cache.get(str(td), {})
+      for bench_name, bench_metrics in bench.items():
+        if bench_name not in existing.combined_benchmarks:
+          existing.combined_benchmarks[bench_name] = bench_metrics.copy()
+        else:
+          # Average benchmark metrics across trainer types
+          existing_metrics = existing.combined_benchmarks[bench_name]
+          for metric_name in ["mae", "mae_std", "mae_min", "mae_max"]:
+            if existing_metrics.get(metric_name) is not None and bench_metrics.get(metric_name) is not None:
+              # Simple average for now - could be improved with proper statistical aggregation
+              existing_metrics[metric_name] = (existing_metrics[metric_name] + bench_metrics[metric_name]) / 2
+            elif bench_metrics.get(metric_name) is not None:
+              existing_metrics[metric_name] = bench_metrics[metric_name]
+
+  # Convert grouped runs to rows
+  rows: list[dict] = []
+  for grouped_run in grouped_runs.values():
+    row = _flatten_grouped_row(grouped_run, bench_keys_list)
     rows.append(row)
 
   # Write CSV under <root>/aggregate/
@@ -404,7 +499,7 @@ def main() -> None:
   out_csv = out_dir / "all_results.csv"
   _write_csv(rows, out_csv)
 
-  print(f"Aggregated {len(rows)} runs. Written CSV: {out_csv}")
+  print(f"Aggregated {len(rows)} grouped model configurations from {len(trainer_dirs)} individual runs. Written CSV: {out_csv}")
 
 
 if __name__ == "__main__":
