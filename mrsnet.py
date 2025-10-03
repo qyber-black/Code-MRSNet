@@ -1469,10 +1469,16 @@ def sim2real(args):
       out_dir = out_base
       save_prefix = f"{b_id}_{variant}"
 
+      # Calculate series-specific linewidth (median of individual linewidths for this series)
+      series_lw = None
+      if individual_linewidths:
+        import numpy as np
+        series_lw = float(np.median(individual_linewidths))
+
       _ = compare_basis(bm, individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
                         out_dir=out_dir, save_prefix=save_prefix,
                         noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu,
-                        individual_linewidths=individual_linewidths, overall_linewidth=estimated_lw)
+                        individual_linewidths=individual_linewidths, overall_linewidth=series_lw)
 
       # Append to combined dataset
       for s, c in zip(bm.spectra, bm.concentrations, strict=False):
