@@ -1,7 +1,7 @@
 % run_simMegaPressShapedEdit_2D.m
 %
 % SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com>, Swansea University
-% SPDX-FileCopyrightText: Copyright (C) 2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+% SPDX-FileCopyrightText: Copyright (C) 2021-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 % SPDX-License-Identifier: BSD-3-Clause
 %
 % USAGE:
@@ -26,6 +26,16 @@
 
 if ~exist(save_dir, 'dir')
   mkdir(save_dir);
+end
+
+% Optional switch: when true, cache unbroadened results and apply linewidths post hoc
+if ~exist('use_cached_unbroadened','var') || isempty(use_cached_unbroadened)
+  use_cached_unbroadened = false;
+end
+
+% Optional cache directory for unbroadened results
+if ~exist('cache_dir','var') || isempty(cache_dir)
+  cache_dir = fullfile(save_dir, 'cache_unbroadened');
 end
 
 gamma  = 42577000;                         % gyromagnetic ratio (approximate!)
@@ -81,37 +91,47 @@ p.Gy        = (refRF.tbw/(p.refTp/1000))/(gamma*p.thkY/10000); %[G/cm]
 totalIters = length(p.x)*length(p.y)*length(p.editPhCyc1)*length(p.editPhCyc2)*length(p.refPhCyc1)*length(p.refPhCyc2)
 
 for ii = 1:length(metabolites)
-    for jj = 1:length(linewidths)
-
-      p.lw    = linewidths(jj);   % change lw default
-      spinSys = metabolites{ii}; % spin system to simulate
-      load spinSystems;          % load spin systems and select desired metabolite
+    if use_cached_unbroadened
+      % Use cache-based generator: simulate once unbroadened and apply all linewidths
+      spinSys = metabolites{ii};
+      load spinSystems;
       sys = eval(['sys' spinSys])
+      m_name = metabolites{ii};
+      omega  = p.Bfield*gamma*1e-6; % MHz
+      generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save_dir, cache_dir);
+    else
+      for jj = 1:length(linewidths)
 
-      % Run full simulation and save output in f_name
-      f_name = sprintf('FIDA2D_%s_MEGAPRESS_ALL_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, mrsnet_omega);
-      [ON,OFF,DIFF] = SimMega2D(sys,p,f_name,save_dir);
+        p.lw    = linewidths(jj);   % change lw default
+        spinSys = metabolites{ii}; % spin system to simulate
+        load spinSystems;          % load spin systems and select desired metabolite
+        sys = eval(['sys' spinSys])
 
-      % Save average edit ON and OFF spectra separately
-      % basic sequence parameters
-      pulse_sequence = 'megapress';
-      linewidth      = OFF.linewidth;
-      omega          = OFF.Bo*gamma*1e-6;    % omega = gamma*Bo in MHz
-      m_name         = metabolites{ii};
-      % fixed parameters
-      t    = OFF.t;
-      nu   = OFF.ppm;
-      % edit off
-      edit = false;
-      fid  = OFF.fids;
-      fft  = OFF.specs;
-      f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega);
-      save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
-      % edit on
-      edit = true;
-      fid = ON.fids;
-      fft = ON.specs;
-      f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega);
-      save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
+        % Run full simulation and save output in f_name
+        f_name = sprintf('FIDA2D_%s_MEGAPRESS_ALL_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, mrsnet_omega);
+        [ON,OFF,DIFF] = SimMega2D(sys,p,f_name,save_dir);
+
+        % Save average edit ON and OFF spectra separately
+        % basic sequence parameters
+        pulse_sequence = 'megapress';
+        linewidth      = OFF.linewidth;
+        omega          = OFF.Bo*gamma*1e-6;    % omega = gamma*Bo in MHz
+        m_name         = metabolites{ii};
+        % fixed parameters
+        t    = OFF.t;
+        nu   = OFF.ppm;
+        % edit off
+        edit = false;
+        fid  = OFF.fids;
+        fft  = OFF.specs;
+        f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega);
+        save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
+        % edit on
+        edit = true;
+        fid = ON.fids;
+        fft = ON.specs;
+        f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, omega);
+        save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
+      end
     end
 end

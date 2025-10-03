@@ -1,7 +1,7 @@
 # simulators/fida/fida_simulator.py - MRSNet - generated simulated FID-A basis spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com> Swansea University
 # SPDX-License-Identifier: BSD-3-Clause
 
@@ -54,6 +54,11 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
 
   matlab_command += "linewidths=["+str(linewidth)+"];"
   matlab_command += "save_dir='"+save_dir+"';"
+  # Enable cached-unbroadened pathway for fid-a-2d and set cache_dir under basis path
+  if source == "fid-a-2d":
+    cache_dir = os.path.join(Cfg.val['path_basis'], 'fid-a-2d', 'cache_unbroadened')
+    matlab_command += "use_cached_unbroadened=true;"
+    matlab_command += "cache_dir='"+cache_dir+"';"
 
   matlab_command += script+";exit;exit;"
 
