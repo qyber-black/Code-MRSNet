@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
+from scipy import stats
 
 CONC_ARCHS = ("cnn", "fcnn", "qmrs", "qnet", "qnet_basis", "encdec", "caeq", "aeq")
 SPEC_ARCHS = ("ae", "caeq")
@@ -50,7 +51,8 @@ def _shorten_acq_text(val: object) -> str:
   sl = s.lower()
   # Replace common acquisition tokens
   sl = sl.replace('edit_off', 'off')
-  sl = sl.replace('edit-on', 'on')
+  sl = sl.replace('edit_on', 'on')
+  sl = sl.replace('edit-on', 'on')  # Keep both underscore and hyphen versions
   sl = sl.replace('difference', 'diff')
   return sl
 
@@ -70,6 +72,129 @@ def _collect_folds(row: pd.Series, prefix: str) -> list[float]:
         pass
     i += 1
   return vals
+
+
+def _statistical_significance_test(rows: pd.DataFrame, alpha: float = 0.05, method: str = 'consecutive', sensitivity: str = 'standard') -> list[tuple[int, int]]:
+  """Perform statistical significance tests on Validation MAE distributions.
+
+  Uses Mann-Whitney U test to compare Validation MAE distributions between models.
+  Red dashed lines in the visualization separate models with significantly different distributions.
+
+  Args:
+    rows: DataFrame containing model results with fold data
+    alpha: Base significance level (default 0.05)
+    method: Testing method - 'consecutive' (recommended) or 'pairwise' (with Bonferroni correction)
+    sensitivity: Sensitivity level controlling detection threshold:
+      - 'standard': α=0.05 (traditional statistical significance)
+      - 'high': α=0.10 (more sensitive, detects smaller differences)
+      - 'very_high': α=0.20 (very sensitive, detects subtle differences)
+      - 'effect_size': α=0.05 + Cohen's d>0.2 (statistically significant AND practically meaningful)
+
+  Returns:
+  -------
+    List of tuples (i, j) indicating models i and j are significantly different
+
+  """
+  significant_pairs = []
+
+  # Collect validation fold data for all models
+  val_fold_data = []
+  valid_indices = []
+
+  for idx, row in rows.iterrows():
+    folds = _collect_folds(row, 'val_mae')
+    if len(folds) >= 2:  # Need at least 2 folds for statistical test
+      val_fold_data.append(folds)
+      valid_indices.append(idx)
+
+  if len(val_fold_data) < 2:
+    return significant_pairs
+
+  if method == 'consecutive':
+    # Test consecutive models in ranking (recommended approach)
+    # This identifies where performance differences become non-significant
+    for i in range(len(val_fold_data) - 1):
+      try:
+        statistic, p_value = stats.mannwhitneyu(val_fold_data[i], val_fold_data[i + 1],
+                                              alternative='two-sided')
+
+        # Apply sensitivity adjustments
+        adjusted_alpha = alpha
+        is_significant = False
+
+        if sensitivity == 'high':
+          # More sensitive: use higher alpha
+          adjusted_alpha = alpha * 2  # 0.10
+          is_significant = p_value < adjusted_alpha
+        elif sensitivity == 'very_high':
+          # Very sensitive: use much higher alpha
+          adjusted_alpha = alpha * 4  # 0.20
+          is_significant = p_value < adjusted_alpha
+        elif sensitivity == 'effect_size':
+          # Effect size based: check both significance and effect size
+          is_significant = p_value < alpha
+          if is_significant:
+            # Calculate Cohen's d effect size
+            mean1, mean2 = np.mean(val_fold_data[i]), np.mean(val_fold_data[i + 1])
+            std1, std2 = np.std(val_fold_data[i]), np.std(val_fold_data[i + 1])
+            pooled_std = np.sqrt((std1**2 + std2**2) / 2)
+            cohens_d = abs(mean1 - mean2) / pooled_std if pooled_std > 0 else 0
+
+            # Only consider significant if effect size is meaningful (d > 0.2)
+            is_significant = cohens_d > 0.2
+        else:  # 'standard'
+          is_significant = p_value < alpha
+
+        if is_significant:
+          # For consecutive testing, use sorted positions (i, i+1)
+          significant_pairs.append((i, i + 1))
+      except Exception:
+        # Skip if test fails (e.g., identical distributions)
+        continue
+
+  elif method == 'pairwise':
+    # Test all pairwise combinations with Bonferroni correction
+    n_comparisons = len(val_fold_data) * (len(val_fold_data) - 1) // 2
+    corrected_alpha = alpha / n_comparisons if n_comparisons > 0 else alpha
+
+    for i in range(len(val_fold_data)):
+      for j in range(i + 1, len(val_fold_data)):
+        try:
+          statistic, p_value = stats.mannwhitneyu(val_fold_data[i], val_fold_data[j],
+                                                alternative='two-sided')
+
+          if p_value < corrected_alpha:
+            # Convert back to original DataFrame indices
+            orig_i = rows.index[valid_indices[i]]
+            orig_j = rows.index[valid_indices[j]]
+            significant_pairs.append((orig_i, orig_j))
+        except Exception:
+          # Skip if test fails (e.g., identical distributions)
+          continue
+
+  # Additional sliding window analysis for top models
+  if sensitivity in ['high', 'very_high'] and len(val_fold_data) >= 3:
+    # Test models within a small window (e.g., within 3 positions) for top models
+    window_size = 3
+    top_models_limit = min(50, len(val_fold_data))  # Focus on top 50 models
+
+    for i in range(top_models_limit):
+      for j in range(i + 1, min(i + window_size + 1, len(val_fold_data))):
+        try:
+          statistic, p_value = stats.mannwhitneyu(val_fold_data[i], val_fold_data[j],
+                                                alternative='two-sided')
+
+          # Use more lenient alpha for sliding window
+          window_alpha = alpha * 3 if sensitivity == 'high' else alpha * 5
+
+          if p_value < window_alpha:
+            # Avoid duplicates
+            if (i, j) not in significant_pairs and (j, i) not in significant_pairs:
+              significant_pairs.append((i, j))
+        except Exception:
+          continue
+
+  return significant_pairs
 
 
 def _select_topn_conc(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
@@ -611,9 +736,13 @@ def _create_parameter_impact_plot(param_df: pd.DataFrame, arch: str, out_dir: Pa
 
         # Add trend line for numeric parameters
         if len(val_data) > 2:
-          z = np.polyfit(val_data[param], val_data['val_mae_mean'], 1)
-          p = np.poly1d(z)
-          ax.plot(val_data[param], p(val_data[param]), "r--", alpha=0.8)
+          try:
+            z = np.polyfit(val_data[param], val_data['val_mae_mean'], 1)
+            p = np.poly1d(z)
+            ax.plot(val_data[param], p(val_data[param]), "r--", alpha=0.8)
+          except (np.linalg.LinAlgError, Exception):
+            # Skip trend line if polyfit fails
+            pass
 
         # Set x-axis to only show actual values
         unique_vals = sorted(val_data[param].unique())
@@ -849,10 +978,14 @@ def _create_parameter_value_performance_plot(param_df: pd.DataFrame, arch: str, 
 
         # Add trend line
         if len(values_clean) > 2:
-          z = np.polyfit(values_clean, val_mae_clean, 1)
-          p = np.poly1d(z)
-          x_trend = np.linspace(values_clean.min(), values_clean.max(), 100)
-          ax.plot(x_trend, p(x_trend), "r--", alpha=0.8, linewidth=2)
+          try:
+            z = np.polyfit(values_clean, val_mae_clean, 1)
+            p = np.poly1d(z)
+            x_trend = np.linspace(values_clean.min(), values_clean.max(), 100)
+            ax.plot(x_trend, p(x_trend), "r--", alpha=0.8, linewidth=2)
+          except (np.linalg.LinAlgError, Exception):
+            # Skip trend line if polyfit fails
+            pass
 
         # Calculate and display correlation
         corr = values_clean.corr(val_mae_clean)
@@ -1218,7 +1351,7 @@ def _render_benchmark_plots(df: pd.DataFrame, out_dir: Path, dpi: int, log_scale
     plt.close(fig)
 
 
-def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log_scale: bool) -> None:
+def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log_scale: bool, top_n: int = 25, sensitivity: str = 'high') -> None:
   if df.empty:
     return
   os.makedirs(out_pdf.parent, exist_ok=True)
@@ -1233,8 +1366,11 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
   })
 
   with PdfPages(out_pdf) as pdf:
-    n_models = min(len(df), 25)
+    n_models = min(len(df), top_n)
     rows = df.head(n_models)
+
+    # Perform statistical significance testing with configurable sensitivity
+    significant_pairs = _statistical_significance_test(rows, sensitivity=sensitivity)
 
     # Determine parameter columns and which vary across selected rows
     candidate_params = [
@@ -1461,6 +1597,17 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
         ]
         ax_plot.legend(handles=legend_elements, loc='upper right', fontsize=9, framealpha=0.8)
 
+      # Add statistical significance indicators
+      # Check if this model is part of any significant pair (using sorted positions)
+      for pair_i, pair_j in significant_pairs:
+        if idx == pair_i or idx == pair_j:
+          # Draw a horizontal red line across the entire row (all columns)
+          # Position the line at the bottom of the model row (after training result)
+          ax_separator = fig.add_subplot(gs[top:bot+1, :])
+          ax_separator.axis('off')
+          ax_separator.axhline(y=0.0, color='red', linewidth=2, alpha=0.7, linestyle='--')
+          break  # Only add one indicator per model
+
     # Footer row: list parameters that are the same across the selection
     ax_footer = fig.add_subplot(gs[footer_row, :])
     ax_footer.axis('off')
@@ -1471,8 +1618,23 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
       if pd.isna(val):
         continue
       common_items.append(f"{c}={val}")
+
+    footer_text_parts = []
     if common_items:
-      footer_text = ", ".join(common_items)
+      footer_text_parts.append(", ".join(common_items))
+
+    # Add statistical significance explanation
+    if significant_pairs:
+      sensitivity_desc = {
+        'standard': 'α=0.05',
+        'high': 'α=0.10',
+        'very_high': 'α=0.20',
+        'effect_size': 'α=0.05 + Cohen\'s d>0.2'
+      }.get(sensitivity, 'enhanced')
+      footer_text_parts.append(f"Red dashed lines separate models with statistically different Validation MAE distributions (Mann-Whitney U test, {sensitivity_desc})")
+
+    if footer_text_parts:
+      footer_text = " | ".join(footer_text_parts)
       ax_footer.text(0.01, -0.2, footer_text, ha='left', va='center', fontsize=12)
 
     pdf.savefig(fig, bbox_inches='tight', dpi=dpi)
@@ -1486,6 +1648,8 @@ def main() -> None:
   parser.add_argument('--top_n', type=int, default=25, help='Top N entries to show')
   parser.add_argument('--dpi', type=int, default=300, help='Output DPI for saved PDFs')
   parser.add_argument('--log_scale', action='store_true', help='Use logarithmic scale for x-axis of bar plots')
+  parser.add_argument('--sensitivity', type=str, default='high', choices=['standard', 'high', 'very_high', 'effect_size'],
+                     help='Statistical test sensitivity: standard (α=0.05), high (α=0.10), very_high (α=0.20), effect_size (α=0.05 + Cohen\'s d>0.2). Red lines separate models with significantly different Validation MAE distributions.')
   args = parser.parse_args()
 
   root = Path(args.root).resolve()
@@ -1494,7 +1658,7 @@ def main() -> None:
 
   # Concentration results: overall top-N
   top_conc = _select_topn_conc(df, args.top_n)
-  _render_top_table(top_conc, f'Top {args.top_n} Concentration Models (Overall)', out_dir / 'top_concentration_overall.pdf', args.dpi, args.log_scale)
+  _render_top_table(top_conc, f'Top {args.top_n} Concentration Models (Overall)', out_dir / 'top_concentration_overall.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
 
   # Concentration results per-architecture (only if multiple architectures exist)
   df['arch'] = df['model'].astype(str).map(_arch_of_model)
@@ -1504,18 +1668,18 @@ def main() -> None:
       sub = df[df['arch'] == arch]
       if len(sub) > 1:
         top_arch = _select_topn_conc(sub, args.top_n)
-        _render_top_table(top_arch, f'Top {args.top_n} {arch.upper()} Concentration Models', out_dir / f'top_concentration_{arch}.pdf', args.dpi, args.log_scale)
+        _render_top_table(top_arch, f'Top {args.top_n} {arch.upper()} Concentration Models', out_dir / f'top_concentration_{arch}.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
 
   # Spectra results: overall and per-arch (ae, caeq)
   top_spec = _select_topn_spec(df, args.top_n)
-  _render_top_table(top_spec, f'Top {args.top_n} Spectra Models (Overall)', out_dir / 'top_spectra_overall.pdf', args.dpi, args.log_scale)
+  _render_top_table(top_spec, f'Top {args.top_n} Spectra Models (Overall)', out_dir / 'top_spectra_overall.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
   spec_archs_present = df[df['arch'].isin(SPEC_ARCHS)]['arch'].dropna().unique()
   if len(spec_archs_present) > 1:
     for arch in SPEC_ARCHS:
       sub = df[df['arch'] == arch]
       if len(sub) > 1:
         top_arch = _select_topn_spec(sub, args.top_n)
-        _render_top_table(top_arch, f'Top {args.top_n} {arch.upper()} Spectra Models', out_dir / f'top_spectra_{arch}.pdf', args.dpi, args.log_scale)
+        _render_top_table(top_arch, f'Top {args.top_n} {arch.upper()} Spectra Models', out_dir / f'top_spectra_{arch}.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
 
   # Benchmark plots for each model
   _render_benchmark_plots(df, out_dir, args.dpi, args.log_scale)

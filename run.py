@@ -206,6 +206,51 @@ class MRSNetRunner:
             return True
         return False
 
+    def _validate_kfold_completeness(self, trainer_path: str, expected_k: int) -> tuple[bool, list[int], list[int]]:
+        """Validate that all expected KFold directories exist.
+
+        Parameters
+        ----------
+            trainer_path (str): Path to the trained model directory
+            expected_k (int): Expected number of folds
+
+        Returns
+        -------
+            tuple: (is_complete, missing_folds, found_folds)
+        """
+        missing_folds = []
+        found_folds = []
+
+        for fold_idx in range(expected_k):
+            fold_path = os.path.join(trainer_path, f"fold-{fold_idx}")
+            if os.path.exists(fold_path):
+                found_folds.append(fold_idx)
+            else:
+                missing_folds.append(fold_idx)
+
+        is_complete = len(missing_folds) == 0
+        return is_complete, missing_folds, found_folds
+
+    def _extract_k_from_folder_name(self, folder_name: str) -> int | None:
+        """Extract expected number of folds from folder name.
+
+        Parameters
+        ----------
+            folder_name (str): Folder name (e.g., "KFold_5-1", "DuplexKFold_3-2")
+
+        Returns
+        -------
+            int | None: Expected number of folds or None if not found
+        """
+        try:
+            if "KFold_" in folder_name:
+                return int(folder_name.split("KFold_")[1].split("-")[0])
+            elif "DuplexKFold_" in folder_name:
+                return int(folder_name.split("DuplexKFold_")[1].split("-")[0])
+        except (ValueError, IndexError):
+            pass
+        return None
+
     def _find_latest_model_path(self, args: dict[str, Any]) -> str | None:
         """Return the path to the latest trainer folder containing model.keras.
 
@@ -329,7 +374,27 @@ class MRSNetRunner:
         if not found_candidates:
             return None
         found_candidates.sort(key=lambda x: x[0], reverse=True)
-        return found_candidates[0][1]
+        best_path = found_candidates[0][1]
+
+        # For KFold-like models, validate completeness
+        if kfold_like:
+            # Extract trainer directory path (parent of fold directory)
+            trainer_path = os.path.dirname(best_path)
+            trainer_name = os.path.basename(trainer_path)
+            expected_k = self._extract_k_from_folder_name(trainer_name)
+
+            if expected_k is not None:
+                is_complete, missing_folds, found_folds = self._validate_kfold_completeness(trainer_path, expected_k)
+                if not is_complete:
+                    print(f"⚠️  WARNING: KFold validation incomplete for {trainer_path}")
+                    print(f"Expected {expected_k} folds, found {len(found_folds)} folds")
+                    print(f"Missing folds: {missing_folds}")
+                    print(f"Found folds: {found_folds}")
+                    print("This indicates a partially trained model or training failure")
+                    # Still return the path but mark it as incomplete
+                    return best_path
+
+        return best_path
 
     def _check_benchmark_exists(self, run_config: dict[str, Any]) -> bool:
         """Check if benchmark results already exist."""
@@ -564,6 +629,28 @@ class MRSNetRunner:
                     latest_path = self._find_latest_model_path(self._merge_args(run_config))
                     if latest_path:
                         self.artifacts.setdefault(name, {})['model_path'] = latest_path
+
+                        # Additional validation for KFold training completeness
+                        args = self._merge_args(run_config)
+                        validate = args.get('validate', 0.8)
+                        if validate is not None and (validate > 1.0 or validate < -1.0):
+                            # This is a KFold or DuplexKFold training
+                            if validate > 1.0:
+                                expected_k = int(validate)
+                            else:  # validate < -1.0
+                                expected_k = int(-validate)
+
+                            trainer_path = os.path.dirname(latest_path)
+                            is_complete, missing_folds, found_folds = self._validate_kfold_completeness(trainer_path, expected_k)
+                            if not is_complete:
+                                print(f"⚠️  WARNING: Training completed but KFold validation incomplete!")
+                                print(f"Expected {expected_k} folds, found {len(found_folds)} folds")
+                                print(f"Missing folds: {missing_folds}")
+                                print(f"Found folds: {found_folds}")
+                                print("This indicates a partially trained model or training failure")
+                                # Mark as failed due to incomplete KFold
+                                success = False
+                                self.results[name] = False
 
                 if success:
                     success_count += 1
