@@ -56,8 +56,9 @@ function generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save
     % Ensure linewidth=0 for unbroadened simulation
     p0 = p;
     p0.lw = 0.0;
-    % Simulate once (no decay due to lw=0)
-    [ON, OFF, ~] = SimMega2D(sys, p0, 'UNBROADED_TEMP.mat', cache_dir);
+    % Simulate once (no decay due to lw=0) with a unique temporary filename
+    tmp_out = sprintf('temp_unbroadened_%s.mat', datestr(now, 'yyyymmdd_HHMMSS_FFF'));
+    [ON, OFF, ~] = SimMega2D(sys, p0, tmp_out, cache_dir);
     % Collect required fields
     t        = OFF.t;
     ppm      = OFF.ppm;
@@ -66,6 +67,11 @@ function generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save
     Bo       = OFF.Bo;
     % Save cache
     save(cache_path, 't', 'ppm', 'ON_fids', 'OFF_fids', 'Bo', '-v7');
+    % Clean up temporary file if created
+    tmp_file_path = fullfile(cache_dir, tmp_out);
+    if exist(tmp_file_path, 'file')
+      try, delete(tmp_file_path); end
+    end
   end
 
   % Apply lineshape per linewidth and write outputs
@@ -87,23 +93,23 @@ function generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save
 
     % OFF
     edit = false;
-    fid  = (OFF_fids.').*decay.'; % ensure column shape
+    fid  = OFF_fids(:) .* decay(:); % force column vectors, avoid implicit expansion
     fft  = fftshift(ifft(fid));
     linewidth = lw;
     nu   = ppm;
-    tvec = t;
+    t    = t(:);
     f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITOFF_%.2f_%d_%d_%.2f.mat', m_name, lw, sw, npts, omega);
-    save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 'tvec', 'omega', 'edit', 'pulse_sequence');
+    save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
 
     % ON
     edit = true;
-    fid  = (ON_fids.').*decay.';
+    fid  = ON_fids(:) .* decay(:);
     fft  = fftshift(ifft(fid));
     linewidth = lw;
     nu   = ppm;
-    tvec = t;
+    t    = t(:);
     f_name = sprintf('FIDA2D_%s_MEGAPRESS_EDITON_%.2f_%d_%d_%.2f.mat', m_name, lw, sw, npts, omega);
-    save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 'tvec', 'omega', 'edit', 'pulse_sequence');
+    save(fullfile(save_dir, f_name), 'm_name', 'nu', 'fid', 'fft', 'linewidth', 't', 'omega', 'edit', 'pulse_sequence');
   end
 
 end
