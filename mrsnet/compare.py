@@ -128,8 +128,10 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     print(f"              Real: {dd[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f}")
     print(f"         Imaginary: {dd[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f}")
     if verbose >= 2:
+      # Determine source string per spectrum when basis is a list
+      src_str = basis.source if not isinstance(basis, list) else basis[l].source
       plot_diff_spectra(r_inp[l,:,:,:],d_inp[l,:,:,:],r_out[l,:],nu,
-                        ds.metabolites,basis.source,screen_dpi)
+                        ds.metabolites,src_str,screen_dpi)
       plt.show(block=True)
       plt.close()
 
@@ -183,7 +185,8 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
   if out_dir is not None:
     os.makedirs(out_dir, exist_ok=True)
     if save_prefix is None:
-      save_prefix = f"{basis.source}_{basis.manufacturer}_{basis.omega}_{basis.linewidth}_{basis.pulse_sequence}_{basis.sample_rate}_{basis.samples}"
+      rep_basis = basis[0] if isinstance(basis, list) and len(basis) > 0 else basis
+      save_prefix = f"{rep_basis.source}_{rep_basis.manufacturer}_{rep_basis.omega}_{rep_basis.linewidth}_{rep_basis.pulse_sequence}_{rep_basis.sample_rate}_{rep_basis.samples}"
     # Combined signed error + histogram plots per representation (magnitude/real/imaginary)
     signed_spectrum = np.mean((r_inp - d_inp), axis=0)  # [acq, dtype, freq]
     # Plot for Magnitude (dtype 0)
@@ -339,19 +342,35 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
           "corr": None if np.isnan(corr[ai,di]) else float(corr[ai,di]),
           "cosine": None if np.isnan(cos[ai,di]) else float(cos[ai,di])
         }
+    # Build summary block
+    summary = {
+      "mae_overall": float(np.nanmean(dd)),
+      "rmse_overall": float(np.nanmean(rm)),
+      "mean_overall": float(np.nanmean(m)),
+      "std_overall": float(np.nanmean(s)),
+      "corr_overall": float(np.nanmean(corr)),
+      "cosine_overall": float(np.nanmean(cos))
+    }
+
     with open(os.path.join(out_dir, f"{save_prefix}_metrics.json"), "w") as f:
+      rep_basis = basis[0] if isinstance(basis, list) and len(basis) > 0 else basis
       json.dump({
         "basis": {
-          "source": basis.source,
-          "manufacturer": basis.manufacturer,
-          "omega": basis.omega,
-          "linewidth": basis.linewidth,
-          "pulse_sequence": basis.pulse_sequence,
-          "sample_rate": basis.sample_rate,
-          "samples": basis.samples
+          "source": rep_basis.source,
+          "manufacturer": rep_basis.manufacturer,
+          "omega": rep_basis.omega,
+          "linewidth": rep_basis.linewidth,
+          "pulse_sequence": rep_basis.pulse_sequence,
+          "sample_rate": rep_basis.sample_rate,
+          "samples": rep_basis.samples
+        },
+        "linewidth": {
+          "individual": None if individual_linewidths is None else [None if v is None else float(v) for v in individual_linewidths],
+          "overall": None if overall_linewidth is None else float(overall_linewidth)
         },
         "n_samples": int(r_inp.shape[0]),
         "n_fft_pts": int(r_inp.shape[3]),
+        "summary": summary,
         "metrics": metrics,
         "peak_stats": peak_stats,
         "noise": noise_info
@@ -377,7 +396,15 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     "cosine": cos,
     "mae_spectrum": np.mean(np.abs(r_inp - d_inp), axis=0),
     "nu": nu,
-    "peak_stats": compute_peak_stats(d_inp, nu)
+    "peak_stats": compute_peak_stats(d_inp, nu),
+    "summary": {
+      "mae_overall": float(np.nanmean(dd)),
+      "rmse_overall": float(np.nanmean(rm)),
+      "mean_overall": float(np.nanmean(m)),
+      "std_overall": float(np.nanmean(s)),
+      "corr_overall": float(np.nanmean(corr)),
+      "cosine_overall": float(np.nanmean(cos))
+    }
   }
 
 def plot_diff_spectra(r, d, c, nu, metabolites, source, screen_dpi):

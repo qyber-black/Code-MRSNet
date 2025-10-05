@@ -891,7 +891,7 @@ class Spectrum:
       #        center_ppm = -np.median(fida_data['nu']))
       # Conjugation due to negative frequencies
       s.set_f(np.conjugate(np.array(fida_data['fft']).flatten()),
-              1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+              1/(np.abs(fida_data['t'][0] - fida_data['t'][1])),
               center_ppm = -np.median(fida_data['nu']))
     return s
 

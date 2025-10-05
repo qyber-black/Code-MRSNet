@@ -400,7 +400,8 @@ class Basis:
         start='FIDA'+source_id[2].upper()+'_'
       else:
         raise RuntimeError(f"Unknown FID-A source format {source}")
-    to_simulate = copy.copy(self.metabolites)
+   # Track remaining metabolites to simulate in a case-insensitive map
+    pending_map = {m.lower(): m for m in self.metabolites}
     for spath in [path_basis, *search_basis]:
       if os.path.isdir(os.path.join(spath,'basis_files')):
         for file in os.listdir(os.path.join(spath,'basis_files')):
@@ -421,23 +422,34 @@ class Basis:
                   and np.abs(spec.omega - self.omega) < 1e-2 \
                   and spec.sample_rate == self.sample_rate \
                   and len(spec.fft) == self.samples:
-                  if spec.metabolites[0] not in self.spectra:
-                    self.spectra[spec.metabolites[0]] = {}
-                  self.spectra[spec.metabolites[0]][spec.acquisition] = spec
+                  # Map to canonical metabolite casing as requested
+                  canonical_m = next((_m for _m in self.metabolites if _m.lower() == spec.metabolites[0].lower()), None)
+                  if canonical_m is None:
+                    continue
+                  if canonical_m not in self.spectra:
+                    self.spectra[canonical_m] = {}
+                  self.spectra[canonical_m][spec.acquisition] = spec
                   if self.path is not None and os.path.abspath(self.path) != os.path.abspath(spath):
                     print(f"**WARNING - FID-A basis files in different directories: {self.path!s} and {spath!s}")
                   else:
                     self.path = os.path.join(spath)
-                  if spec.metabolites[0] in to_simulate:
-                    to_simulate.remove(spec.metabolites[0])
-            except Exception:  # noqa: S110
+                  # Mark matched metabolite as done in pending map (case-insensitive)
+                  lkey = canonical_m.lower()
+                  if lkey in pending_map:
+                    del pending_map[lkey]
+            except Exception as e:
+              print("Error loading FID-A file",e)
               pass
+    # Finalize the list of metabolites still to simulate
+    to_simulate = list(pending_map.values())
     if len(to_simulate) > 0:
       if second_call:
         raise RuntimeError('Recursion error, should have simulated spectra - but I can\'t seem to find it and '
-                           'I\'m going to end up in an endless loop.')
+                           'I\'m going to end up in an endless loop. '
+                           f'Spectra still to_simulate: {to_simulate}')
       else:
         print('Some spectra are missing, simulating: ' + str(to_simulate))
+        print(f'omega: {self.omega}, linewidth: {self.linewidth}, samples: {self.samples}, sample_rate: {self.sample_rate}')
         from mrsnet.simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
                      npts=self.samples, sample_rate=self.sample_rate,

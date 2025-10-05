@@ -1465,9 +1465,16 @@ def sim2real(args):
                              sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
           individual_bases.append(ba_i)
 
-      # Store results in path_sim2real/basis_tag, include series and variant in filenames
+      # Store results in path_sim2real/basis_tag, include series, variant and LW info in filenames
       out_dir = out_base
-      save_prefix = f"{b_id}_{variant}"
+      lw_tag = None
+      if individual_linewidths:
+        try:
+          import numpy as _np
+          lw_tag = f"LWmed-{float(_np.median(individual_linewidths)):.2f}"
+        except Exception:
+          lw_tag = None
+      save_prefix = f"{b_id}_{variant}" + (f"_{lw_tag}" if lw_tag else "")
 
       # Calculate series-specific linewidth (median of individual linewidths for this series)
       series_lw = None
@@ -1547,7 +1554,15 @@ def sim2real(args):
                              sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
           combined_individual_bases.append(ba_i)
 
+    # Include LW info for combined analysis in save prefix
     save_prefix = "all"
+    if args.estimate_linewidth:
+      try:
+        import numpy as _np
+        if combined_individual_linewidths:
+          save_prefix = f"all_LWmed-{float(_np.median(combined_individual_linewidths)):.2f}"
+      except Exception:
+        pass
 
     _ = compare_basis(combined, combined_individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
                       out_dir=out_base, save_prefix=save_prefix,
