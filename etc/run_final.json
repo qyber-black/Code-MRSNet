@@ -9,9 +9,9 @@
   },
   "runs": [
     {"name": "cnn_best_off_on",        "command": "train",     "args": { "model": "cnn_medium_sigmoid_pool",
-                                                                         "acquisitions": ["edit_off", "edit_on"], "datatype": ["imaginary", "real"]}},
-    {"name": "cnn_para_off_on",        "command": "train",     "args": { "model": "cnn_-1_-3_9_9_5_3_0.0_0.3_256_512_2048_sigmoid",
                                                                          "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
+    {"name": "cnn_para_off_on",        "command": "train",     "args": { "model": "cnn_-1_-3_9_9_5_3_0.0_0.3_512_512_2048_sigmoid",
+                                                                         "acquisitions": ["edit_off", "edit_on"], "datatype": ["imaginary", "real"]}},
     {"name": "fcnn_real_off_on",       "command": "train",     "args": {"model": "fcnn_default",       "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
     {"name": "qmrs_real_off_on",       "command": "train",     "args": {"model": "qmrs_default",       "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
     {"name": "qnet_real_off_on",       "command": "train",     "args": {"model": "qnet_default",       "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
