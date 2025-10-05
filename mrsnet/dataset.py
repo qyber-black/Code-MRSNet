@@ -113,7 +113,7 @@ class Dataset:
         self.concentrations.append(concs[id])
     return self
 
-  def generate_spectra(self, basis, num, samplers, verbose):
+  def generate_spectra(self, basis, num, samplers, verbose, linewidth_mode=None, basis_pool=None, lw_values=None):
     """Generate synthetic spectra from a basis set.
 
     Creates a dataset by combining basis spectra with randomly sampled
@@ -259,7 +259,37 @@ class Dataset:
     if verbose > 0:
       print("Combining basis spectra")
     for count in range(num):
-      s,c = basis.combine(all_concentrations[count],str(count))
+      cons = all_concentrations[count]
+      id = str(count)
+      if linewidth_mode is None or basis_pool is None or lw_values is None:
+        s,c = basis.combine(cons,id)
+      elif linewidth_mode == 'perSpectrum':
+        # choose a single linewidth uniformly for this spectrum
+        lw = float(np.random.choice(lw_values))
+        b = basis_pool.get(lw, None)
+        if b is None:
+          raise RuntimeError(f"No basis for chosen linewidth {lw}")
+        s,c = b.combine(cons, id)
+      elif linewidth_mode == 'perMetabolite':
+        # choose linewidth per metabolite uniformly
+        lw_sel = [float(np.random.choice(lw_values)) for _ in self.metabolites]
+        spectra = {}
+        con = {m: float(cons[j]) for j, m in enumerate(self.metabolites)}
+        for acq in basis.acquisitions:
+          parts = []
+          for j, m in enumerate(self.metabolites):
+            b = basis_pool.get(lw_sel[j], None)
+            if b is None:
+              raise RuntimeError(f"No basis for chosen linewidth {lw_sel[j]}")
+            parts.append(b.spectra[m][acq])
+          spectra[acq] = Spectrum.combs([con[m] for m in self.metabolites], parts, id, acq)
+        Spectrum.correct_b0_multi(spectra)
+        if self.pulse_sequence == "megapress":
+          if np.max(np.abs(spectra['edit_on'].get_f()[0] - spectra['edit_off'].get_f()[0] - spectra['difference'].get_f()[0])) >= Cfg.val['num_eps']:
+            raise RuntimeError("Combined difference spectrum differs from edit_on - edit_off")
+        s = spectra
+      else:
+        raise RuntimeError(f"Unknown linewidth_mode: {linewidth_mode}")
       self.spectra.append(s)
       self.concentrations.append(c)
 

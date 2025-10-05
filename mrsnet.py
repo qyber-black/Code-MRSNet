@@ -173,8 +173,8 @@ def add_arguments_basis(p):
                  help='Scanner manufacturer (fid-a* and pygamma only support siemens).')
   p.add_argument('--omega', type=float, default=[123.23], nargs='+',
                  help='Scanner frequency in MHz (default 123.23 MHz for 2.89 T Siemens scanner).')
-  p.add_argument('--linewidth', type=float, nargs='+', default=[2.0],
-                 help='Linewidths to be used for simulation (not possible for lcmodel, su-*).')
+  p.add_argument('--linewidth', type=str, nargs='+', default=['2.0'],
+                 help='Linewidths to be used. For simulation, supports ranges: a:step:b (per-spectrum) and a::step::b (per-metabolite). For lcmodel/su-* only a single fixed value or None is allowed.')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
                  choices=['megapress'], default=["megapress"],
                  help='Pulse sequence (placeholder).')
@@ -393,10 +393,73 @@ def simulate(args):
   args.source.sort()
   args.manufacturer.sort()
   args.omega = sorted(args.omega, key=float)
-  args.linewidth = sorted(args.linewidth, key=float)
+  # Parse linewidth specs (numbers or ranges)
+  def _expand_uniform_range(a, s, b):
+    values = []
+    k = 0
+    # inclusive endpoints, guard rounding
+    while True:
+      v = a + k*s
+      if v > b + 1e-8:
+        break
+      values.append(round(v, 8))
+      k += 1
+    if len(values) == 0 or abs(values[-1] - b) > 1e-6:
+      values.append(round(b, 8))
+    return values
+  def _parse_lw_tokens(tokens):
+    mode = 'fixed'
+    lw_grid = []
+    tag_tokens = []
+    for tok in tokens:
+      t = str(tok)
+      if '::' in t:  # per-metabolite
+        try:
+          a, s, b = t.split('::')
+          a = float(a)
+          s = float(s)
+          b = float(b)
+        except Exception as err:
+          raise RuntimeError(f"Invalid linewidth range spec: {t}") from err
+        lw_grid.extend(_expand_uniform_range(a, s, b))
+        tag_tokens.append(t)
+        mode = 'perMetabolite'
+      elif ':' in t:  # per-spectrum
+        try:
+          a, s, b = t.split(':')
+          a = float(a)
+          s = float(s)
+          b = float(b)
+        except Exception as err:
+          raise RuntimeError(f"Invalid linewidth range spec: {t}") from err
+        lw_grid.extend(_expand_uniform_range(a, s, b))
+        tag_tokens.append(t)
+        if mode != 'perMetabolite':
+          mode = 'perSpectrum'
+      else:
+        try:
+          lw_grid.append(float(t))
+        except Exception as err:
+          if t.lower() == 'none':
+            lw_grid.append(None)
+          else:
+            raise RuntimeError(f"Invalid linewidth token: {t}") from err
+        tag_tokens.append(t)
+    # unique, sort numerics and preserve None if present
+    lw_unique = []
+    has_none = any([v is None for v in lw_grid]) # noqa: C419
+    nums = sorted([v for v in lw_grid if v is not None], key=float)
+    if has_none:
+      lw_unique = [*nums, None]
+    else:
+      lw_unique = nums
+    tag = "-".join(tag_tokens)
+    return mode, lw_unique, tag
+
+  linewidth_mode, lw_grid, linewidth_tag = _parse_lw_tokens(args.linewidth)
   args.metabolites.sort()
   args.pulse_sequence.sort()
-  lw = args.linewidth
+  lw = [v for v in lw_grid] # noqa: C416
   only_none = True
   for src in args.source:
     if src == "lcmodel" or src[0:3] == "su-":
@@ -411,24 +474,32 @@ def simulate(args):
   name=os.path.join("-".join(args.source)+"_"+str(args.sample_rate)+"_"+str(args.samples),
                     "-".join(args.manufacturer),
                     "-".join([str(k) for k in args.omega]),
-                    "-".join([str(k) for k in lw]),
+                    linewidth_tag if (':' in linewidth_tag) else "-".join([str(k) for k in lw]),
                     "-".join(args.metabolites),
                     "-".join(args.pulse_sequence),
                     "-".join(args.sample),
                     str(args.noise_p)+"-"+args.noise_type+"-"+str(args.noise_mu)+"-"+str(args.noise_sigma))
 
   bases = basis.BasisCollection()
+  basis_pool = {}
   num_bases = 0
   for s in args.source:
     for m in args.manufacturer:
       for o in args.omega:
-        for l in args.linewidth:
+        for l in lw:
           for ps in args.pulse_sequence:
             if ((s == "lcmodel" or s[0:3] == "su-") and l is None) or \
                ((s != "lcmodel" and s[0:3] != "su-") and l is not None):
               bases.add(args.metabolites, s, m, o, l, ps,
                         args.sample_rate, args.samples,
                         path_basis=Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+              # Cache pool by linewidth for current s/m/o/ps combination only when unique
+              try:
+                b = bases.get(args.metabolites, s, m, o, l, ps, sample_rate=args.sample_rate, samples=args.samples)
+                if b is not None:
+                  basis_pool.setdefault((s,m,o,ps), {})[l] = b
+              except Exception: # noqa: S110
+                pass
           num_bases += 1
   if args.verbose > 0:
     print("# Generating dataset")
@@ -441,7 +512,17 @@ def simulate(args):
     n1 -= 1
     if args.verbose > 0:
       print(f"Generating {n} spectra for {b}")
-    dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
+    # Determine group key and pool for this basis
+    key = (b.source, b.manufacturer, b.omega, b.pulse_sequence)
+    pool = basis_pool.get(key, None)
+    if linewidth_mode == 'fixed' or pool is None:
+      dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
+    else:
+      lw_vals = [v for v in lw if v is not None]
+      dataset.generate_spectra(b, n, args.sample, verbose=args.verbose,
+                               linewidth_mode=linewidth_mode,
+                               basis_pool=pool,
+                               lw_values=lw_vals)
   # Save without noise
   if args.verbose > 0:
     print(f"Saving dataset without noise: {dataset.name}")
@@ -587,9 +668,17 @@ def compare(args):
     import mrsnet.basis as basis
     if args.verbose > 0:
       print("# Setting up basis")
+    # Guard against range tokens for compare: requires single numeric linewidth
+    if isinstance(args.linewidth, list):
+      lw_tokens = [str(x) for x in args.linewidth]
+    else:
+      lw_tokens = [str(args.linewidth)]
+    for t in lw_tokens:
+      if ':' in t:
+        raise RuntimeError('Linewidth ranges are not supported for compare; provide a single numeric linewidth')
     basis = basis.Basis(metabolites=sorted(ds.metabolites), source=args.source,
                         manufacturer=args.manufacturer, omega=args.omega,
-                        linewidth=args.linewidth, pulse_sequence=args.pulse_sequence,
+                        linewidth=float(args.linewidth[0]) if isinstance(args.linewidth, list) else float(args.linewidth), pulse_sequence=args.pulse_sequence,
                         sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
     # Analyse with given concentrations
     from mrsnet.compare import compare_basis
@@ -1383,7 +1472,10 @@ def sim2real(args):
   src = args.source[0] if isinstance(args.source, list) else args.source
   man = args.manufacturer[0] if isinstance(args.manufacturer, list) else args.manufacturer
   omg = args.omega[0] if isinstance(args.omega, list) else args.omega
+  # Guard against range tokens for sim2real fixed basis construction here
   lw = args.linewidth[0] if isinstance(args.linewidth, list) else args.linewidth
+  if isinstance(lw, str) and ':' in lw:
+    raise RuntimeError('Linewidth ranges are not supported in sim2real; provide a single numeric linewidth or use estimation flags')
   ps = args.pulse_sequence[0] if isinstance(args.pulse_sequence, list) else args.pulse_sequence
 
   # Combined dataset across all benchmark series
@@ -1458,13 +1550,13 @@ def sim2real(args):
       else:
         # Use fixed linewidth for all spectra
         if args.verbose > 0:
-          print(f"# Using fixed linewidth {lw:.2f} Hz for all spectra")
+          print(f"# Using fixed linewidth {float(lw):.2f} Hz for all spectra")
 
         for _ in enumerate(bm.spectra):
-          individual_linewidths.append(lw)
+          individual_linewidths.append(float(lw))
           ba_i = basis.Basis(metabolites=combined.metabolites,
                              source=src, manufacturer=man,
-                             omega=omg, linewidth=lw,
+                             omega=omg, linewidth=float(lw),
                              pulse_sequence=ps,
                              sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
           individual_bases.append(ba_i)
@@ -1567,7 +1659,7 @@ def sim2real(args):
         import numpy as _np
         if combined_individual_linewidths:
           save_prefix = f"all_LWmed-{float(_np.median(combined_individual_linewidths)):.2f}"
-      except Exception:
+      except Exception: # noqa: S110
         pass
 
     # If overall LW was not estimated (fixed-mode) try to compute median of individual LWs
