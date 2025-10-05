@@ -1393,6 +1393,10 @@ def sim2real(args):
 
   # Output base folder for this basis
   basis_tag = f"{src}_{man}_{omg}_{lw}_{ps}_{args.sample_rate}_{args.samples}"
+  # If using linewidth estimation to build per-spectrum bases, reflect that in folder name
+  if args.estimate_linewidth and not args.linewidth_use_fixed:
+    est_mode = "single" if args.linewidth_single_spectrum else "perSpec"
+    basis_tag += f"_estLW-{args.linewidth_method}-step{args.linewidth_step}-{est_mode}"
   out_base = os.path.join(Cfg.val['path_sim2real'], basis_tag)
   os.makedirs(out_base, exist_ok=True)
 
@@ -1494,12 +1498,14 @@ def sim2real(args):
 
   # Analyse combined dataset like a single series
   if len(combined.spectra) > 0 and len(combined.concentrations) == len(combined.spectra):
+    # Prepare overall linewidth holder for combined analysis
+    combined_overall_lw = None
     # Estimate linewidth for combined analysis if requested
     if args.estimate_linewidth:
-      estimated_lw = estimate_linewidth_from_dataset(combined, args, verbose=args.verbose)
-      if estimated_lw is not None:
+      combined_overall_lw = estimate_linewidth_from_dataset(combined, args, verbose=args.verbose)
+      if combined_overall_lw is not None:
         if args.verbose > 2:
-          print(f"# Estimated mean linewidth for combined analysis: {estimated_lw:.2f} Hz")
+          print(f"# Estimated mean linewidth for combined analysis: {combined_overall_lw:.2f} Hz")
       else:
         if args.verbose > 0:
           print(f"# Linewidth estimation failed for combined analysis, use fallback: {args.linewidth_fallback:.2f} Hz")
@@ -1564,10 +1570,18 @@ def sim2real(args):
       except Exception:
         pass
 
+    # If overall LW was not estimated (fixed-mode) try to compute median of individual LWs
+    if combined_overall_lw is None and len(combined_individual_linewidths) > 0:
+      try:
+        import numpy as _np
+        combined_overall_lw = float(_np.median(combined_individual_linewidths))
+      except Exception:
+        combined_overall_lw = None
+
     _ = compare_basis(combined, combined_individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
                       out_dir=out_base, save_prefix=save_prefix,
                       noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu,
-                      individual_linewidths=combined_individual_linewidths, overall_linewidth=estimated_lw)
+                      individual_linewidths=combined_individual_linewidths, overall_linewidth=combined_overall_lw)
 
 def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
   """Estimate linewidth for a single spectrum (individual acquisition).
