@@ -736,7 +736,7 @@ class Spectrum:
     return s
 
   @staticmethod
-  def combs(fs,ss,id,acq):
+  def combs(fs,ss,id,acq, allow_mixed_linewidths=False):
     """Combine multiple spectra with weighted sum.
 
     Parameters
@@ -769,10 +769,11 @@ class Spectrum:
     for n in range(len(ss)):
       if np.abs(ss[n].omega - avg_omega) >= 1e-8:
         raise RuntimeError("Combing spectra with different omega")
-      if (avg_linewidth is None and ss[n].linewidth is not None) or \
-         (avg_linewidth is not None and ss[n].linewidth is None) or \
-         (avg_linewidth is not None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
-        raise RuntimeError("Combing spectra with different linewidths")
+      if not allow_mixed_linewidths:
+        if (avg_linewidth is None and ss[n].linewidth is not None) or \
+           (avg_linewidth is not None and ss[n].linewidth is None) or \
+           (avg_linewidth is not None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
+          raise RuntimeError("Combing spectra with different linewidths")
       for m in ss[n].metabolites:
         if m not in all_metabolites:
           all_metabolites.append(m)
@@ -786,18 +787,22 @@ class Spectrum:
                  linewidth=avg_linewidth)
     fft = fs[0] * ss[0].get_f()[0]
     for n in range(1,len(ss)):
-      if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
-        raise RuntimeError("Combining spectra with different b0_shift_ppm")
       if ss[0].sample_rate != ss[n].sample_rate:
         raise RuntimeError("Combining spectra with different sample rates")
       if ss[0].noise != ss[n].noise:
         raise RuntimeError("Combining spectra with different added noise")
-      if ss[0].center_ppm != ss[n].center_ppm:
-        # We need to frequency shift the FFT signal by shifting it in the time domain
-        # x'[n] = exp(i\pi df/(Fs/2) n) x[n]
-        # where x' is the new and x the original signal; Fs the sample rate and df the shift,
-        # determined by the difference in center_ppm, in Hz.
-        df = (ss[n].center_ppm - ss[0].center_ppm) * ss[n].omega
+      # Align center_ppm and (optionally) b0_shift_ppm via time-domain frequency shift
+      need_shift = (ss[0].center_ppm != ss[n].center_ppm)
+      df = 0.0
+      if need_shift:
+        df += (ss[n].center_ppm - ss[0].center_ppm) * ss[n].omega
+      if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
+        if not allow_mixed_linewidths:
+          raise RuntimeError("Combining spectra with different b0_shift_ppm")
+        # incorporate b0 shift difference into frequency shift (in Hz)
+        df += (ss[n].b0_shift_ppm - ss[0].b0_shift_ppm) * ss[n].omega
+        need_shift = True
+      if need_shift:
         D = 2j*np.pi * df / ss[n].sample_rate  # noqa: N806
         x = ss[n].get_t()[0]
         x = np.exp(D * np.arange(0,len(x))) * x

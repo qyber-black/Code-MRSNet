@@ -282,11 +282,12 @@ class Dataset:
             if b is None:
               raise RuntimeError(f"No basis for chosen linewidth {lw_sel[j]}")
             parts.append(b.spectra[m][acq])
-          spectra[acq] = Spectrum.combs([con[m] for m in self.metabolites], parts, id, acq)
+          spectra[acq] = Spectrum.combs([con[m] for m in self.metabolites], parts, id, acq, allow_mixed_linewidths=True)
         Spectrum.correct_b0_multi(spectra)
         if self.pulse_sequence == "megapress":
           if np.max(np.abs(spectra['edit_on'].get_f()[0] - spectra['edit_off'].get_f()[0] - spectra['difference'].get_f()[0])) >= Cfg.val['num_eps']:
             raise RuntimeError("Combined difference spectrum differs from edit_on - edit_off")
+        c = con
         s = spectra
       else:
         raise RuntimeError(f"Unknown linewidth_mode: {linewidth_mode}")

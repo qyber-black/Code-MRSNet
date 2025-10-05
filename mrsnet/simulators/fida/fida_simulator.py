@@ -59,6 +59,19 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
     cache_dir = os.path.join(Cfg.val['path_basis'], 'fid-a-2d', 'cache_unbroadened')
     matlab_command += "use_cached_unbroadened=true;"
     matlab_command += "cache_dir='"+cache_dir+"';"
+    # Construct basis_roots from Python config (path_basis + search_basis)
+    basis_roots = []
+    # path_basis may be None in some configs; guard it
+    if Cfg.val.get('path_basis'):
+      basis_roots.append(Cfg.val['path_basis'])
+    for sb in Cfg.val.get('search_basis', []) or []:
+      basis_roots.append(sb)
+    # Build MATLAB cell array literal
+    # Escape single quotes for MATLAB strings
+    def _matlab_quote(p):
+      return "'" + str(p).replace("'", "''") + "'"
+    matlab_cells = ",".join(_matlab_quote(p) for p in basis_roots)
+    matlab_command += "basis_roots={" + matlab_cells + "};"
 
   matlab_command += script+";exit;exit;"
 

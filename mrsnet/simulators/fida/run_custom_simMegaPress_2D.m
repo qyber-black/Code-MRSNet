@@ -98,7 +98,12 @@ for ii = 1:length(metabolites)
       sys = eval(['sys' spinSys])
       m_name = metabolites{ii};
       omega  = p.Bfield*gamma*1e-6; % MHz
-      generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save_dir, cache_dir);
+      % If caller provided basis_roots, forward to generator
+      if exist('basis_roots','var') && ~isempty(basis_roots)
+        generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save_dir, cache_dir, basis_roots);
+      else
+        generate_megapress2d_with_cache(sys, p, linewidths, m_name, omega, save_dir, cache_dir);
+      end
     else
       for jj = 1:length(linewidths)
 
