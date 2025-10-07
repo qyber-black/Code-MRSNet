@@ -482,6 +482,8 @@ def simulate(args):
 
   bases = basis.BasisCollection()
   basis_pool = {}
+  # Keep one representative basis per (source, manufacturer, omega, pulse_sequence)
+  rep_basis = {}
   num_bases = 0
   for s in args.source:
     for m in args.manufacturer:
@@ -498,6 +500,9 @@ def simulate(args):
                 b = bases.get(args.metabolites, s, m, o, l, ps, sample_rate=args.sample_rate, samples=args.samples)
                 if b is not None:
                   basis_pool.setdefault((s,m,o,ps), {})[l] = b
+                  # Record a representative basis for this (s,m,o,ps) group (first seen)
+                  if (s,m,o,ps) not in rep_basis:
+                    rep_basis[(s,m,o,ps)] = b
               except Exception: # noqa: S110
                 pass
           num_bases += 1
@@ -505,24 +510,41 @@ def simulate(args):
     print("# Generating dataset")
   # Generate datasets
   dataset = dataset.Dataset(name)
-  n0 = args.num // num_bases
-  n1 = args.num % num_bases
-  for b in bases:
-    n = n0 + (1 if n1 > 0 else 0)
-    n1 -= 1
-    if args.verbose > 0:
-      print(f"Generating {n} spectra for {b}")
-    # Determine group key and pool for this basis
-    key = (b.source, b.manufacturer, b.omega, b.pulse_sequence)
-    pool = basis_pool.get(key, None)
-    if linewidth_mode == 'fixed' or pool is None:
+  if linewidth_mode == 'fixed':
+    # Legacy behavior: split evenly across all basis entries (including linewidth)
+    n0 = args.num // num_bases
+    n1 = args.num % num_bases
+    for b in bases:
+      n = n0 + (1 if n1 > 0 else 0)
+      n1 -= 1
+      if args.verbose > 0:
+        print(f"Generating {n} spectra for {b}")
       dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
-    else:
-      lw_vals = [v for v in lw if v is not None]
-      dataset.generate_spectra(b, n, args.sample, verbose=args.verbose,
-                               linewidth_mode=linewidth_mode,
-                               basis_pool=pool,
-                               lw_values=lw_vals)
+  else:
+    # Group by (source, manufacturer, omega, pulse_sequence) and generate once per group
+    group_items = list(rep_basis.items())
+    if len(group_items) == 0:
+      raise RuntimeError("No representative basis found for grouped linewidth generation")
+    n0 = args.num // len(group_items)
+    n1 = args.num % len(group_items)
+    lw_vals = [v for v in lw if v is not None]
+    for key, b in group_items:
+      n = n0 + (1 if n1 > 0 else 0)
+      n1 -= 1
+      pool = basis_pool.get(key, None)
+      if pool is None:
+        # Fallback: generate using the representative basis without mixing
+        if args.verbose > 0:
+          print(f"Generating {n} spectra for {b} (no pool available)")
+        dataset.generate_spectra(b, n, args.sample, verbose=args.verbose)
+      else:
+        if args.verbose > 0:
+          s,m,o,ps = key
+          print(f"Generating {n} spectra for {s}/{m}/{o}/{ps} with mixed {linewidth_mode} linewidths")
+        dataset.generate_spectra(b, n, args.sample, verbose=args.verbose,
+                                 linewidth_mode=linewidth_mode,
+                                 basis_pool=pool,
+                                 lw_values=lw_vals)
   # Save without noise
   if args.verbose > 0:
     print(f"Saving dataset without noise: {dataset.name}")
