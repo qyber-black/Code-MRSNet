@@ -264,7 +264,7 @@ def add_arguments_train(p):
                  choices=['magnitude', 'phase', 'real', 'imaginary'], default=['magnitude', 'phase'],
                  help='Data representation of spectrum.')
   p.add_argument('-m', '--model', type=str, default='cnn_small_softmax',
-                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP], or qnet_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or qnet_basis_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or fcnn_[CONV_FILTERS]_[KERNEL]_[POOL]_[FC_UNITS]_[DROPOUT], or qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT], or encdec_[ECHOES]_[FILTERS] - see models in mrsnet for details; for default paper parameters for fcnn, qnet, qmrs or encdec use _default.')
+                 help='Model architecture: cnn_[small,medium,large]_[softmax,sigmoid][_pool], or cnn_[S1]_[S2]_[C1]_[C2]_[C3]_[C4]_[O1]_[O2]_[F1]_[F2]_[D]_[softmax,sigmoid], or ae_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO], or aeq_fc_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DO], or caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP], or qnet_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or qnet_basis_[IF_FILTERS]_[MM_FILTERS]_[KERNEL]_[IF_FC]_[MM_FC]_[IF_FACTORS], or fcnn_[CONV_FILTERS]_[KERNEL]_[POOL]_[FC_UNITS]_[DROPOUT], or qmrs_[INITIAL_FILTERS]_[INCEPTION_FILTERS]_[LSTM_UNITS]_[MLP_UNITS]_[DROPOUT]_[BASELINE_COEFFS], or encdec_[ACQUISITIONS]_[FILTERS] - see models in mrsnet for details; for default paper parameters for fcnn, qnet, qmrs or encdec use _default.')
   p.add_argument('-a', '--autoencoder', type=str,
                  help='Autoencoder model folder, only for aeq_ model training (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('-b', '--batchsize', type=int, default=16,
@@ -314,8 +314,8 @@ def add_arguments_linewidth_estimation(p):
   """
   p.add_argument('--estimate_linewidth', action='store_true',
                  help='Estimate linewidth from experimental spectra instead of using fixed value.')
-  p.add_argument('--linewidth_method', choices=['water_peak', 'metabolite_peak', 'auto'], default='metabolite_peak',
-                 help='Method for linewidth estimation: water_peak (4.7 ppm), metabolite_peak (strongest peak), auto (try water first, fallback to metabolite).')
+  p.add_argument('--linewidth_method', choices=['water_peak', 'metabolite_peak', 'lorentzian', 'auto'], default='metabolite_peak',
+                 help='Method for linewidth estimation: water_peak (4.7 ppm), metabolite_peak (strongest peak), lorentzian (Lorentzian fitting with FWHM fallback), auto (try lorentzian, then water, then metabolite).')
   p.add_argument('--linewidth_range', type=float, nargs=2, default=[0.5, 10.0],
                  help='Valid range for estimated linewidth in Hz [min, max].')
   p.add_argument('--linewidth_step', type=float, default=0.5,

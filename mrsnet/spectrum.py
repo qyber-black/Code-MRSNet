@@ -1352,7 +1352,7 @@ class Spectrum:
     Parameters
     ----------
     method : str, optional
-        Estimation method: 'water_peak', 'metabolite_peak', 'auto'. Defaults to 'water_peak'
+        Estimation method: 'water_peak', 'metabolite_peak', 'lorentzian', 'auto'. Defaults to 'water_peak'
     verbose : int, optional
         Verbosity level. Defaults to 0
     min_snr : float, optional
@@ -1384,9 +1384,13 @@ class Spectrum:
       return self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
     elif method == 'metabolite_peak':
       return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+    elif method == 'lorentzian':
+      return self._estimate_linewidth_lorentzian(magnitude, nu, verbose, min_snr, max_peaks)
     elif method == 'auto':
-      # Try water peak first, fall back to metabolite peak
-      lw = self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+      # Try lorentzian, then water peak, then metabolite peak
+      lw = self._estimate_linewidth_lorentzian(magnitude, nu, verbose, min_snr, max_peaks)
+      if lw is None:
+        lw = self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
       if lw is None:
         lw = self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
       return lw
@@ -1816,3 +1820,156 @@ class Spectrum:
           return nu[i]
 
     return None
+
+  def _estimate_linewidth_lorentzian(self, magnitude, nu, verbose, min_snr=3.0, max_peaks=3):
+    """Estimate linewidth using Lorentzian peak fitting with FWHM fallback.
+
+    This method fits Lorentzian functions to identified peaks and uses the fitted
+    linewidth parameter. If fitting fails, it falls back to FWHM calculation.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+    min_snr : float
+        Minimum SNR threshold for peak detection
+    max_peaks : int
+        Maximum number of peaks to use for averaging
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if estimation fails
+    """
+    try:
+      from scipy.optimize import curve_fit
+    except ImportError:
+      if verbose > 2:
+        print("# scipy not available for Lorentzian fitting, falling back to FWHM")
+      return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+
+    # Look for metabolite peaks in the typical MRS range
+    metabolite_region = (nu >= -1.0) & (nu <= 4.5)
+    if not np.any(metabolite_region):
+      if verbose > 2:
+        print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
+      return None
+
+    metabolite_magnitude = magnitude[metabolite_region]
+    metabolite_nu = nu[metabolite_region]
+
+    # Estimate noise level from baseline
+    noise_region = (nu >= 8.0) & (nu <= 12.0)  # High ppm noise region
+    if np.any(noise_region):
+      noise_level = np.std(magnitude[noise_region])
+    else:
+      noise_level = np.std(metabolite_magnitude) * 0.1  # Fallback estimate
+
+    # Find multiple peaks above SNR threshold
+    peaks = self._find_peaks_robust(metabolite_magnitude, metabolite_nu, noise_level, min_snr, max_peaks, verbose)
+
+    if len(peaks) == 0:
+      if verbose > 2:
+        print("# No metabolite peaks found above SNR threshold for Lorentzian fitting")
+      return None
+
+    # Define Lorentzian function
+    def lorentzian(x, amplitude, center, linewidth, baseline):
+      """Lorentzian function: amplitude / (1 + ((x - center) / (linewidth/2))^2) + baseline."""
+      return amplitude / (1 + ((x - center) / (linewidth / 2))**2) + baseline
+
+    linewidth_values = []
+
+    for peak_ppm, peak_magnitude, _ in peaks:
+      try:
+        # Define fitting region around the peak (±0.5 ppm or 20% of spectrum width)
+        region_width = min(0.5, (metabolite_nu[-1] - metabolite_nu[0]) * 0.2)
+        region_mask = (metabolite_nu >= peak_ppm - region_width) & (metabolite_nu <= peak_ppm + region_width)
+
+        if not np.any(region_mask):
+          continue
+
+        fit_nu = metabolite_nu[region_mask]
+        fit_magnitude = metabolite_magnitude[region_mask]
+
+        # Initial parameter estimates
+        baseline_est = np.median(fit_magnitude)
+        amplitude_est = peak_magnitude - baseline_est
+        center_est = peak_ppm
+
+        # Estimate linewidth from FWHM as initial guess
+        half_max = peak_magnitude / 2.0
+        left_idx = None
+        right_idx = None
+        for i in range(len(fit_magnitude)):
+          if fit_magnitude[i] <= half_max and left_idx is None:
+            left_idx = i
+          if fit_magnitude[i] <= half_max:
+            right_idx = i
+        if left_idx is not None and right_idx is not None:
+          fwhm_ppm_est = fit_nu[right_idx] - fit_nu[left_idx]
+          linewidth_est = fwhm_ppm_est * 0.5  # Initial guess based on FWHM
+        else:
+          linewidth_est = 0.1  # Fallback
+
+        # Parameter bounds - more generous bounds
+        bounds = (
+          [0, peak_ppm - region_width/2, 0.001, baseline_est * 0.5],  # Lower bounds
+          [amplitude_est * 3, peak_ppm + region_width/2, 1.0, baseline_est * 1.5]  # Upper bounds
+        )
+
+        # Try fitting without bounds first
+        try:
+          popt, pcov = curve_fit(
+            lorentzian, fit_nu, fit_magnitude,
+            p0=[amplitude_est, center_est, linewidth_est, baseline_est],
+            maxfev=2000
+          )
+        except Exception:
+          # If that fails, try with bounds
+          popt, pcov = curve_fit(
+            lorentzian, fit_nu, fit_magnitude,
+            p0=[amplitude_est, center_est, linewidth_est, baseline_est],
+            bounds=bounds,
+            maxfev=2000
+          )
+
+        # Extract fitted linewidth and convert to Hz
+        fitted_linewidth_ppm = popt[2]
+        fitted_linewidth_hz = fitted_linewidth_ppm * self.omega
+
+        # Validate the fit
+        fitted_curve = lorentzian(fit_nu, *popt)
+        r_squared = 1 - np.sum((fit_magnitude - fitted_curve)**2) / np.sum((fit_magnitude - np.mean(fit_magnitude))**2)
+
+        if verbose > 2:
+          print(f"# Lorentzian fit details at {peak_ppm:.2f} ppm: R²={r_squared:.3f}, linewidth={fitted_linewidth_ppm:.3f} ppm, amplitude={popt[0]:.1f}")
+
+        if r_squared > 0.5 and 0.01 < fitted_linewidth_ppm < 2.0:  # More lenient criteria
+          linewidth_values.append(fitted_linewidth_hz)
+          if verbose > 1:
+            print(f"# Lorentzian fit at {peak_ppm:.2f} ppm: {fitted_linewidth_hz:.1f} Hz (R²={r_squared:.3f})")
+        else:
+          if verbose > 2:
+            print(f"# Lorentzian fit at {peak_ppm:.2f} ppm rejected: R²={r_squared:.3f}, linewidth={fitted_linewidth_ppm:.3f} ppm")
+
+      except Exception as e:
+        if verbose > 2:
+          print(f"# Lorentzian fitting failed for peak at {peak_ppm:.2f} ppm: {e}")
+
+    # If Lorentzian fitting failed for all peaks, fall back to FWHM
+    if len(linewidth_values) == 0:
+      if verbose > 2:
+        print("# All Lorentzian fits failed, falling back to FWHM method")
+      return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+
+    # Use median for robustness against outliers
+    median_linewidth = np.median(linewidth_values)
+    if verbose > 2:
+      print(f"# Lorentzian linewidth: {median_linewidth:.1f} Hz (from {len(linewidth_values)} peaks)")
+
+    return median_linewidth

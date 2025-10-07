@@ -14,6 +14,7 @@ including LCModel, FID-A, PyGamma, and SU-* basis sets.
 
 import copy
 import os
+import traceback
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -410,7 +411,7 @@ class Basis:
             try:
               if vals[2].lower() == self.pulse_sequence \
                 and (vals[3] == "EDITON" or vals[3] == "EDITOFF") \
-                and np.abs(float(vals[4]) - self.linewidth) < 1e-2 \
+                and np.abs(float(vals[4]) - float(self.linewidth)) < 1e-2 \
                 and int(vals[5]) == self.sample_rate \
                 and int(vals[6]) == self.samples \
                 and np.abs(float(vals[7][0:-4]) - self.omega) < 1e-2:
@@ -418,7 +419,7 @@ class Basis:
                 if len(spec.metabolites) > 1:
                   raise RuntimeError("More than one metabolite in FID-A basis")
                 if spec.metabolites[0].lower() in [x.lower() for x in self.metabolites] \
-                  and np.abs(spec.linewidth - self.linewidth) < 1e-2 \
+                  and np.abs(spec.linewidth - float(self.linewidth)) < 1e-2 \
                   and np.abs(spec.omega - self.omega) < 1e-2 \
                   and spec.sample_rate == self.sample_rate \
                   and len(spec.fft) == self.samples:
@@ -436,9 +437,10 @@ class Basis:
                   # Mark matched metabolite as done in pending map (case-insensitive)
                   lkey = canonical_m.lower()
                   if lkey in pending_map:
-                    del pending_map[lkey]
+                    pending_map.pop(lkey, None)
             except Exception as e:
-              print("Error loading FID-A file",e)
+              print("Error loading FID-A file:",e)
+              print(traceback.format_exc())
               pass
     # Finalize the list of metabolites still to simulate
     to_simulate = list(pending_map.values())

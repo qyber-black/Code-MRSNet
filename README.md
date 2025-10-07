@@ -263,6 +263,27 @@ specified, as csv file. If there is a `concentrations.json` file at the top-leve
 in the data folder, this is assumed to contain the ground truth and quantification
 results are compared to it.
 
+## Sim-to-Real Analysis
+
+MRSNet provides a sim2real analysis tool to evaluate the gap between simulated
+and experimental spectra by comparing experimental benchmark data against basis
+spectra. This helps assess how well simulated training data represents real
+experimental conditions.
+
+```
+./mrsnet.py sim2real --source fid-a-2d --manufacturer siemens --omega 123.23 --linewidth 2.0 -vv
+```
+
+Key features:
+- **Linewidth Estimation**: Automatically estimates linewidth from experimental spectra
+- **Basis Comparison**: Compares experimental spectra against simulated basis sets
+- **Per-Spectrum Analysis**: Supports individual linewidth estimation for each spectrum
+- **Monte Carlo Noise**: Includes noise analysis for robustness testing
+
+The analysis generates comparison plots and metrics stored in `data/sim2real/` showing
+how well the simulated basis matches experimental data across different benchmark
+series.
+
 The code will attempt to analyse all of the spectra contained in the provided
 directory. There are a couple of caveats to enable this to work correctly:
 
@@ -309,6 +330,12 @@ After you have training/validation and benchmark outputs, you can aggregate resu
 
 This writes `PATH_TO_MODEL_ROOT/aggregate/all_results.csv` (overwriting if it exists).
 
+The aggregation script:
+- Combines training/validation results with benchmark results
+- Extracts model parameters from folder structure
+- Creates a unified CSV with all performance metrics
+- Handles multiple model variants and cross-validation folds
+
 ## Issues
 
 * If GPyOpt for gpo selection fails with "not positive definite, even with jitter.",
@@ -331,7 +358,9 @@ Released versions:
   and quantification.
 * v2.1 - current version with TensorFlow 2.20, Python 3.13 support, and enhanced
   model architectures including autoencoders, autoencoder-quantifiers, and four extra
-  deep learning models: EncDec, FoundationalCNN (fCNN), QMRS, and QNet.
+  deep learning models: EncDec, FoundationalCNN (fCNN), QMRS, and QNet (with both basic
+  and full basis set LLS variants). Includes sim2real analysis, linewidth estimation,
+  and JSON-based execution via run.py.
 
 ## Locations
 
