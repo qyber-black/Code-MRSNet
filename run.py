@@ -510,19 +510,16 @@ class MRSNetRunner:
         start_time = time.time()
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)  # noqa: S603
+            # Ensure child Python processes do not buffer stdout/stderr
+            env = os.environ.copy()
+            env.setdefault('PYTHONUNBUFFERED', '1')
+
+            # Inherit parent's stdout/stderr to stream output live to terminal
+            result = subprocess.run(cmd, check=True, env=env)  # noqa: S603
             duration = time.time() - start_time
 
             print(f"Exit code: {result.returncode}")
             print(f"Duration: {duration:.2f} seconds")
-
-            if result.stdout:
-                print("STDOUT:")
-                print(result.stdout)
-
-            if result.stderr:
-                print("STDERR:")
-                print(result.stderr)
 
             print(f"✅ SUCCESS: {description}")
             return True
@@ -531,14 +528,6 @@ class MRSNetRunner:
             duration = time.time() - start_time
             print(f"Exit code: {e.returncode}")
             print(f"Duration: {duration:.2f} seconds")
-
-            if e.stdout:
-                print("STDOUT:")
-                print(e.stdout)
-
-            if e.stderr:
-                print("STDERR:")
-                print(e.stderr)
 
             print(f"❌ ERROR: {description}")
             return False
@@ -603,10 +592,13 @@ class MRSNetRunner:
                         dep_args = self._merge_args(next((rc for rc in self.config['runs'] if rc.get('name') == dep), {}))
                         dep_model_path = self._find_latest_model_path(dep_args)
                     if dep_model_path:
-                        # Inject model into run_config args for this execution
-                        run_config['_only_args_no_common'] = True
-                        run_config['args'] = {'model': dep_model_path}
-                        # Update merged args variable for subsequent checks (now only model)
+                        # Inject model into run_config args for this execution, preserving existing args (e.g., norm)
+                        existing_args = dict(run_config.get('args', {}))
+                        existing_args['model'] = dep_model_path
+                        run_config['args'] = existing_args
+                        # Ensure we merge with common args (do not restrict to only args)
+                        run_config.pop('_only_args_no_common', None)
+                        # Update merged args variable for subsequent checks
                         args = self._merge_args(run_config)
                         # Persist artifact for this run
                         self.artifacts.setdefault(name, {})['model_path'] = dep_model_path
@@ -643,7 +635,7 @@ class MRSNetRunner:
                             trainer_path = os.path.dirname(latest_path)
                             is_complete, missing_folds, found_folds = self._validate_kfold_completeness(trainer_path, expected_k)
                             if not is_complete:
-                                print(f"⚠️  WARNING: Training completed but KFold validation incomplete!")
+                                print("⚠️  WARNING: Training completed but KFold validation incomplete!")
                                 print(f"Expected {expected_k} folds, found {len(found_folds)} folds")
                                 print(f"Missing folds: {missing_folds}")
                                 print(f"Found folds: {found_folds}")

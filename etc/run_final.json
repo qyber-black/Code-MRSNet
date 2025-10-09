@@ -1,14 +1,15 @@
 {
   "common": {
     "metabolites": ["Cr", "GABA", "Gln", "Glu", "NAA"],
-    "dataset": "data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/10000-1",
+    "dataset": "data/sim-spectra/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/100000-1",
     "epochs": 2000,
     "validate": 0,
     "batchsize": 16,
-    "norm": "sum"
+    "norm": "sum",
+    "verbose": 1
   },
   "runs": [
-    {"name": "cnn_best_off_on",        "command": "train",     "args": { "model": "cnn_medium_sigmoid_pool",
+    {"name": "cnn_simple_off_on",      "command": "train",     "args": { "model": "cnn_medium_sigmoid_pool",
                                                                          "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
     {"name": "cnn_para_off_on",        "command": "train",     "args": { "model": "cnn_-1_-3_9_9_5_3_0.0_0.3_512_512_2048_sigmoid",
                                                                          "acquisitions": ["edit_off", "edit_on"], "datatype": ["imaginary", "real"]}},
@@ -17,7 +18,7 @@
     {"name": "qnet_real_off_on",       "command": "train",     "args": {"model": "qnet_default",       "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
     {"name": "qnet_basis_real_off_on", "command": "train",     "args": {"model": "qnet_basis_default", "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
     {"name": "encdec_real_off_on",     "command": "train",     "args": {"model": "encdec_default",     "acquisitions": ["edit_off", "edit_on"], "datatype": ["real"]}},
-    {"name": "cnn_best_benchmark",     "command": "benchmark", "args": {"norm": "max"}, "depends_on": "cnn_best_off_on"},
+    {"name": "cnn_simple_benchmark",    "command": "benchmark", "args": {"norm": "max"}, "depends_on": "cnn_simple_off_on"},
     {"name": "cnn_para_benchmark",     "command": "benchmark", "args": {"norm": "max"}, "depends_on": "cnn_para_off_on"},
     {"name": "fcnn_benchmark",         "command": "benchmark", "args": {"norm": "max"}, "depends_on": "fcnn_real_off_on"},
     {"name": "qmrs_benchmark",         "command": "benchmark", "args": {"norm": "max"}, "depends_on": "qmrs_real_off_on"},
