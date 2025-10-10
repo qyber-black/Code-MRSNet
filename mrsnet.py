@@ -290,7 +290,7 @@ def add_arguments_benchmark(p):
   """
   # Add benchmark arguments
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
-  p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='default',
+  p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='max',
                  help='Concentration normalisation: sum or max equal to 1; default means to use quantifier norm; none uses raw output)')
 
 def add_arguments_noise_mc(p):
