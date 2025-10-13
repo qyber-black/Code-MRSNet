@@ -130,6 +130,12 @@ class MRSNetRunner:
 
         cmd = ['python3', 'mrsnet.py', command]
 
+        # Filter arguments for commands that only accept a subset of common args
+        # benchmark accepts only: --model, --norm and -v/--verbose
+        if command == 'benchmark':
+            allowed_keys = {'model', 'norm', 'verbose'}
+            args = {k: v for k, v in args.items() if k in allowed_keys}
+
         # Add arguments to command
         for key, value in args.items():
             if value is None:
