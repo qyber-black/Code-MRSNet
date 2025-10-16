@@ -822,7 +822,16 @@ def _create_parameter_correlation_plot(param_df: pd.DataFrame, arch: str, out_di
     return
 
   # Create correlation matrix (only architecture parameters)
-  corr_data = param_df[numeric_params].corr()
+  # Filter out columns with zero variance to avoid NumPy warnings
+  numeric_params_filtered = []
+  for param in numeric_params:
+    if param_df[param].std() > 0:
+      numeric_params_filtered.append(param)
+
+  if not numeric_params_filtered:
+    return
+
+  corr_data = param_df[numeric_params_filtered].corr()
 
   # Create the plot
   fig, ax = plt.subplots(figsize=(10, 8))
@@ -875,10 +884,11 @@ def _create_parameter_performance_correlation_plot(param_df: pd.DataFrame, arch:
   for param in all_params:
     if param_df[param].dtype in ['int64', 'float64']:
       # Numeric parameter - use Pearson correlation
-      corr = param_df[param].corr(param_df['val_mae_mean'])
-      if not pd.isna(corr):
-        correlations.append(corr)
-        param_names.append(param)
+      if param_df[param].std() > 0 and param_df['val_mae_mean'].std() > 0:
+        corr = param_df[param].corr(param_df['val_mae_mean'])
+        if not pd.isna(corr):
+          correlations.append(corr)
+          param_names.append(param)
     else:
       # String parameter - use one-hot encoding and correlation
       # Create dummy variables for each unique value
@@ -886,10 +896,11 @@ def _create_parameter_performance_correlation_plot(param_df: pd.DataFrame, arch:
       if len(dummies.columns) > 1:  # Only if more than one unique value
         # Calculate correlation for each dummy variable
         for col in dummies.columns:
-          corr = dummies[col].corr(param_df['val_mae_mean'])
-          if not pd.isna(corr):
-            correlations.append(corr)
-            param_names.append(col)
+          if dummies[col].std() > 0 and param_df['val_mae_mean'].std() > 0:
+            corr = dummies[col].corr(param_df['val_mae_mean'])
+            if not pd.isna(corr):
+              correlations.append(corr)
+              param_names.append(col)
       else:
         # Single value - no correlation to calculate
         continue
@@ -988,7 +999,10 @@ def _create_parameter_value_performance_plot(param_df: pd.DataFrame, arch: str, 
             pass
 
         # Calculate and display correlation
-        corr = values_clean.corr(val_mae_clean)
+        if values_clean.std() > 0 and val_mae_clean.std() > 0:
+          corr = values_clean.corr(val_mae_clean)
+        else:
+          corr = float('nan')
         ax.text(0.05, 0.95, f'r = {corr:.3f}', transform=ax.transAxes,
                 fontsize=10, fontweight='bold',
                 bbox={'boxstyle': 'round', 'facecolor': 'white', 'alpha': 0.8})
@@ -1032,8 +1046,13 @@ def _create_parameter_value_performance_plot(param_df: pd.DataFrame, arch: str, 
           ax.grid(True, alpha=0.3)
 
           # Calculate and display correlation (using numeric encoding)
-          numeric_values = [list(unique_vals).index(val) for val in values_clean]
-          corr = np.corrcoef(numeric_values, val_mae_clean)[0, 1]
+          numeric_values = np.array([list(unique_vals).index(val) for val in values_clean], dtype=float)
+          y_vals = np.array(val_mae_clean, dtype=float)
+          # Avoid RuntimeWarning from np.corrcoef when variance is zero
+          if np.std(numeric_values) > 0 and np.std(y_vals) > 0:
+            corr = float(np.corrcoef(numeric_values, y_vals)[0, 1])
+          else:
+            corr = float('nan')
           ax.text(0.05, 0.95, f'r = {corr:.3f}', transform=ax.transAxes,
                   fontsize=10, fontweight='bold',
                   bbox={ 'boxstyle': 'round', 'facecolor': 'white', 'alpha': 0.8})
@@ -1085,10 +1104,16 @@ def _create_parameter_interaction_plot(param_df: pd.DataFrame, arch: str, out_di
       if i != j:
         # Calculate interaction effect (correlation between param1*param2 and performance)
         interaction_term = param_df[param1] * param_df[param2]
-        interaction_matrix[i, j] = interaction_term.corr(param_df[perf_col])
+        if interaction_term.std() > 0 and param_df[perf_col].std() > 0:
+          interaction_matrix[i, j] = interaction_term.corr(param_df[perf_col])
+        else:
+          interaction_matrix[i, j] = float('nan')
       else:
         # Diagonal: individual parameter correlation with performance
-        interaction_matrix[i, j] = param_df[param1].corr(param_df[perf_col])
+        if param_df[param1].std() > 0 and param_df[perf_col].std() > 0:
+          interaction_matrix[i, j] = param_df[param1].corr(param_df[perf_col])
+        else:
+          interaction_matrix[i, j] = float('nan')
 
   # Create the plot
   fig, ax = plt.subplots(figsize=(max(8, n_params * 0.8), max(6, n_params * 0.8)))
@@ -1153,9 +1178,10 @@ def _create_coverage_gaps_plot(param_df: pd.DataFrame, arch: str, out_dir: Path,
   if mae_col is not None:
     correlations = []
     for param in numeric_params:
-      corr = abs(param_df[param].corr(param_df[mae_col]))
-      if not pd.isna(corr):
-        correlations.append((param, corr))
+      if param_df[param].std() > 0 and param_df[mae_col].std() > 0:
+        corr = abs(param_df[param].corr(param_df[mae_col]))
+        if not pd.isna(corr):
+          correlations.append((param, corr))
 
     # Sort by correlation strength
     correlations.sort(key=lambda x: x[1], reverse=True)
@@ -1262,8 +1288,9 @@ def _create_coverage_gaps_plot(param_df: pd.DataFrame, arch: str, out_dir: Path,
 
 def _render_benchmark_plots(df: pd.DataFrame, out_dir: Path, dpi: int, log_scale: bool) -> None:
   """Create benchmark plots for each model that has benchmark results."""
-  # Find all benchmark columns
-  bench_cols = [col for col in df.columns if col.startswith('bench_') and col.endswith('_mae')]
+  # Find all benchmark columns (support both 'bench_' and 'benchmark_' prefixes)
+  bench_cols = [col for col in df.columns
+                if (col.startswith('bench_') or col.startswith('benchmark_')) and col.endswith('_mae')]
   if not bench_cols:
     return
 
@@ -1298,9 +1325,14 @@ def _render_benchmark_plots(df: pd.DataFrame, out_dir: Path, dpi: int, log_scale
     mae_maxs = []
 
     for bench_name in bench_names:
+      # Prefer 'bench_' names, fallback to 'benchmark_'
       mae_col = f'bench_{bench_name}_mae'
       min_col = f'bench_{bench_name}_mae_min'
       max_col = f'bench_{bench_name}_mae_max'
+      if mae_col not in row.index:
+        mae_col = f'benchmark_{bench_name}_mae'
+        min_col = f'benchmark_{bench_name}_mae_min'
+        max_col = f'benchmark_{bench_name}_mae_max'
 
       if mae_col in row and pd.notna(row[mae_col]):
         mae_val = float(row[mae_col])
@@ -1350,6 +1382,115 @@ def _render_benchmark_plots(df: pd.DataFrame, out_dir: Path, dpi: int, log_scale
     fig.savefig(out_file, dpi=dpi, bbox_inches='tight')
     plt.close(fig)
 
+
+def _render_benchmark_all_comparison(df: pd.DataFrame, out_dir: Path, dpi: int, log_scale: bool, top_n: int) -> None:
+  """Create a single comparison chart for benchmark MAE across models.
+
+  Shows the best models (lowest MAE) based on average performance across all available benchmark datasets
+  with optional min/max error bars when available.
+  """
+  # Find all benchmark columns (exclude individual experiment benchmarks, focus on combined ones)
+  bench_cols = [col for col in df.columns
+                if (col.startswith('bench_') or col.startswith('benchmark_')) and col.endswith('_mae')]
+
+  # Filter out individual experiment benchmarks (E1, E2, etc.) to focus on combined benchmarks
+  combined_bench_cols = [col for col in bench_cols
+                        if not any(f'E{i}_' in col for i in range(1, 20))]  # Exclude E1, E2, ..., E19
+
+  # If no combined benchmarks, fall back to all benchmarks
+  if not combined_bench_cols:
+    combined_bench_cols = bench_cols
+
+  if not combined_bench_cols:
+    return
+
+  # Calculate average benchmark MAE for each model
+  model_benchmarks = []
+  for _, row in df.iterrows():
+    model_name = row.get('model')
+    if pd.isna(model_name):
+      continue
+
+    # Collect all benchmark MAE values for this model
+    bench_values = []
+    for col in combined_bench_cols:
+      val = row.get(col)
+      if pd.notna(val):
+        try:
+          bench_values.append(float(val))
+        except (ValueError, TypeError):
+          continue
+
+    if bench_values:
+      avg_mae = np.mean(bench_values)
+      min_mae = np.min(bench_values)
+      max_mae = np.max(bench_values)
+      std_mae = np.std(bench_values) if len(bench_values) > 1 else 0.0
+
+      model_benchmarks.append({
+        'model': model_name,
+        'avg_bench_mae': avg_mae,
+        'min_bench_mae': min_mae,
+        'max_bench_mae': max_mae,
+        'std_bench_mae': std_mae,
+        'num_benchmarks': len(bench_values)
+      })
+
+  if not model_benchmarks:
+    return
+
+  # Convert to DataFrame and sort by average MAE
+  bench_df = pd.DataFrame(model_benchmarks)
+  bench_df = bench_df.sort_values('avg_bench_mae', ascending=True).head(top_n)
+
+  # Prepare values and asymmetric error bars
+  mae_vals = bench_df['avg_bench_mae'].values
+  mins = bench_df['min_bench_mae'].values
+  maxs = bench_df['max_bench_mae'].values
+
+  # Compute asymmetric errors
+  lower_err_list: list[float] = []
+  upper_err_list: list[float] = []
+  for v, vmin, vmax in zip(mae_vals, mins, maxs, strict=False):
+    lower_err_list.append(max(0.0, float(v - vmin)))
+    upper_err_list.append(max(0.0, float(vmax - v)))
+  lower_err = np.array(lower_err_list, dtype=float)
+  upper_err = np.array(upper_err_list, dtype=float)
+
+  # Labels (use full model names; rotate for readability)
+  labels = bench_df['model'].astype(str).tolist()
+
+  fig, ax = plt.subplots(figsize=(max(10, len(labels) * 0.5), 7))
+  x_pos = np.arange(len(labels))
+
+  bars = ax.bar(x_pos, mae_vals, alpha=0.8, color='steelblue', capsize=4)
+  if any(e > 0 for e in lower_err + upper_err):
+    ax.errorbar(x_pos, mae_vals, yerr=[lower_err, upper_err],
+                fmt='none', color='black', capsize=3, capthick=1)
+
+  ax.set_xticks(x_pos)
+  ax.set_xticklabels(labels, rotation=60, ha='right')
+  ax.set_ylabel('Average Benchmark MAE')
+  ax.set_title(f'Benchmark Comparison: Average across {len(combined_bench_cols)} combined datasets (lower is better)')
+  if log_scale:
+    ax.set_yscale('log')
+  ax.grid(axis='y', linestyle='--', alpha=0.3)
+
+  # Add value labels
+  for bar, val in zip(bars, mae_vals, strict=False):
+    height = bar.get_height()
+    ax.text(bar.get_x() + bar.get_width()/2., height + (height * 0.01 if height > 0 else 0.01),
+            f'{val:.4f}', ha='center', va='bottom', fontsize=9)
+
+  # Add legend showing number of benchmarks
+  legend_text = f'Error bars: min/max across benchmarks\nModels: {len(bench_df)} shown of {len(model_benchmarks)} total'
+  ax.text(0.02, 0.98, legend_text, transform=ax.transAxes, fontsize=9,
+          verticalalignment='top', bbox={'boxstyle': 'round', 'facecolor': 'white', 'alpha': 0.8})
+
+  plt.tight_layout()
+  out_file = out_dir / 'benchmark_all_comparison.pdf'
+  fig.savefig(out_file, dpi=dpi, bbox_inches='tight')
+  plt.close(fig)
 
 def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log_scale: bool, top_n: int = 25, sensitivity: str = 'high') -> None:
   if df.empty:
@@ -1683,6 +1824,8 @@ def main() -> None:
 
   # Benchmark plots for each model
   _render_benchmark_plots(df, out_dir, args.dpi, args.log_scale)
+  # Benchmark ALL comparison across models
+  _render_benchmark_all_comparison(df, out_dir, args.dpi, args.log_scale, args.top_n)
 
   # Architecture parameter analysis
   _render_architecture_analysis(df, out_dir, args.dpi, args.log_scale)
