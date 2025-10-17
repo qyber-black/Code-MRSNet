@@ -12,15 +12,13 @@ individual MRS spectra, including loading from various formats, signal
 processing operations, and visualization.
 """
 
-import os
-import random
-import subprocess
 import json
-import numpy as np
-from scipy.io import loadmat
-from scipy import signal
+import os
+
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.ticker import FuncFormatter
+from scipy.io import loadmat
 
 from mrsnet import molecules
 from mrsnet.cfg import Cfg
@@ -35,7 +33,8 @@ class Spectrum:
   and provides methods for signal processing, visualization, and data
   export/import.
 
-  Attributes:
+  Attributes
+  ----------
       id (str): Unique identifier for the spectrum
       pulse_sequence (str): Pulse sequence type (e.g., 'megapress')
       acquisition (str): Acquisition type (e.g., 'edit_off', 'difference')
@@ -55,7 +54,8 @@ class Spectrum:
                source=None, metabolites=None, linewidth=None):
     """Initialize a new spectrum.
 
-    Args:
+    Parameters
+    ----------
         id (str): Unique identifier for the spectrum
         pulse_sequence (str): Pulse sequence type
         acquisition (str): Acquisition type
@@ -85,7 +85,8 @@ class Spectrum:
             remove_water_peak=False, phase_correct=False, force_phase_correct=None):
     """Set spectrum data from frequency domain (FFT).
 
-    Args:
+    Parameters
+    ----------
         fft (array-like): FFT data of the spectrum
         sample_rate (float): Sample rate in Hz
         center_ppm (float, optional): Center PPM value. Defaults to 0
@@ -104,7 +105,8 @@ class Spectrum:
 
     Converts time domain data to frequency domain using FFT and sets up the spectrum.
 
-    Args:
+    Parameters
+    ----------
         adc (array-like): Time domain ADC data
         sample_rate (float): Sample rate in Hz
         center_ppm (float, optional): Center PPM value. Defaults to 0
@@ -120,7 +122,8 @@ class Spectrum:
   def _set(self, sample_rate, center_ppm, b0_shift_ppm, scale, remove_water_peak, phase_correct, force_phase_correct=None):
     """Set spectrum parameters and apply processing.
 
-    Args:
+    Parameters
+    ----------
         sample_rate (float): Sampling rate in Hz
         center_ppm (float): Center frequency in ppm
         b0_shift_ppm (float): B0 field shift in ppm
@@ -133,7 +136,7 @@ class Spectrum:
     self.center_ppm = center_ppm
     self.b0_shift_ppm = b0_shift_ppm
     self.scale = scale
-    if (phase_correct and Cfg.val['phase_correct'] != None) or (force_phase_correct is not None):
+    if (phase_correct and Cfg.val['phase_correct'] is not None) or (force_phase_correct is not None):
       # Only phase correct if also configured or it is forced (specifically used by load_pygamma)
       if Cfg.dev('spectrum_set_phase_correct'):
         fig, axs = plt.subplots(1,2)
@@ -159,7 +162,8 @@ class Spectrum:
   def get_f(self):
     """Get frequency domain data.
 
-    Returns:
+    Returns
+    -------
         tuple: (fft_data, ppm_axis) where:
             - fft_data: Scaled FFT data
             - ppm_axis: PPM axis values
@@ -170,7 +174,8 @@ class Spectrum:
   def get_t(self):
     """Get time domain data.
 
-    Returns:
+    Returns
+    -------
         tuple: (adc_data, time_axis) where:
             - adc_data: Time domain ADC data
             - time_axis: Time axis values in seconds
@@ -183,11 +188,13 @@ class Spectrum:
 
     Either finds a reference peak automatically or applies a given shift.
 
-    Args:
+    Parameters
+    ----------
         shift (float, optional): B0 shift in PPM. If None, automatically finds
                                 reference peak. Defaults to None
 
-    Returns:
+    Returns
+    -------
         tuple: (shift_applied, peak_value) where:
             - shift_applied: The B0 shift applied in PPM
             - peak_value: Value of the reference peak used
@@ -211,11 +218,13 @@ class Spectrum:
   def _fft_peak_location(self, location, ppm_range):
     """Find peak location in FFT spectrum.
 
-    Args:
+    Parameters
+    ----------
         location (float): Expected peak location in ppm
         ppm_range (float): Search range around location in ppm
 
-    Returns:
+    Returns
+    -------
         tuple: (peak_location, peak_value) or (None, None) if not found
     """
     fft, nu = self.get_f()
@@ -227,7 +236,7 @@ class Spectrum:
       if abs(location - nu[idx]) < ppm_range:
         # BG Quinn, EJ Hannan. The Estimation and Tracking of Frequency, 2001.
         # https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
-        if Cfg.val['fft_peak_location_estimator'] == None or idx < 1 or idx >= len(nu) - 1:
+        if Cfg.val['fft_peak_location_estimator'] is None or idx < 1 or idx >= len(nu) - 1:
           return nu[idx], -fft_abs[idx] # at boundary (should never really be there)
         if Cfg.val['fft_peak_location_estimator'] == 'quadratic':
           # Quadratic method
@@ -287,10 +296,12 @@ class Spectrum:
     def err(para):
       """Error function for Ernst phase correction optimization.
 
-      Args:
+      Parameters
+      ----------
           para: Parameter object containing phase values
 
-      Returns:
+      Returns
+      -------
           float: Error value for optimization
       """
       val = para.valuesdict()
@@ -322,20 +333,22 @@ class Spectrum:
     Automated phase Correction based on Minimization of Entropy.
     Reference: L Chen, Z Weng, LY Goh, M Garland. An efficient algorithm for automatic
     phase correction of NMR spectra based on entropy minimization. J Magn
-    Res 158:164–168, 2002.
+    Res 158:164-168, 2002.
     """
     # Automated phase Correction based on Minimization of Entropy
     # L Chen, Z Weng, LY Goh, M Garland. An efficient algorithm for automatic
     # phase correction of NMR spectra based on entropy minimization. J Magn
-    # Res 158:164–168, 2002.
+    # Res 158:164-168, 2002.
 
     def entropy(para):
       """Entropy function for ACME phase correction optimization.
 
-      Args:
+      Parameters
+      ----------
           para: Parameter object containing phase values
 
-      Returns:
+      Returns
+      -------
           float: Entropy value for optimization
       """
       val = para.valuesdict()
@@ -344,7 +357,7 @@ class Spectrum:
       s_fft = self.fft * np.exp(1j*shift)
       # Target function
       r = np.real(s_fft)
-      r1 = np.abs((r[1:] - r[:-1]))
+      r1 = np.abs(r[1:] - r[:-1])
       h = r1 / np.sum(r1)
       h[np.abs(h)<1e-8] = 1.0
       return -np.sum(h*np.log(h)) + Cfg.val['phase_correct_acme_gamma'] * np.sum(r[r<0]**2)
@@ -368,7 +381,8 @@ class Spectrum:
   def rescale_fft(self, high_ppm=-4.5, low_ppm=-1, npts=2048):
     """Resample FFT to prescribed frequency bins via zero filling.
 
-    Args:
+    Parameters
+    ----------
         high_ppm (float, optional): Upper PPM bound. Defaults to -4.5
         low_ppm (float, optional): Lower PPM bound. Defaults to -1
         npts (int, optional): Number of frequency points. Defaults to 2048
@@ -435,11 +449,12 @@ class Spectrum:
   def add_noise_adc_normal(self, mu=0, sigma=0):
     """Add normal ADC noise to the spectrum.
 
-    Args:
+    Parameters
+    ----------
         mu (float, optional): Mean of noise distribution. Defaults to 0
         sigma (float, optional): Standard deviation of noise distribution. Defaults to 0
     """
-    if self.noise != None:
+    if self.noise is not None:
       raise RuntimeError("Adding noise twice is not advised")
     self.noise = ("adc", "normal", mu, sigma)
     adc, _ = self.get_t()
@@ -451,32 +466,33 @@ class Spectrum:
   def plot(self, axes, type='fft', mode='magnitude'):
     """Plot spectrum on given axes.
 
-    Args:
+    Parameters
+    ----------
         axes: Matplotlib axes object
         type (str, optional): Plot type ('fft' or 'time'). Defaults to 'fft'
         mode (str, optional): Plot mode ('magnitude', 'real', 'imaginary'). Defaults to 'magnitude'
     """
     if type == 'time':
-      Y, X = self.get_t()
+      Y, X = self.get_t()  # noqa: N806
       axes.set_xlabel('Time (s)')
     elif type == 'fft':
-      Y, X = self.rescale_fft()
+      Y, X = self.rescale_fft()  # noqa: N806
       axes.set_xlabel('Frequency (ppm)')
       # Note, we are using negative frequencies
-      axes.xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: "{:.8g}".format(np.abs(x_val))))
+      axes.xaxis.set_major_formatter(FuncFormatter(lambda x_val, tick_pos: f"{np.abs(x_val):.8g}"))
     else:
       raise RuntimeError("Unknown plot type")
     if mode == 'magnitude':
-      Y = np.abs(Y)
+      Y = np.abs(Y)  # noqa: N806
       axes.set_ylabel('Magn.')
     elif mode == 'phase':
-      Y = np.angle(Y)
+      Y = np.angle(Y)  # noqa: N806
       axes.set_ylabel('Phase')
     elif mode == 'real':
-      Y = np.real(Y)
+      Y = np.real(Y)  # noqa: N806
       axes.set_ylabel('Re')
     elif mode == 'imaginary':
-      Y = np.imag(Y)
+      Y = np.imag(Y)  # noqa: N806
       axes.set_ylabel('Im')
     else:
       raise RuntimeError("Unknown plot mode "+mode)
@@ -485,12 +501,14 @@ class Spectrum:
   def plot_spectrum(self, concentrations={}, screen_dpi=96, type='fft'):
     """Plot spectrum with optional concentration information.
 
-    Args:
+    Parameters
+    ----------
         concentrations (dict, optional): Dictionary of metabolite concentrations. Defaults to {}
         screen_dpi (int, optional): Screen DPI for display. Defaults to 96
         type (str, optional): Plot type ('fft' or 'time'). Defaults to 'fft'
 
-    Returns:
+    Returns
+    -------
         matplotlib.figure.Figure: The created figure
     """
     n_cols = 1
@@ -498,11 +516,11 @@ class Spectrum:
     if len(concentrations) > 0:
       n_cols = 2
     else:
-      super_title += "-".join(self.metabolites[0]) + ' '
+      super_title += "-".join(self.metabolites) + ' '
     super_title += self.source + ' ' + self.pulse_sequence.upper() + ' ' + self.acquisition + f" @ {self.omega:.2f} MHz"
-    if self.linewidth != None:
+    if self.linewidth is not None:
       super_title += " Linewidth: " + str(self.linewidth)
-    if self.noise != None:
+    if self.noise is not None:
       if self.noise[0] == "adc" and self.noise[1] == "normal":
         super_title += f" - ADC Noise N({self.noise[2]},{self.noise[3]})"
       else:
@@ -530,7 +548,7 @@ class Spectrum:
     if n_cols == 2:
       ax = plt.subplot(1, 2, 2)
       plt.title('Concentrations')
-      cn = [n for n in concentrations.keys()]
+      cn = list(concentrations.keys())
       cv = [concentrations[v] for v in cn]
       ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv)
       ax.set_xticks(np.arange(len(self.metabolites)))
@@ -541,7 +559,8 @@ class Spectrum:
   def save_json(self, filename, version=1):
     """Save spectrum data to JSON file.
 
-    Args:
+    Parameters
+    ----------
         filename (str): Output filename
         version (int, optional): JSON format version. Defaults to 1
     """
@@ -571,13 +590,15 @@ class Spectrum:
   def plot_full_spectrum(spectra, concentrations={}, screen_dpi=96, type='fft'):
     """Plot multiple spectra in a single figure.
 
-    Args:
+    Parameters
+    ----------
         spectra (dict): Dictionary of spectrum objects
         concentrations (dict, optional): Dictionary of metabolite concentrations. Defaults to {}
         screen_dpi (int, optional): Screen DPI for display. Defaults to 96
         type (str, optional): Plot type ('fft' or 'time'). Defaults to 'fft'
 
-    Returns:
+    Returns
+    -------
         matplotlib.figure.Figure: The created figure
     """
     n_cols = len(spectra)
@@ -587,12 +608,12 @@ class Spectrum:
     if len(concentrations) > 0:
       n_cols +=1
     else:
-      super_title += "-".join(metabolites[0]) + " "
-    source = set([spectra[a].source for a in spectra])
-    pulse_sequence = set([spectra[a].pulse_sequence for a in spectra])
-    omega = set([spectra[a].omega for a in spectra])
-    linewidth = set([spectra[a].linewidth for a in spectra])
-    noise = set([spectra[a].noise for a in spectra])
+      super_title += "-".join(metabolites) + " "
+    source = {spectra[a].source for a in spectra}
+    pulse_sequence = {spectra[a].pulse_sequence for a in spectra}
+    omega = {spectra[a].omega for a in spectra}
+    linewidth = {spectra[a].linewidth for a in spectra}
+    noise = {spectra[a].noise for a in spectra}
     if len(source) != 1 or len(pulse_sequence) != 1 or len(omega) != 1 or len(linewidth) != 1 or \
        len(noise) != 1:
       raise RuntimeError("Spectra differ in more than acquisition")
@@ -601,7 +622,7 @@ class Spectrum:
     super_title += next(iter(source)) + ' ' + next(iter(pulse_sequence)).upper() + ' ' + \
                    f" @ {omega:.2f} MHz"
     linewidth = next(iter(linewidth))
-    if linewidth != None:
+    if linewidth is not None:
       super_title += " Linewidth: " + str(linewidth)
     noise = next(iter(noise))
     if noise is not None:
@@ -643,7 +664,7 @@ class Spectrum:
       axes[3,n_cols-1].set_xticks([])
       ax = plt.subplot(1, n_cols, n_cols)
       plt.title('Concentrations')
-      cn = [n for n in concentrations.keys()]
+      cn = list(concentrations.keys())
       cv = [concentrations[v] for v in cn]
       ax.bar(np.linspace(0, len(concentrations) - 1, len(concentrations)), cv, align='center')
       ax.set_xticks(np.arange(len(metabolites)),molecules.short_name(cn))
@@ -653,7 +674,7 @@ class Spectrum:
     for ax in figure.axes:
       try:
         ax.label_outer()
-      except:
+      except Exception:  # noqa: S110
         pass
 
     return figure
@@ -662,7 +683,8 @@ class Spectrum:
   def comb(f1,s1,f2,s2,id,acq):
     """Combine two spectra with weighted addition.
 
-    Args:
+    Parameters
+    ----------
         f1 (float): Weight for first spectrum
         s1 (Spectrum): First spectrum
         f2 (float): Weight for second spectrum
@@ -670,10 +692,12 @@ class Spectrum:
         id (str): ID for the combined spectrum
         acq (str): Acquisition type for the combined spectrum
 
-    Returns:
+    Returns
+    -------
         Spectrum: Combined spectrum
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If spectra have incompatible properties
     """
     # Weighted addition of two spectra
@@ -696,7 +720,7 @@ class Spectrum:
                  omega=(s1.omega+s2.omega)/2.0,
                  source=s1.source,
                  metabolites=metabolites,
-                 linewidth=None if s1.linewidth == None else (s1.linewidth + s2.linewidth)/2.0)
+                 linewidth=None if s1.linewidth is None else (s1.linewidth + s2.linewidth)/2.0)
     if s1.center_ppm != s2.center_ppm:
       raise RuntimeError("Combining spectra with different center_ppm")
     if s1.b0_shift_ppm != s2.b0_shift_ppm:
@@ -712,19 +736,22 @@ class Spectrum:
     return s
 
   @staticmethod
-  def combs(fs,ss,id,acq):
+  def combs(fs,ss,id,acq, allow_mixed_linewidths=False):
     """Combine multiple spectra with weighted sum.
 
-    Args:
+    Parameters
+    ----------
         fs (list): List of weights for spectra
         ss (list): List of Spectrum objects
         id (str): ID for the combined spectrum
         acq (str): Acquisition type for the combined spectrum
 
-    Returns:
+    Returns
+    -------
         Spectrum: Combined spectrum
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If spectra have incompatible properties
     """
     # Weighted sum of spectra
@@ -734,7 +761,7 @@ class Spectrum:
       if ss[0].source != ss[n].source:
         raise RuntimeError("Combing spectra from different sources")
     avg_omega = np.mean([s.omega for s in ss])
-    if ss[0].linewidth == None:
+    if ss[0].linewidth is None:
       avg_linewidth = None
     else:
       avg_linewidth = np.mean([s.linewidth for s in ss])
@@ -742,10 +769,11 @@ class Spectrum:
     for n in range(len(ss)):
       if np.abs(ss[n].omega - avg_omega) >= 1e-8:
         raise RuntimeError("Combing spectra with different omega")
-      if (avg_linewidth == None and ss[n].linewidth != None) or \
-         (avg_linewidth != None and ss[n].linewidth == None) or \
-         (avg_linewidth != None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
-        raise RuntimeError("Combing spectra with different linewidths")
+      if not allow_mixed_linewidths:
+        if (avg_linewidth is None and ss[n].linewidth is not None) or \
+           (avg_linewidth is not None and ss[n].linewidth is None) or \
+           (avg_linewidth is not None and np.abs(ss[n].linewidth - avg_linewidth) >= 1e-8):
+          raise RuntimeError("Combing spectra with different linewidths")
       for m in ss[n].metabolites:
         if m not in all_metabolites:
           all_metabolites.append(m)
@@ -759,24 +787,28 @@ class Spectrum:
                  linewidth=avg_linewidth)
     fft = fs[0] * ss[0].get_f()[0]
     for n in range(1,len(ss)):
-      if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
-        raise RuntimeError("Combining spectra with different b0_shift_ppm")
       if ss[0].sample_rate != ss[n].sample_rate:
         raise RuntimeError("Combining spectra with different sample rates")
       if ss[0].noise != ss[n].noise:
         raise RuntimeError("Combining spectra with different added noise")
-      if ss[0].center_ppm != ss[n].center_ppm:
-        # We need to frequency shift the FFT signal by shifting it in the time domain
-        # x'[n] = exp(i\pi df/(Fs/2) n) x[n]
-        # where x' is the new and x the original signal; Fs the sample rate and df the shift,
-        # determined by the difference in center_ppm, in Hz.
-        df = (ss[n].center_ppm - ss[0].center_ppm) * ss[n].omega
-        D = 2j*np.pi * df / ss[n].sample_rate
+      # Align center_ppm and (optionally) b0_shift_ppm via time-domain frequency shift
+      need_shift = (ss[0].center_ppm != ss[n].center_ppm)
+      df = 0.0
+      if need_shift:
+        df += (ss[n].center_ppm - ss[0].center_ppm) * ss[n].omega
+      if ss[0].b0_shift_ppm != ss[n].b0_shift_ppm:
+        if not allow_mixed_linewidths:
+          raise RuntimeError("Combining spectra with different b0_shift_ppm")
+        # incorporate b0 shift difference into frequency shift (in Hz)
+        df += (ss[n].b0_shift_ppm - ss[0].b0_shift_ppm) * ss[n].omega
+        need_shift = True
+      if need_shift:
+        D = 2j*np.pi * df / ss[n].sample_rate  # noqa: N806
         x = ss[n].get_t()[0]
         x = np.exp(D * np.arange(0,len(x))) * x
-        F = npfft.fftshift(npfft.fft(x))
+        F = npfft.fftshift(npfft.fft(x))  # noqa: N806
       else:
-        F = ss[n].get_f()[0]
+        F = ss[n].get_f()[0]  # noqa: N806
       fft +=  fs[n] * F
     s.set_f(fft, ss[0].sample_rate, center_ppm = ss[0].center_ppm, b0_shift_ppm = ss[0].b0_shift_ppm)
     s.noise = ss[0].noise
@@ -786,13 +818,16 @@ class Spectrum:
   def correct_b0_multi(spectra):
     """Apply B0 correction across multiple acquisitions.
 
-    Args:
+    Parameters
+    ----------
         spectra (dict): Dictionary of spectrum objects
 
-    Returns:
+    Returns
+    -------
         float: B0 shift applied in ppm
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If pulse sequence is not megapress
     """
     # B0 correction across multiple acquisitions
@@ -800,7 +835,7 @@ class Spectrum:
       if spectra[a].pulse_sequence != "megapress":
         raise RuntimeError("Multi-b0-correction only for megapress")
     b0_shift, _ = spectra['edit_off'].correct_b0()
-    if b0_shift == None:
+    if b0_shift is None:
       b0_shift = 0.0 # No shift as no peak found
     for a in spectra:
       spectra[a].correct_b0(b0_shift)
@@ -810,13 +845,15 @@ class Spectrum:
   def load_fida(fida_file,id,source,su=False):
     """Load spectrum from FID-A MATLAB file.
 
-    Args:
+    Parameters
+    ----------
         fida_file (str): Path to FID-A .mat file
         id (str): Spectrum identifier
         source (str): Data source identifier
         su (bool, optional): Use SU-3TSkyra format. Defaults to False
 
-    Returns:
+    Returns
+    -------
         Spectrum: Loaded spectrum object
     """
     fida_data = loadmat(fida_file)
@@ -859,7 +896,7 @@ class Spectrum:
       #        center_ppm = -np.median(fida_data['nu']))
       # Conjugation due to negative frequencies
       s.set_f(np.conjugate(np.array(fida_data['fft']).flatten()),
-              1/(np.abs(fida_data['t'][0][0] - fida_data['t'][0][1])),
+              1/(np.abs(fida_data['t'][0] - fida_data['t'][1])),
               center_ppm = -np.median(fida_data['nu']))
     return s
 
@@ -868,7 +905,8 @@ class Spectrum:
                    npts, dt, simulate=True, force_phase_correct="acme"):
     """Load spectrum from PyGamma simulation.
 
-    Args:
+    Parameters
+    ----------
         pygamma_dir (str): Directory containing PyGamma data
         search_path (list): Additional search paths
         metabolite (str): Metabolite name
@@ -880,9 +918,12 @@ class Spectrum:
         simulate (bool, optional): Whether to simulate if not cached. Defaults to True
         force_phase_correct (str, optional): Phase correction method. Defaults to "acme"
 
-    Returns:
+    Returns
+    -------
         list: List of Spectrum objects
+        path (str): Directory containing PyGamma spectra loaded
     """
+    filename = None
     for spath in [pygamma_dir, *search_path]:
       cache_dir = os.path.join(spath,
                                pulse_sequence + '_' + str(omega) + '_' +
@@ -890,12 +931,17 @@ class Spectrum:
       filename = os.path.join(cache_dir, metabolite+".json")
       if os.path.exists(filename):
         break
-    if not os.path.exists(filename):
+    if filename is None:
+      cache_dir = os.path.join(pygamma_dir,
+                               pulse_sequence + '_' + str(omega) + '_' +
+                               str(linewidth) + '_' + str(npts) + '_' + str(dt))
       if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
       from mrsnet.simulators.pygamma.pygamma_simulator import pygamma_spectra_sim
-      pygamma_spectra_sim(metabolite, omega, pulse_sequence,
-                          linewidth, cache_dir, npts, dt)
+      pygamma_spectra_sim(metabolite, omega, pulse_sequence, linewidth, cache_dir, npts, dt)
+      filename = os.path.join(cache_dir, metabolite+".json")
+      if not os.path.exists(filename):
+        raise RuntimeError('PyGamma cache file does not exist: ' + filename)
     specs = []
     with open(filename, 'rb') as load_file:
       for raw in json.load(load_file):
@@ -916,22 +962,25 @@ class Spectrum:
         s.set_t(np.array(raw["adc_re"]) - 1j * np.array(raw["adc_im"]),
                 1/dt, force_phase_correct=force_phase_correct)
         specs.append(s)
-    return specs
+    return specs, os.path.dirname(cache_dir)
 
   @staticmethod
   def load_lcm(basis_file, acquisition, req_omega, req_metabolites):
     """Load spectrum from LCModel basis file.
 
-    Args:
+    Parameters
+    ----------
         basis_file (str): Path to LCModel basis file
         acquisition (str): Acquisition type
         req_omega (float): Required Larmor frequency
         req_metabolites (list): List of required metabolites
 
-    Returns:
+    Returns
+    -------
         list: List of Spectrum objects
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If basis file doesn't exist or has incompatible properties
     """
     # Load lcmodel basis
@@ -969,7 +1018,7 @@ class Spectrum:
                         vv = float(vv)
                       else:
                         vv = int(vv)
-                    except:
+                    except Exception:  # noqa: S110
                       pass
                     v.append(vv)
                 else:
@@ -977,20 +1026,20 @@ class Spectrum:
                     v = float(v)
                   else:
                     v = int(v)
-              except:
+              except Exception:  # noqa: S110
                 pass
               metadata[area][sl[0].strip()] = v
           elif area == "spectrum":
             if np.abs(metadata['SEQPAR']['HZPPPM'] - req_omega) > (molecules.GYROMAGNETIC_RATIO/5):
               # more than a 0.2T difference, there's an issue
-              raise RuntimeError('LCModel basis set (%.2fT) is more than 0.2T different to prescibed '
+              raise RuntimeError('LCModel basis set (%.2fT) is more than 0.2T different to prescibed '  # noqa: UP031
                                  'omega (%.2fT).' % (metadata['SEQPAR']['HZPPPM']/molecules.GYROMAGNETIC_RATIO,
                                                   req_omega/molecules.GYROMAGNETIC_RATIO))
             if metadata['SEQPAR']['SEQ'] != "MEGA-": # not megapress
               raise RuntimeError('Unrecognised LCM pulse sequence: ' + metadata['SEQ'])
             try:
               metabolite = molecules.short_name(metadata["BASIS"]["METABO"])
-            except:
+            except Exception:
               metabolite = "Unknown"
             if metabolite in req_metabolites:
               # All lcmodel spectra are stored as fourier transforms, so we convert them back to the ADC
@@ -1006,9 +1055,11 @@ class Spectrum:
                 fft[:ishift] = 0.0
               elif ishift < 0:
                 fft[fft.shape[0]-ishift:] = 0.0
-              # We have ON = OFF + 2*diff
+              # LCModel DIFF corresponds to the measured ON - OFF spectrum.
+              # Hence DIFF already contains approximately twice the edited metabolite contribution (e.g. GABA),
+              # and downstream we should consistently use DIFF = ON - OFF without additional rescaling.
               fft_scale = metadata["BASIS"]["TRAMP"]*100.0/(metadata["BASIS"]["CONC"]*metadata["BASIS"]["VOLUME"])
-              adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
+              #adc = npfft.ifft(np.array(fft,dtype=np.complex64)) * fft_scale
               if "PPMSEP" in metadata["NMUSED"]:
                 center_ppm = -metadata["NMUSED"]["PPMSEP"]
               else:
@@ -1023,7 +1074,7 @@ class Spectrum:
               s.set_f(npfft.fftshift(fft * fft_scale),1.0/metadata["BASIS1"]['BADELT'],center_ppm=center_ppm)
               specs.append(s)
           elif area != "":
-            raise IOError(f"Unknown section in LCModel basis file {area}")
+            raise OSError(f"Unknown section in LCModel basis file {area}")
           if line[1:] == "END":
             if area == "BASIS":
               area = "spectrum"
@@ -1044,29 +1095,33 @@ class Spectrum:
   def load_dicom(file, concentrations=None, metabolites=None, verbose=0):
     """Load spectrum from DICOM file.
 
-    Args:
+    Parameters
+    ----------
         file (str): Path to DICOM file
         concentrations (str, optional): Path to concentrations JSON file. Defaults to None
         metabolites (list, optional): List of metabolites. Defaults to None
         verbose (int, optional): Verbosity level. Defaults to 0
 
-    Returns:
+    Returns
+    -------
         tuple: (Spectrum object, concentrations dict)
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If file doesn't exist or has unsupported format
     """
     if not os.path.exists(file):
         raise RuntimeError('Dicom file does not exist: ' + file)
-    from mrsnet.qdicom.read_dicom_siemens import read_dicom
     import struct
+
+    from mrsnet.qdicom.read_dicom_siemens import read_dicom
     # We assume it's a Siemens dicom spectrum, so do not check this
     dicom, info = read_dicom(file)
     # Read Siemens DICOM spectroscopy data tag (0x7fe1, 0x1010) as a list of complex numbers ReImReIm...; 4 byte floats; little endian
-    TAG_SPECTROSCOPY_DATA = (0x7fe1, 0x1010)
-    TAG_PATIENT_ID = (0x0010, 0x0020)
+    TAG_SPECTROSCOPY_DATA = (0x7fe1, 0x1010)  # noqa: N806
+    TAG_PATIENT_ID = (0x0010, 0x0020)  # noqa: N806
     data = dicom[TAG_SPECTROSCOPY_DATA].value
-    data = struct.unpack("<%df" % (len(data) / 4), data)
+    data = struct.unpack("<%df" % (len(data) / 4), data)  # noqa: UP031
     data = np.array([complex(data[l], data[l+1]) for l in range(0, len(data), 2)])
 
     # Get pulse sequence (this works for Siemens)
@@ -1104,7 +1159,7 @@ class Spectrum:
     cs = np.array([])
     if concentrations is not None:
       ids = file.split('/')
-      with open(concentrations, 'r') as f:
+      with open(concentrations) as f:
         js = json.load(f)
         if len(metabolites) == 0:
           metabolites = set()
@@ -1134,7 +1189,7 @@ class Spectrum:
                     source='dicom',
                     metabolites=metabolites,
                     linewidth=None) # Unknown
-    if Cfg.val['filter_dicom'] != None:
+    if Cfg.val['filter_dicom'] is not None:
       # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
       if verbose > 4:
         fig, axs = plt.subplot(1,2)
@@ -1162,16 +1217,19 @@ class Spectrum:
   def load_csv(file, concentrations=None, metabolites=None, verbose=0):
     """Load spectrum from CSV file.
 
-    Args:
+    Parameters
+    ----------
         file (str): Path to CSV file
         concentrations (str, optional): Path to concentrations JSON file. Defaults to None
         metabolites (list, optional): List of metabolites. Defaults to None
         verbose (int, optional): Verbosity level. Defaults to 0
 
-    Returns:
+    Returns
+    -------
         tuple: (Spectrum object, concentrations dict)
 
-    Raises:
+    Raises
+    ------
         RuntimeError: If file doesn't exist or has unsupported format
     """
     if not os.path.exists(file):
@@ -1231,7 +1289,7 @@ class Spectrum:
     cs = np.array([])
     if concentrations is not None:
       ids = file.split('/')
-      with open(concentrations, 'r') as f:
+      with open(concentrations) as f:
         js = json.load(f)
         if len(metabolites) == 0:
           metabolites = set()
@@ -1261,7 +1319,7 @@ class Spectrum:
                     source='dicom',
                     metabolites=metabolites,
                     linewidth=None) # Unknown
-    if Cfg.val['filter_dicom'] != None:
+    if Cfg.val['filter_dicom'] is not None:
       # Handle spectral leakage if requested via Cfg (possibly not the best idea; leave it to the NN)
       if verbose > 4:
         fig, axs = plt.subplot(1,2)
@@ -1284,3 +1342,634 @@ class Spectrum:
         axs[0].set_title("Filtered Dicom Data")
     spec.set_t(data,1/dt,center_ppm=center_ppm,remove_water_peak=True,phase_correct=True)
     return spec, cs
+
+  def estimate_linewidth(self, method='water_peak', verbose=0, min_snr=3.0, max_peaks=3):
+    """Estimate linewidth from experimental spectrum.
+
+    For MEGAPRESS spectra, this should ideally be called on edit_off spectra
+    which have the best SNR and no editing artifacts.
+
+    Parameters
+    ----------
+    method : str, optional
+        Estimation method: 'water_peak', 'metabolite_peak', 'lorentzian', 'auto'. Defaults to 'water_peak'
+    verbose : int, optional
+        Verbosity level. Defaults to 0
+    min_snr : float, optional
+        Minimum SNR threshold for peak detection. Defaults to 3.0
+    max_peaks : int, optional
+        Maximum number of peaks to use for averaging. Defaults to 3
+
+    Returns
+    -------
+    float
+        Estimated linewidth in Hz, or None if estimation fails
+
+    Raises
+    ------
+    RuntimeError
+        If spectrum data is not available or method is not supported
+    """
+    if self.fft is None:
+      raise RuntimeError("Spectrum data not available for linewidth estimation")
+
+    if verbose > 2:
+      print(f"# Estimating linewidth using method: {method} for {self.acquisition} spectrum")
+
+    # Get frequency domain data
+    fft_data, nu = self.get_f()
+    magnitude = np.abs(fft_data)
+
+    if method == 'water_peak':
+      return self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+    elif method == 'metabolite_peak':
+      return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+    elif method == 'lorentzian':
+      return self._estimate_linewidth_lorentzian(magnitude, nu, verbose, min_snr, max_peaks)
+    elif method == 'auto':
+      # Try lorentzian, then water peak, then metabolite peak
+      lw = self._estimate_linewidth_lorentzian(magnitude, nu, verbose, min_snr, max_peaks)
+      if lw is None:
+        lw = self._estimate_linewidth_water_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+      if lw is None:
+        lw = self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+      return lw
+    else:
+      raise RuntimeError(f"Unknown linewidth estimation method: {method}")
+
+  def _estimate_linewidth_water_peak(self, magnitude, nu, verbose):
+    """Estimate linewidth from water peak (4.7 ppm region).
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if water peak not found
+    """
+    # Look for water peak around 4.7 ppm
+    water_region = (nu >= 4.0) & (nu <= 5.5)
+    if not np.any(water_region):
+      if verbose > 2:
+        print("# Water peak region (4.0-5.5 ppm) not found in spectrum")
+      return None
+
+    water_magnitude = magnitude[water_region]
+    water_nu = nu[water_region]
+
+    # Find peak maximum
+    peak_idx = np.argmax(water_magnitude)
+    peak_ppm = water_nu[peak_idx]
+    peak_magnitude = water_magnitude[peak_idx]
+
+    if verbose > 2:
+      print(f"# Water peak found at {peak_ppm:.2f} ppm with magnitude {peak_magnitude:.2e}")
+
+    # Find FWHM
+    half_max = peak_magnitude / 2.0
+
+    # Find left and right half-maximum points
+    left_idx = None
+    right_idx = None
+
+    # Search left from peak
+    for i in range(peak_idx - 1, -1, -1):
+      if water_magnitude[i] <= half_max:
+        left_idx = i
+        break
+
+    # Search right from peak
+    for i in range(peak_idx + 1, len(water_magnitude)):
+      if water_magnitude[i] <= half_max:
+        right_idx = i
+        break
+
+    if left_idx is None or right_idx is None:
+      if verbose > 2:
+        print("# Could not determine FWHM of water peak")
+      return None
+
+    # Calculate FWHM in ppm
+    fwhm_ppm = water_nu[right_idx] - water_nu[left_idx]
+
+    # Convert to Hz
+    fwhm_hz = fwhm_ppm * self.omega
+
+    if verbose > 2:
+      print(f"# Water peak FWHM: {fwhm_ppm:.3f} ppm ({fwhm_hz:.1f} Hz)")
+
+    return fwhm_hz
+
+  def _estimate_linewidth_metabolite_peak(self, magnitude, nu, verbose):
+    """Estimate linewidth from metabolite peaks (NAA, Cr, etc.).
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if suitable peaks not found
+    """
+    # Look for metabolite peaks in the typical MRS range
+    metabolite_region = (nu >= -1.0) & (nu <= 4.5)
+    if not np.any(metabolite_region):
+      if verbose > 2:
+        print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
+      return None
+
+    metabolite_magnitude = magnitude[metabolite_region]
+    metabolite_nu = nu[metabolite_region]
+
+    # Find the strongest peak in the metabolite region
+    peak_idx = np.argmax(metabolite_magnitude)
+    peak_ppm = metabolite_nu[peak_idx]
+    peak_magnitude = metabolite_magnitude[peak_idx]
+
+    if verbose > 2:
+      print(f"# Strongest metabolite peak found at {peak_ppm:.2f} ppm with magnitude {peak_magnitude:.2e}")
+
+    # Find FWHM
+    half_max = peak_magnitude / 2.0
+
+    # Find left and right half-maximum points
+    left_idx = None
+    right_idx = None
+
+    # Search left from peak
+    for i in range(peak_idx - 1, -1, -1):
+      if metabolite_magnitude[i] <= half_max:
+        left_idx = i
+        break
+
+    # Search right from peak
+    for i in range(peak_idx + 1, len(metabolite_magnitude)):
+      if metabolite_magnitude[i] <= half_max:
+        right_idx = i
+        break
+
+    if left_idx is None or right_idx is None:
+      if verbose > 2:
+        print("# Could not determine FWHM of metabolite peak")
+      return None
+
+    # Calculate FWHM in ppm
+    fwhm_ppm = metabolite_nu[right_idx] - metabolite_nu[left_idx]
+
+    # Convert to Hz
+    fwhm_hz = fwhm_ppm * self.omega
+
+    if verbose > 2:
+      print(f"# Metabolite peak FWHM: {fwhm_ppm:.3f} ppm ({fwhm_hz:.1f} Hz)")
+
+    return fwhm_hz
+
+  def _estimate_linewidth_water_peak_robust(self, magnitude, nu, verbose, min_snr=3.0, max_peaks=3):
+    """Robust estimate linewidth from water peak with improved peak detection and SNR filtering.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+    min_snr : float
+        Minimum SNR threshold for peak detection
+    max_peaks : int
+        Maximum number of peaks to use for averaging
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if water peak not found
+    """
+    # Look for water peak around 4.7 ppm with dynamic range
+    water_region = (nu >= 4.0) & (nu <= 5.5)
+    if not np.any(water_region):
+      if verbose > 2:
+        print("# Water peak region (4.0-5.5 ppm) not found in spectrum")
+      return None
+
+    water_magnitude = magnitude[water_region]
+    water_nu = nu[water_region]
+
+    # Estimate noise level from baseline
+    noise_region = (nu >= 8.0) & (nu <= 12.0)  # High ppm noise region
+    if np.any(noise_region):
+      noise_level = np.std(magnitude[noise_region])
+    else:
+      noise_level = np.std(water_magnitude) * 0.1  # Fallback estimate
+
+    # Find multiple peaks above SNR threshold
+    peaks = self._find_peaks_robust(water_magnitude, water_nu, noise_level, min_snr, max_peaks, verbose)
+
+    if len(peaks) == 0:
+      if verbose > 2:
+        print("# No water peaks found above SNR threshold")
+      return None
+
+    # Calculate FWHM for each peak and average
+    fwhm_values = []
+    for peak_ppm, peak_magnitude, peak_idx in peaks:
+      fwhm_hz = self._calculate_fwhm_interpolated(water_magnitude, water_nu, peak_idx, peak_magnitude, verbose)
+      if fwhm_hz is not None:
+        fwhm_values.append(fwhm_hz)
+        if verbose > 2:
+          print(f"# Water peak at {peak_ppm:.2f} ppm: {fwhm_hz:.1f} Hz")
+
+    if len(fwhm_values) == 0:
+      if verbose > 2:
+        print("# Could not determine FWHM for any water peaks")
+      return None
+
+    # Use median for robustness against outliers
+    median_fwhm = np.median(fwhm_values)
+    if verbose > 2:
+      print(f"# Water peak FWHM: {median_fwhm:.1f} Hz (from {len(fwhm_values)} peaks)")
+
+    return median_fwhm
+
+  def _estimate_linewidth_metabolite_peak_robust(self, magnitude, nu, verbose, min_snr=3.0, max_peaks=3):
+    """Robust estimate linewidth from metabolite peaks with improved peak detection.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+    min_snr : float
+        Minimum SNR threshold for peak detection
+    max_peaks : int
+        Maximum number of peaks to use for averaging
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if suitable peaks not found
+    """
+    # Look for metabolite peaks in the typical MRS range
+    metabolite_region = (nu >= -1.0) & (nu <= 4.5)
+    if not np.any(metabolite_region):
+      if verbose > 2:
+        print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
+      return None
+
+    metabolite_magnitude = magnitude[metabolite_region]
+    metabolite_nu = nu[metabolite_region]
+
+    # Estimate noise level from baseline
+    noise_region = (nu >= 8.0) & (nu <= 12.0)  # High ppm noise region
+    if np.any(noise_region):
+      noise_level = np.std(magnitude[noise_region])
+    else:
+      noise_level = np.std(metabolite_magnitude) * 0.1  # Fallback estimate
+
+    # Find multiple peaks above SNR threshold
+    peaks = self._find_peaks_robust(metabolite_magnitude, metabolite_nu, noise_level, min_snr, max_peaks, verbose)
+
+    if len(peaks) == 0:
+      if verbose > 2:
+        print("# No metabolite peaks found above SNR threshold")
+      return None
+
+    # Calculate FWHM for each peak and average
+    fwhm_values = []
+    for peak_ppm, peak_magnitude, peak_idx in peaks:
+      fwhm_hz = self._calculate_fwhm_interpolated(metabolite_magnitude, metabolite_nu, peak_idx, peak_magnitude, verbose)
+      if fwhm_hz is not None:
+        fwhm_values.append(fwhm_hz)
+        if verbose > 1:
+          print(f"# Metabolite peak at {peak_ppm:.2f} ppm: {fwhm_hz:.1f} Hz")
+
+    if len(fwhm_values) == 0:
+      if verbose > 2:
+        print("# Could not determine FWHM for any metabolite peaks")
+      return None
+
+    # Use median for robustness against outliers
+    median_fwhm = np.median(fwhm_values)
+    if verbose > 2:
+      print(f"# Metabolite peak FWHM: {median_fwhm:.1f} Hz (from {len(fwhm_values)} peaks)")
+
+    return median_fwhm
+
+  def _find_peaks_robust(self, magnitude, nu, noise_level, min_snr, max_peaks, verbose):
+    """Find peaks above SNR threshold with proper peak detection.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    noise_level : float
+        Estimated noise level
+    min_snr : float
+        Minimum SNR threshold
+    max_peaks : int
+        Maximum number of peaks to return
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    list
+        List of (peak_ppm, peak_magnitude, peak_idx) tuples
+    """
+    # Find local maxima
+    from scipy.signal import find_peaks
+
+    # Ensure minimum peak height based on SNR
+    min_height = noise_level * min_snr
+
+    # Find peaks with minimum distance between them
+    min_distance = max(1, len(magnitude) // 100)  # At least 1% of spectrum width
+
+    peaks_idx, properties = find_peaks(magnitude, height=min_height, distance=min_distance)
+
+    if len(peaks_idx) == 0:
+      return []
+
+    # Sort peaks by magnitude (strongest first)
+    peak_magnitudes = magnitude[peaks_idx]
+    sort_indices = np.argsort(peak_magnitudes)[::-1]  # Descending order
+
+    # Select top peaks
+    selected_peaks = []
+    for i in sort_indices[:max_peaks]:
+      peak_idx = peaks_idx[i]
+      peak_ppm = nu[peak_idx]
+      peak_magnitude = magnitude[peak_idx]
+      snr = peak_magnitude / noise_level
+
+      if snr >= min_snr:
+        selected_peaks.append((peak_ppm, peak_magnitude, peak_idx))
+        if verbose > 2:
+          print(f"# Peak at {peak_ppm:.2f} ppm: SNR={snr:.1f}, magnitude={peak_magnitude:.2e}")
+
+    return selected_peaks
+
+  def _calculate_fwhm_interpolated(self, magnitude, nu, peak_idx, peak_magnitude, verbose):
+    """Calculate FWHM with interpolation for better accuracy.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    peak_idx : int
+        Index of peak maximum
+    peak_magnitude : float
+        Peak magnitude
+    verbose : int
+        Verbosity level
+
+    Returns
+    -------
+    float or None
+        FWHM in Hz, or None if calculation fails
+    """
+    half_max = peak_magnitude / 2.0
+
+    # Find left and right half-maximum points with interpolation
+    left_ppm = self._find_half_max_interpolated(magnitude, nu, peak_idx, half_max, direction='left')
+    right_ppm = self._find_half_max_interpolated(magnitude, nu, peak_idx, half_max, direction='right')
+
+    if left_ppm is None or right_ppm is None:
+      return None
+
+    # Calculate FWHM in ppm
+    fwhm_ppm = right_ppm - left_ppm
+
+    # Convert to Hz
+    fwhm_hz = fwhm_ppm * self.omega
+
+    return fwhm_hz
+
+  def _find_half_max_interpolated(self, magnitude, nu, peak_idx, half_max, direction='left'):
+    """Find half-maximum point with linear interpolation.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    peak_idx : int
+        Index of peak maximum
+    half_max : float
+        Half-maximum value
+    direction : str
+        'left' or 'right' to search from peak
+
+    Returns
+    -------
+    float or None
+        Interpolated ppm value, or None if not found
+    """
+    if direction == 'left':
+      search_range = range(peak_idx - 1, -1, -1)
+    else:
+      search_range = range(peak_idx + 1, len(magnitude))
+
+    for i in search_range:
+      if direction == 'left' and magnitude[i] <= half_max:
+        # Linear interpolation between i and i+1
+        if i + 1 < len(magnitude):
+          x1, y1 = nu[i], magnitude[i]
+          x2, y2 = nu[i + 1], magnitude[i + 1]
+          # Interpolate to find x where y = half_max
+          if y2 != y1:
+            x_interp = x1 + (half_max - y1) * (x2 - x1) / (y2 - y1)
+            return x_interp
+          else:
+            return x1
+        else:
+          return nu[i]
+      elif direction == 'right' and magnitude[i] <= half_max:
+        # Linear interpolation between i-1 and i
+        if i - 1 >= 0:
+          x1, y1 = nu[i - 1], magnitude[i - 1]
+          x2, y2 = nu[i], magnitude[i]
+          # Interpolate to find x where y = half_max
+          if y2 != y1:
+            x_interp = x1 + (half_max - y1) * (x2 - x1) / (y2 - y1)
+            return x_interp
+          else:
+            return x1
+        else:
+          return nu[i]
+
+    return None
+
+  def _estimate_linewidth_lorentzian(self, magnitude, nu, verbose, min_snr=3.0, max_peaks=3):
+    """Estimate linewidth using Lorentzian peak fitting with FWHM fallback.
+
+    This method fits Lorentzian functions to identified peaks and uses the fitted
+    linewidth parameter. If fitting fails, it falls back to FWHM calculation.
+
+    Parameters
+    ----------
+    magnitude : array
+        Magnitude spectrum data
+    nu : array
+        Frequency axis in ppm
+    verbose : int
+        Verbosity level
+    min_snr : float
+        Minimum SNR threshold for peak detection
+    max_peaks : int
+        Maximum number of peaks to use for averaging
+
+    Returns
+    -------
+    float or None
+        Estimated linewidth in Hz, or None if estimation fails
+    """
+    try:
+      from scipy.optimize import curve_fit
+    except ImportError:
+      if verbose > 2:
+        print("# scipy not available for Lorentzian fitting, falling back to FWHM")
+      return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+
+    # Look for metabolite peaks in the typical MRS range
+    metabolite_region = (nu >= -1.0) & (nu <= 4.5)
+    if not np.any(metabolite_region):
+      if verbose > 2:
+        print("# Metabolite region (-1.0 to 4.5 ppm) not found in spectrum")
+      return None
+
+    metabolite_magnitude = magnitude[metabolite_region]
+    metabolite_nu = nu[metabolite_region]
+
+    # Estimate noise level from baseline
+    noise_region = (nu >= 8.0) & (nu <= 12.0)  # High ppm noise region
+    if np.any(noise_region):
+      noise_level = np.std(magnitude[noise_region])
+    else:
+      noise_level = np.std(metabolite_magnitude) * 0.1  # Fallback estimate
+
+    # Find multiple peaks above SNR threshold
+    peaks = self._find_peaks_robust(metabolite_magnitude, metabolite_nu, noise_level, min_snr, max_peaks, verbose)
+
+    if len(peaks) == 0:
+      if verbose > 2:
+        print("# No metabolite peaks found above SNR threshold for Lorentzian fitting")
+      return None
+
+    # Define Lorentzian function
+    def lorentzian(x, amplitude, center, linewidth, baseline):
+      """Lorentzian function: amplitude / (1 + ((x - center) / (linewidth/2))^2) + baseline."""
+      return amplitude / (1 + ((x - center) / (linewidth / 2))**2) + baseline
+
+    linewidth_values = []
+
+    for peak_ppm, peak_magnitude, _ in peaks:
+      try:
+        # Define fitting region around the peak (±0.5 ppm or 20% of spectrum width)
+        region_width = min(0.5, (metabolite_nu[-1] - metabolite_nu[0]) * 0.2)
+        region_mask = (metabolite_nu >= peak_ppm - region_width) & (metabolite_nu <= peak_ppm + region_width)
+
+        if not np.any(region_mask):
+          continue
+
+        fit_nu = metabolite_nu[region_mask]
+        fit_magnitude = metabolite_magnitude[region_mask]
+
+        # Initial parameter estimates
+        baseline_est = np.median(fit_magnitude)
+        amplitude_est = peak_magnitude - baseline_est
+        center_est = peak_ppm
+
+        # Estimate linewidth from FWHM as initial guess
+        half_max = peak_magnitude / 2.0
+        left_idx = None
+        right_idx = None
+        for i in range(len(fit_magnitude)):
+          if fit_magnitude[i] <= half_max and left_idx is None:
+            left_idx = i
+          if fit_magnitude[i] <= half_max:
+            right_idx = i
+        if left_idx is not None and right_idx is not None:
+          fwhm_ppm_est = fit_nu[right_idx] - fit_nu[left_idx]
+          linewidth_est = fwhm_ppm_est * 0.5  # Initial guess based on FWHM
+        else:
+          linewidth_est = 0.1  # Fallback
+
+        # Parameter bounds - more generous bounds
+        bounds = (
+          [0, peak_ppm - region_width/2, 0.001, baseline_est * 0.5],  # Lower bounds
+          [amplitude_est * 3, peak_ppm + region_width/2, 1.0, baseline_est * 1.5]  # Upper bounds
+        )
+
+        # Try fitting without bounds first
+        try:
+          popt, pcov = curve_fit(
+            lorentzian, fit_nu, fit_magnitude,
+            p0=[amplitude_est, center_est, linewidth_est, baseline_est],
+            maxfev=2000
+          )
+        except Exception:
+          # If that fails, try with bounds
+          popt, pcov = curve_fit(
+            lorentzian, fit_nu, fit_magnitude,
+            p0=[amplitude_est, center_est, linewidth_est, baseline_est],
+            bounds=bounds,
+            maxfev=2000
+          )
+
+        # Extract fitted linewidth and convert to Hz
+        fitted_linewidth_ppm = popt[2]
+        fitted_linewidth_hz = fitted_linewidth_ppm * self.omega
+
+        # Validate the fit
+        fitted_curve = lorentzian(fit_nu, *popt)
+        r_squared = 1 - np.sum((fit_magnitude - fitted_curve)**2) / np.sum((fit_magnitude - np.mean(fit_magnitude))**2)
+
+        if verbose > 2:
+          print(f"# Lorentzian fit details at {peak_ppm:.2f} ppm: R²={r_squared:.3f}, linewidth={fitted_linewidth_ppm:.3f} ppm, amplitude={popt[0]:.1f}")
+
+        if r_squared > 0.5 and 0.01 < fitted_linewidth_ppm < 2.0:  # More lenient criteria
+          linewidth_values.append(fitted_linewidth_hz)
+          if verbose > 1:
+            print(f"# Lorentzian fit at {peak_ppm:.2f} ppm: {fitted_linewidth_hz:.1f} Hz (R²={r_squared:.3f})")
+        else:
+          if verbose > 2:
+            print(f"# Lorentzian fit at {peak_ppm:.2f} ppm rejected: R²={r_squared:.3f}, linewidth={fitted_linewidth_ppm:.3f} ppm")
+
+      except Exception as e:
+        if verbose > 2:
+          print(f"# Lorentzian fitting failed for peak at {peak_ppm:.2f} ppm: {e}")
+
+    # If Lorentzian fitting failed for all peaks, fall back to FWHM
+    if len(linewidth_values) == 0:
+      if verbose > 2:
+        print("# All Lorentzian fits failed, falling back to FWHM method")
+      return self._estimate_linewidth_metabolite_peak_robust(magnitude, nu, verbose, min_snr, max_peaks)
+
+    # Use median for robustness against outliers
+    median_linewidth = np.median(linewidth_values)
+    if verbose > 2:
+      print(f"# Lorentzian linewidth: {median_linewidth:.1f} Hz (from {len(linewidth_values)} peaks)")
+
+    return median_linewidth

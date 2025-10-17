@@ -1,7 +1,7 @@
 # simulators/fida/fida_simulator.py - MRSNet - generated simulated FID-A basis spectrum
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2021 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2021 S Shermer <lw1660@gmail.com> Swansea University
 # SPDX-License-Identifier: BSD-3-Clause
 
@@ -11,11 +11,12 @@ This module provides interfaces to the FID-A MATLAB toolbox for
 simulating MRS basis spectra using various pulse sequences.
 """
 
-import os
 import errno
+import os
 import subprocess
 
 from mrsnet.cfg import Cfg
+
 
 def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, save_dir):
   """Generate FID-A spectra using MATLAB.
@@ -29,7 +30,8 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
       source (str): FID-A source type ("fid-a" or "fid-a-2d")
       save_dir (str): Directory to save generated spectra
 
-  Raises:
+  Raises
+  ------
       RuntimeError: If source type is unknown or MATLAB is not installed
   """
   if source == "fid-a":
@@ -52,11 +54,29 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
 
   matlab_command += "linewidths=["+str(linewidth)+"];"
   matlab_command += "save_dir='"+save_dir+"';"
+  # Enable cached-unbroadened pathway for fid-a-2d and set cache_dir under basis path
+  if source == "fid-a-2d":
+    cache_dir = os.path.join(Cfg.val['path_basis'], 'fid-a-2d', 'cache_unbroadened')
+    matlab_command += "use_cached_unbroadened=true;"
+    matlab_command += "cache_dir='"+cache_dir+"';"
+    # Construct basis_roots from Python config (path_basis + search_basis)
+    basis_roots = []
+    # path_basis may be None in some configs; guard it
+    if Cfg.val.get('path_basis'):
+      basis_roots.append(Cfg.val['path_basis'])
+    for sb in Cfg.val.get('search_basis', []) or []:
+      basis_roots.append(sb)
+    # Build MATLAB cell array literal
+    # Escape single quotes for MATLAB strings
+    def _matlab_quote(p):
+      return "'" + str(p).replace("'", "''") + "'"
+    matlab_cells = ",".join(_matlab_quote(p) for p in basis_roots)
+    matlab_command += "basis_roots={" + matlab_cells + "};"
 
   matlab_command += script+";exit;exit;"
 
   try:
-    p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])
+    p = subprocess.Popen(['matlab', '-nosplash', '-nodisplay', '-r', matlab_command])  # noqa: S603, S607
   except OSError as e:
     if e.errno == errno.ENOENT:
       raise RuntimeError('Matlab is not installed on this system! Can\'t simulate FID-A spectra.\n'
@@ -92,7 +112,8 @@ def fida_metabolite_name(name):
   Args:
       name (str): Metabolite name to convert
 
-  Returns:
+  Returns
+  -------
       str: FID-A compatible metabolite name
   """
   # Converts to the expected value for FID-A.

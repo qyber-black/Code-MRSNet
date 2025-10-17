@@ -49,15 +49,18 @@ def convert_names(molecules, shorten=False):
   Converts a list of metabolite names to their standardized form.
   Names are case-insensitive and can be either short or long form.
 
-  Args:
+  Parameters
+  ----------
       molecules (list): List of metabolite names to convert
       shorten (bool, optional): If True, convert to short names.
                                If False, convert to long names. Defaults to False.
 
-  Returns:
+  Returns
+  -------
       list: List of standardized metabolite names
 
-  Raises:
+  Raises
+  ------
       RuntimeError: If a metabolite name is not recognized
   """
   # Standardise molecule names to short or long form
@@ -83,10 +86,12 @@ def short_name(names):
 
   Convenience function to convert metabolite names to their short form.
 
-  Args:
+  Parameters
+  ----------
       names (str or list): Single metabolite name or list of names
 
-  Returns:
+  Returns
+  -------
       str or list: Short name(s) corresponding to input
   """
   # Standard short molecule name
@@ -99,10 +104,12 @@ def long_name(names):
 
   Convenience function to convert metabolite names to their long form.
 
-  Args:
+  Parameters
+  ----------
       names (str or list): Single metabolite name or list of names
 
-  Returns:
+  Returns
+  -------
       str or list: Long name(s) corresponding to input
   """
   # Standard long molecule name

@@ -1,10 +1,10 @@
 # MRSNet
 
-> SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University  
-> SPDX-FileCopyrightText: Copyright (C) 2020-2024 Frank C Langbein <frank@langbein.org>, Cardiff University  
+> SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
+> SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
 > SPDX-FileCopyrightText: Copyright (C) 2021-2022 S Shermer <lw1660@gmail.com>, Swansea University
 > SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
-> SPDX-License-Identifier: AGPL-3.0-or-later  
+> SPDX-License-Identifier: AGPL-3.0-or-later
 
 MRSNet is aimed at MR spectral quantification using artificial neural
 networks. It is aimed at MEGAPRESS spectra. It also provides methods to
@@ -26,25 +26,25 @@ https://langbein.org/mrsnet-paper/
 * Tested on Linux and may not work on any other platform without some adjustments.
   Standard packages for Linux are:
   * Git and git-lfs for git with submodules and LFS support.
-  * Python 3.11 (more recent versions may not work).
+  * Python 3.12+ (this version has been tested with Python 3.13).
   * Install these using your package manager with root privileges. E.g. Debian
     based distributions:
-    `sudo apt update && sudo apt install git git-lfs python3.11 python3.11-venv`
-* For all standard python packages used, see `requirements.txt`. These will be 
+    `sudo apt update && sudo apt install git git-lfs python3.13 python3.13-venv`
+* For all standard python packages used, see `requirements.txt`. These will be
   installed with the commands below, but here are some extra notes on potential
   issues.
-  * [Tensorflow](https://www.tensorflow.org/) as machine learning library. In particular 
+  * [Tensorflow](https://www.tensorflow.org/) as machine learning library. In particular
     for training, but also for quantification, a GPU (with tensorflow support) is strongly
-    recommended, with [cudnn](https://developer.nvidia.com/cudnn) or [OneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/optimization-for-tensorflow-installation-guide.html). Version 2.15 should
-    work, but more recent versions will likely fail.
+    recommended, with [cudnn](https://developer.nvidia.com/cudnn). Version 2.20 is
+    currently supported and tested.
   * For scipy/numpy you may need to install lapack and blas libraries for your
     system. By default we use numpy's fft, but you can also use fftw3 for the
-    Fourier transform functions via pyfftw (see the `npfft_module` config 
+    Fourier transform functions via pyfftw (see the `npfft_module` config
     variable and configuration files below), for which you should install `libfftw3`.
   * [PyGamma](https://github.com/pygamma-mrs/gamma),
     a MRS simulation toolbox. You only need this if you wish to use the pygamma basis
-    spectra simulation. It is currently commented out in `requirements.txt` as not 
-    supported in python 3.11. If needed you can still try to install it manually or use a 
+    spectra simulation. It is currently commented out in `requirements.txt` as not
+    supported in recent Python versions. If needed you can still try to install it manually or use a
     supported python version. See https://pygamma-mrs.github.io/gamma.io/release/GammaBuildingLibrary.html
     for installation instructions.
   * GPyOpt is no longer maintained, but usable, and depends on gpy. It can be safely
@@ -77,15 +77,14 @@ https://langbein.org/mrsnet-paper/
    ```
    pip3 install -r requirements.txt
    ```
-   Of course, you can and probably shoudl install these in a virtual environment to avoid
-   conflicts. Note that the requirements may need additional libraries, etc. to be
-   installed on you system that pip does not add (see note above). Potentially
-   you may have to set this up in a virtual environment or use the
-   `--break-system-packages` options (on your own risk of breaking something else).
-   Optionally you may want to install pygamma manually (see prerequisites above). In 
-   general dependency issues of python packages failing to installed can be addressed 
-   by commenting them out of `requirements.txt`, but it may mean that certain MRSNet 
-   functionality may not work.
+  Of course, you can and probably should install these in a virtual environment to avoid
+  conflicts. Note that the requirements may need additional system libraries that pip does
+  not install (see note above). Potentially you may have to set this up in a virtual
+  environment or use the `--break-system-packages` option (at your own risk of breaking
+  something else). Optionally you may want to install PyGamma manually (see prerequisites
+  above). In general, dependency issues of Python packages failing to install can be
+  addressed by commenting them out in `requirements.txt`, but it may mean that certain
+  MRSNet functionality will not work.
 
 To update to the latest version (of your selected branch), run `git pull` and
 step 3 and 4 above in the project folder. To switch to another version or branch
@@ -103,6 +102,7 @@ sub-commands available are:
 * select:             Model selection on dataset.
 * quantify:           Quantify spectra in dicoms.
 * benchmark:          Run benchmark on model.
+* sim2real:           Analyse sim-to-real gap across benchmark series.
 
 Generally it is best to run `mrsnet.py` from the base-folder of the git
 repository. The folder locations in data are determined by the real location of
@@ -111,11 +111,11 @@ can be overwritten by providing a `~/.config/mrsnet.json` file (see `Cfg` class
 in `mrsnet/cfg.py` for details; there is also a `cfg.json` file in the project
 folder, generated by this class, with the default values that can also be
 changed there). If you change the location of the folders in data, you do have
-to make sure the submodule data is available in the new location. MRSNet has 
+to make sure the submodule data is available in the new location. MRSNet has
 search paths for basis, model and simulation datasets defined as `search_*`
 variables in the configuration files. It stores any newly generated data
 under the data folder in `basis`, `sim-spectra`, or `model` as default paths
-that are always added by `cfg.py`. MRSNet also stores other configuration 
+that are always added by `cfg.py`. MRSNet also stores other configuration
 values in `cfg.json` in the project folder or alternatively `mrsnet.json` in
 the config folder. This overwrites the defaults from `cfg.py` (`mrsnet.json`
 overwrites `cfg.json`).
@@ -127,7 +127,7 @@ The benchmark dataset is in `data/benchmark`. Newly generated basis sets are sto
 `data/basis-dist`. Newly generated artificial neural network models are stored under
 `data/model`. Our best models we distribute are stored in `data/model-dist` as a separate
 git submodule. Newly simulated spectra are stored in `data/sim-spectra`. The submodules
-with this data are automatically installed with the above git submodule command. The 
+with this data are automatically installed with the above git submodule command. The
 `*-dist` paths are automatically added to the search paths in the configuration.
 
 The additional git submodules containing the data are
@@ -135,23 +135,23 @@ The additional git submodules containing the data are
 * [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-mrs-megapress-spectra) -
   Swansea benchmark phantom datasets collected at Swansea University's 3T Siemens scanner (in `data/benchmark`);
 * [Data - MRSNet - Models - Dist](https://qyber.black/mrs/data-mrsnet-model-dist) -
-  Best performing trained models for MRSNet (in `data/models-dist`);
+  Best performing trained models for MRSNet (in `data/model-dist`);
 * [Data - MRSNet - Basis Spectra - Dist](https://qyber.black/mrs/data-mrsnet-basis) -
-  Standard basis sets used ofr MEGAPRESS simulation (in `data/basis-dist`).
+  Standard basis sets used for MEGAPRESS simulation (in `data/basis-dist`).
 * [Code - QDicom Utilities](https://qyber.black/ca/code-qdicom-utilities) -
   Library to read dicoms.
 
 There are further git repositories on qyber.black with more data, generated for the
 publications, etc. that you can also use for your own analysis:
 
-* [Data - MRSNet - Models CNN](https://qyber.black/mrs/data-mrsnet-model-cnn): contains 
+* [Data - MRSNet - Models CNN](https://qyber.black/mrs/results-mrsnet-model-cnn): contains
   a large amount of CNN models that you could clone into `data/model-cnn` and then add that
   path to the model search path in `cfg.json` or `mrsnet.json`. Note that this is a very
   large repository. It contains the complete analysis data for the CNN models.
 * [Data - MRSNet - Simulated Spectra - MEGAPRESS](https://qyber.black/mrs/data-mrsnet-simulated-spectra-megapress):
   contains a range of simulated MEGAPRESS spectra with our simulators using the basis datasets in
-  `data/basis-dist`. These datases have been used in the papers for training and testing the
-  models. You may use these to train your own models, etc. You can clone this into 
+  `data/basis-dist`. These datasets have been used in the papers for training and testing the
+  models. You may use these to train your own models, etc. You can clone this into
   `data/sim-spectra-megapress`. Note, this is a very large repository.
 
 ## Simulating Spectra
@@ -179,6 +179,57 @@ This trains a model based on the simulated spectra in the TRAIN-DATA-PATH (see
 previous section of how to generate these and what these paths are) for 100
 epochs using 5-fold cross validating on the cnn_small_softmax model with some
 verbosity.
+
+### Available Models
+
+MRSNet supports several deep learning architectures:
+
+* `cnn_*` - Convolutional Neural Networks (various configurations)
+* `ae_*` - Autoencoder models
+* `aeq_*` - Autoencoder-quantifier models
+* `encdec_*` - Encoder-Decoder architecture with WaveNet blocks and attention GRU
+* `fcnn_*` - FoundationalCNN with CReLU activation and 7-layer architecture
+* `qmrs_*` - CNN-LSTM hybrid with multi-headed MLP for parameter prediction
+* `qnet_*` - Dual-branch network with IF extraction and LLS quantification
+* `qnet_basis_*` - QNet with full basis set LLS (scientifically accurate)
+
+Each model supports configurable parameters via model strings. For example:
+* `encdec_default` - Default EncDec configuration
+* `fcnn_32_64_128` - FCNN with custom filter sizes
+* `qmrs_16_32_64_128_0.3` - QMRS with custom architecture parameters
+* `qnet_original` - QNet with simplified LLS (practical implementation)
+* `qnet_basis_original` - QNet with full basis set LLS (scientifically accurate)
+
+### QNet Implementation Variants
+
+MRSNet provides two QNet implementations for different use cases:
+
+#### QNet (Basic Implementation)
+- Uses `BasicLLSModule` with learnable linear combinations
+- Simplified LLS for practical implementation
+- Suitable for general-purpose metabolite quantification
+- Faster training and inference
+
+#### QNetBasis (Full Basis Set LLS)
+- Implements the complete LLS approach from the original QNet paper
+- Uses actual metabolite basis spectra with imperfection factor modulation
+- Automatically extracts basis parameters from dataset paths
+- Scientifically accurate metabolite quantification
+- Requires basis files in `data/basis-dist/`
+
+**Usage Examples:**
+
+```bash
+# Basic QNet (simplified LLS)
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_original -vv
+
+# Full basis set QNet (scientifically accurate)
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_basis_original -vv
+```
+
+The QNetBasis variant automatically extracts basis parameters (source, manufacturer, omega, linewidth) from the training dataset path, ensuring the correct basis set is used for each training run.
+
+See `mrsnet.py train --help` for detailed model configuration options.
 
 MRSNet can run model selection approaches over a set of model parameters
 (currently hardcoded in `mrsnet/selection.py`) and also run the training
@@ -212,6 +263,27 @@ specified, as csv file. If there is a `concentrations.json` file at the top-leve
 in the data folder, this is assumed to contain the ground truth and quantification
 results are compared to it.
 
+## Sim-to-Real Analysis
+
+MRSNet provides a sim2real analysis tool to evaluate the gap between simulated
+and experimental spectra by comparing experimental benchmark data against basis
+spectra. This helps assess how well simulated training data represents real
+experimental conditions.
+
+```
+./mrsnet.py sim2real --source fid-a-2d --manufacturer siemens --omega 123.23 --linewidth 2.0 -vv
+```
+
+Key features:
+- **Linewidth Estimation**: Automatically estimates linewidth from experimental spectra
+- **Basis Comparison**: Compares experimental spectra against simulated basis sets
+- **Per-Spectrum Analysis**: Supports individual linewidth estimation for each spectrum
+- **Monte Carlo Noise**: Includes noise analysis for robustness testing
+
+The analysis generates comparison plots and metrics stored in `data/sim2real/` showing
+how well the simulated basis matches experimental data across different benchmark
+series.
+
 The code will attempt to analyse all of the spectra contained in the provided
 directory. There are a couple of caveats to enable this to work correctly:
 
@@ -242,6 +314,28 @@ sub-command only).
 
 Note, loading of non-Siemens DICOM files has not been tested.
 
+## Run command
+
+For orchestrating multiple runs via JSON, see `run.py` and the companion guide `README-run.md`.
+  * `run.py` lets you define common and per-run arguments, skips already-completed results, and handles dependencies.
+  * Example configs: `example_config.json`, `example_common_command.json`, `example_mixed_command.json`.
+
+### Aggregating results
+
+After you have training/validation and benchmark outputs, you can aggregate results into a single CSV per model root:
+
+```
+./aggregate.py PATH_TO_MODEL_ROOT
+```
+
+This writes `PATH_TO_MODEL_ROOT/aggregate/all_results.csv` (overwriting if it exists).
+
+The aggregation script:
+- Combines training/validation results with benchmark results
+- Extracts model parameters from folder structure
+- Creates a unified CSV with all performance metrics
+- Handles multiple model variants and cross-validation folds
+
 ## Issues
 
 * If GPyOpt for gpo selection fails with "not positive definite, even with jitter.",
@@ -260,8 +354,13 @@ Note, loading of non-Siemens DICOM files has not been tested.
 Released versions:
 * v1.0 - first release, tensorflow 1 and python2.
 * v2.0 - update to python3 and tensorflow 2; code, api and ui cleanups; updates to
-  spectra processing; extended dataset generation, model training, model selection, 
+  spectra processing; extended dataset generation, model training, model selection,
   and quantification.
+* v2.1 - current version with TensorFlow 2.20, Python 3.13 support, and enhanced
+  model architectures including autoencoders, autoencoder-quantifiers, and four extra
+  deep learning models: EncDec, FoundationalCNN (fCNN), QMRS, and QNet (with both basic
+  and full basis set LLS variants). Includes sim2real analysis, linewidth estimation,
+  and JSON-based execution via run.py.
 
 ## Locations
 
@@ -275,6 +374,7 @@ The mirrors are only for convenience, accessibility and backup.
 
 ## People
 
+* [Zien Ma](https://qyber.blck/zien),  [School of Computer Science and Informatics](https://www.cardiff.ac.uk/computer-science), [Cardiff University](https://www.cardiff.ac.uk/)
 * [Max Chandler](https://qyber.black/max), [School of Computer Science and Informatics](https://www.cardiff.ac.uk/computer-science), [Cardiff University](https://www.cardiff.ac.uk/)
 * [Frank C Langbein](https://qyber.black/xis10z), [School of Computer Science and Informatics](https://www.cardiff.ac.uk/computer-science), [Cardiff University](https://www.cardiff.ac.uk/); [langbein.org](https://langbein.org/)
 * [Sophie M Shermer](https://qyber.black/lw1660), [Physics](https://www.swansea.ac.uk/physics), [Swansea University](https://www.swansea.ac.uk/)
@@ -290,6 +390,6 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2024.
+Z Ma, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2025.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
-[[MIRROR:https://github.com/MaxChandler/MRSNet]](https://github.com/qyber-black/code-mrsnet)
+[[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)

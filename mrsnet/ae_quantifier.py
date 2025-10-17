@@ -10,81 +10,98 @@ This module provides combined autoencoder-quantifier models that can both
 reconstruct spectra and predict metabolite concentrations simultaneously.
 """
 
-import os
 import csv
+import io
 import json
+import os
+import sys
+
 import matplotlib.pyplot as plt
 import numpy as np
-from time import time_ns
-
 import tensorflow as tf
 from tensorflow import keras
-from keras.layers import *
-from keras.models import Model, Sequential
+from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, LeakyReLU
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.utils import plot_model
 
-from keras import layers
-from keras.layers import Input, Dense
-from keras.utils import plot_model
-from keras.models import load_model
+try:
+  from keras.saving import register_keras_serializable
+except Exception:
+  from tensorflow.keras.utils import register_keras_serializable
 
 from mrsnet.cfg import Cfg
-from .cnn import TimeHistory
+from mrsnet.cnn import TimeHistory
+from mrsnet.train import (
+  LrHistory,
+  calculate_flops,
+  enable_deterministic_ops_if_configured,
+  reshape_spectra_data,
+  set_auto_mixed_precision_policy_if_enabled,
+)
 
-# Helper to construct dense layer
-def _Dense_layer(m, units, activation, dropout):
-  """Construct a dense layer with optional batch normalization and dropout.
 
-  Args:
-      m (keras.Sequential): Sequential model to add layers to
-      units (int): Number of units in the dense layer
-      activation (str): Activation function name
-      dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
-  """
-  # Dense layer over last index (freq. bins) using given activation
-  # if dropout > 0: dropout rate after activation;
-  #            ==0: batch normalisation before activation;
-  #            < 0: nothing
-  m.add(Dense(units))
-  if dropout == 0.0:
-    m.add(BatchNormalization())
-  if activation[0:9] == "leakyrelu":
-    m.add(LeakyReLU(alpha=activation[9:]))
-  elif activation == "None": # Create a layer without activation function, if put command like: "ae_fc_None_tanh_0.3", the tensorflow will show it has no "None" as the argument in Activation()
-    m
-  else:
-    m.add(Activation(activation))
-  if dropout > 0.0:
-    m.add(Dropout(dropout))
-
-# Helper to construct dense layer
 def _dense_layer(m,units, activation, dropout, name=None):
   """Construct a dense layer using functional API.
 
-  Args:
+  Parameters
+  ----------
       m (tensor): Input tensor
       units (int): Number of units in the dense layer
       activation (str): Activation function name
       dropout (float): Dropout rate (>0), batch normalization (=0), or nothing (<0)
       name (str, optional): Layer name. Defaults to None
 
-  Returns:
+  Returns
+  -------
       tensor: Output tensor
   """
-  if activation == "None":
-    x = layers.Dense(units,name=name)(m)
-  else:
-    x = layers.Dense(units, activation=activation, name=name)(m)
-  if dropout == 0.0:
-    x = BatchNormalization()(x)
+  # Last layer name must be name to match output / loss name
+  if name is None:
+    # No name
+    dense_name = None
+    bn_name = None
+    act_name = None
+    dropout_name = None
   elif dropout > 0.0:
-    x = Dropout(dropout)(x)
+    # Dropout is last, so it gets the name
+    dense_name = name + "_dense"
+    bn_name = name + "_bn"
+    act_name = name + "_act"
+    dropout_name = name
+  elif activation != "None":
+    # Activation is last, so it gets the name
+    dense_name = name + "_dense"
+    bn_name = name + "_bn"
+    act_name = name
+    dropout_name = None
+  elif dropout == 0.0:
+    # BatchNorm is last, so it gets the name
+    dense_name = name + "_dense"
+    bn_name = name
+    act_name = None
+    dropout_name = None
   else:
-    x = x
+    # Dense is last, so it gets the name
+    dense_name = name
+    bn_name = None
+    act_name = None
+    dropout_name = None
+  x = Dense(units, name=dense_name)(m)
+  if dropout == 0.0:
+    x = BatchNormalization(name=bn_name)(x)
+  if isinstance(activation, str) and activation.startswith("leakyrelu") and len(activation) > 9:
+    try:
+      alpha = float(activation[9:])
+      x = LeakyReLU(alpha=alpha, name=act_name)(x)
+    except ValueError as err:
+      raise ValueError(f"Invalid LeakyReLU alpha value: {activation[9:]}") from err
+  elif activation != "None":
+    x = Activation(activation, name=act_name)(x)
+  if dropout > 0.0:
+    x = Dropout(dropout, name=dropout_name)(x)
   return x
 
-
-
-#  Fully connected autoencoder via Model interface (using Sequential interface internally)
+@register_keras_serializable(package="mrsnet", name="FCAutoEncQuant")
 class FCAutoEncQuant(Model):
   """Fully connected autoencoder-quantifier model.
 
@@ -95,8 +112,9 @@ class FCAutoEncQuant(Model):
   def __init__(self, n_specs, n_freqs, layers_enc, layers_dec, activation, activation_last, dropout, output_conc, unit, layers, act, act_last, dp, name='FCAutoEncQuant'):
     """Initialize fully connected autoencoder-quantifier.
 
-    Args:
-        n_specs (int): Number of spectra (acquisitions × datatype)
+    Parameters
+    ----------
+        n_specs (int): Number of spectra (acquisitions x datatype)
         n_freqs (int): Number of frequency bins in spectra
         layers_enc (int): Number of encoder layers
         layers_dec (int): Number of decoder layers
@@ -111,57 +129,46 @@ class FCAutoEncQuant(Model):
         dp (float): Dropout rate for quantifier
         name (str, optional): Model name. Defaults to 'FCAutoEncQuant'
     """
-    # n_specs: number of spectra (acquisisions x datatype)
-    # n_freqs: number of frequency bins in spectra
-    # layers_enc: number of layers in encoder
-    # layers_dec: number of layers in encoder
-    # activation: activation function (relu, sigmoid, tanh)
-    # dropout: Dropout if > 0.0; 0.0, BatchNormalisation; negative, nothing
     self.n_specs = n_specs
-    super(FCAutoEncQuant, self).__init__(name=name)
+    super().__init__(name=name)
 
     # Encoder
-    encoder_input = keras.Input(shape=(n_specs,n_freqs),  name = "spectra_input")
+    e_in = keras.Input(shape=(n_specs,n_freqs),  name = "spectra_input")
     units = n_freqs
-    x = _dense_layer(encoder_input, units, activation, dropout)
-    units //=2
-    for l in range(0,layers_enc-2):
+    x = _dense_layer(e_in, units, activation, dropout)
+    units //= 2
+    for _l in range(0,layers_enc-2):
       x = _dense_layer(x, units, activation, dropout)
       units //= 2
-    self.units = units
 
-    encoder_output = _dense_layer(x, units, activation, -1) # no regulariser at latent representation
+    e_out = _dense_layer(x, units, activation, -1) # no regulariser at latent representation
 
-    # Decoder
-    units = n_freqs // (2 ** (layers_dec-1))
-    x = _dense_layer(encoder_output, units, activation, -1)
-    units = n_freqs // (2 ** (layers_dec-2))
-    for l in range(0, layers_dec-2):
+    # Decoder (mirror FCAutoEnc to avoid negative exponents for small layer counts)
+    units = n_freqs // (2 ** (layers_dec - 1))
+    x = e_out
+    for _l in range(0, layers_dec - 1):
       x = _dense_layer(x, units, activation, -1)
       units *= 2
-    self.units = units
-    decoder_output = _dense_layer(x, units, activation_last, -1, "decoder_output")
+    ae_out = _dense_layer(x, units, activation_last, -1, "ae")
 
     #Quantifier
-    x = Flatten()(encoder_output)
-    for l in range(0, layers-1):
+    x = Flatten()(e_out)
+    for _l in range(0, layers-1):
       x = _dense_layer(x, unit, act, dp)
       unit //= 2
-    # FIXME: Still struggling with the quantifier architecture design, minor problem but could imporve the efficiency
-    quantifier_output = _dense_layer(x, output_conc, act_last, -1, "quantifier_output")
+    q_out = _dense_layer(x, output_conc, act_last, -1, "q")
 
-    self.model = keras.Model(inputs=encoder_input, outputs=[decoder_output,quantifier_output],name="AEQ")
+    self.model = keras.Model(inputs=e_in, outputs=[ae_out,q_out],name="CAEQ")
     self.model.build((None, n_specs, n_freqs))
-    #self.model.summary()
 
-# Autoencoder model
-class Autoencoder_quantifier:
+class AutoencoderQuantifier:
   """Autoencoder-quantifier model for MRSNet.
 
   This class implements a combined autoencoder-quantifier model that can both
   reconstruct spectra and predict metabolite concentrations simultaneously.
 
-  Attributes:
+  Attributes
+  ----------
       model (str): Model architecture identifier
       metabolites (list): List of metabolite names
       pulse_sequence (str): Pulse sequence type
@@ -172,13 +179,14 @@ class Autoencoder_quantifier:
       high_ppm (float): Upper PPM bound for input data
       fft_samples (int): Number of FFT samples
       train_dataset_name (str): Name of training dataset
-      aeq (keras.Model): The actual autoencoder-quantifier model
+      caeq (keras.Model): The actual autoencoder-quantifier model
   """
 
   def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype,norm):
     """Initialize an autoencoder-quantifier model.
 
-    Args:
+    Parameters
+    ----------
         model (str): Model architecture identifier
         metabolites (list): List of metabolite names
         pulse_sequence (str): Pulse sequence type
@@ -192,18 +200,20 @@ class Autoencoder_quantifier:
     self.acquisitions = acquisitions
     self.datatype = datatype
     self.norm = norm
+
     # Input spectra data (constant!)
     self.low_ppm = -1.0
     self.high_ppm = -4.5
     self.fft_samples = 2048
 
     self.train_dataset_name = None
-    self.aeq = None
+    self.caeq = None
 
   def __str__(self):
     """Return the model architecture string.
 
-    Returns:
+    Returns
+    -------
         str: Model architecture string
     """
     return os.path.join(self.model, "-".join(self.metabolites),
@@ -212,18 +222,17 @@ class Autoencoder_quantifier:
 
   def reset(self):
     """Reset the model to initial state."""
-    del self.aeq
-    self.aeq = None
+    self.caeq = None
     self.train_dataset_name = None
 
   def _construct(self, ae_shape, output_conc=None):
     """Construct the autoencoder-quantifier model architecture.
 
-    Args:
+    Parameters
+    ----------
         ae_shape (tuple): Shape of input data (n_specs, n_freqs)
         output_conc (int, optional): Number of output concentrations. Defaults to None
     """
-    # Autoencoder only; for quantifier use convert_to_quantifier
     n_specs = ae_shape[0] # number of spectras: acqusitions x datatype
     n_freqs = ae_shape[1] # number of frequency bins in spectras
     p = self.model.split("_")
@@ -231,8 +240,7 @@ class Autoencoder_quantifier:
       # Construct actual encoder-quantifier architecture
       if p[1] == "fc":
         # Convert trained autoencoder to trainable quantifier
-        # aeq_fc_UNITS_LAYERS_ACT[_ACT-LAST]
-        # FIXME: more arguments - DO (dropout/BatchNorm/Noting), etc.
+        # caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP]
         lin = int(p[2])
         lout = int(p[3])
         activation = p[4]
@@ -243,16 +251,18 @@ class Autoencoder_quantifier:
         act = p[9]
         act_last = p[10]
         dp = float(p[11])
-        self.aeq = FCAutoEncQuant(n_specs,n_freqs,lin,lout,activation,activation_last,dropout,output_conc,unit,layers,act,act_last,dp).model
-        #For example: FCAEQ = FCAutoEncQuant(2, 2048, 5, 7, "tanh", "tanh", 0.3, 5, 256, 4, "tanh", "tanh", 0.3)
+        self.caeq = FCAutoEncQuant(n_specs,n_freqs,lin,lout,activation,activation_last,dropout,output_conc,unit,layers,act,act_last,dp).model
       else:
-        raise RuntimeError(f"Unknown encoder-quantifier architecture {self.model}")
+        raise RuntimeError(f"Unknown autoencoder-quantifier architecture: {self.model}")
+    else:
+      raise RuntimeError(f"Unknown architecture: {self.model}")
 
   def train(self, d_data, v_data, epochs, batch_size, folder, verbose=0,
-              image_dpi=[300], screen_dpi=96, train_dataset_name=""):
+            image_dpi=[300], screen_dpi=96, train_dataset_name=""):
       """Train the autoencoder-quantifier model.
 
-      Args:
+      Parameters
+      ----------
           d_data (list): Training data [spectra_in, spectra_out, concentrations]
           v_data (list, optional): Validation data [spectra_in, spectra_out, concentrations]
           epochs (int): Number of training epochs
@@ -263,7 +273,8 @@ class Autoencoder_quantifier:
           screen_dpi (int, optional): Screen DPI setting. Defaults to 96
           train_dataset_name (str, optional): Name of training dataset. Defaults to ""
 
-      Returns:
+      Returns
+      -------
           tuple: (train_results, validation_results)
       """
       devices = tf.config.list_logical_devices("GPU")
@@ -275,9 +286,9 @@ class Autoencoder_quantifier:
         if verbose > 0:
           print(f"GPU Devices: {devices}")
       if len(d_data) != 3:
-        raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out|conc]")
-      if v_data != None and len(v_data) != 3:
-        raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out|conc]")
+        raise RuntimeError("d_data argument must be a list [spectra_in,spectra_out,conc]")
+      if v_data is not None and len(v_data) != 3:
+        raise RuntimeError("v_data argument must be a list [spectra_in,spectra_out,conc]")
 
       if len(train_dataset_name) > 0:
         self.train_dataset_name = train_dataset_name
@@ -286,15 +297,16 @@ class Autoencoder_quantifier:
         os.makedirs(folder)
 
       if self.model[0:4] == "caeq":
-        return self._train_aeq(d_data, v_data, epochs, batch_size, folder, verbose,
-                               image_dpi, screen_dpi, train_dataset_name, devices)
+        return self._train_caeq(d_data, v_data, epochs, batch_size, folder, verbose,
+                                image_dpi, screen_dpi, train_dataset_name, devices)
       raise RuntimeError(f"Unknown autoencoder model {self.model}")
 
-  def _train_aeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
-                image_dpi, screen_dpi, train_dataset_name, devices):
+  def _train_caeq(self, d_data, v_data, epochs, batch_size, folder, verbose,
+                  image_dpi, screen_dpi, train_dataset_name, devices):
     """Train the autoencoder-quantifier model.
 
-    Args:
+    Parameters
+    ----------
         d_data (list): Training data [spectra_in, spectra_out, concentrations]
         v_data (list, optional): Validation data [spectra_in, spectra_out, concentrations]
         epochs (int): Number of training epochs
@@ -306,9 +318,20 @@ class Autoencoder_quantifier:
         train_dataset_name (str): Name of training dataset
         devices (list): List of GPU devices
 
-    Returns:
+    Returns
+    -------
         tuple: (train_results, validation_results)
     """
+    # Validate data format
+    if len(d_data) != 3:
+      raise RuntimeError(f"AutoencoderQuantifier requires 3 data elements [spectra_in, spectra_out, concentrations], got {len(d_data)}")
+
+    if v_data is not None and len(v_data) != 3:
+      raise RuntimeError(f"AutoencoderQuantifier validation data requires 3 elements [spectra_in, spectra_out, concentrations], got {len(v_data)}")
+
+    # Deterministic ops and AMP policy (auto) per config
+    enable_deterministic_ops_if_configured()
+    set_auto_mixed_precision_policy_if_enabled(verbose)
     # Setup training data
     if verbose > 0:
       print("# Prepare data")
@@ -317,62 +340,44 @@ class Autoencoder_quantifier:
     # (batch, acquisition x datatype, frequency) where the 2nd index is effectively
     # echo acquisition-dataypte signal as separate with a separate 1D network
     # (for now we do not have any operations crossing the channels, I think).
-    #
-    # FIXME: Something to consider: (also train_ae)
-    # Instead, we could also reshape it to (batch x acquisition x datatype, frequency)
-    # meaning each signal, idependent of acquistion and datatype, is handled
-    # the same with the same network. We only have a collection of 1D signals for
-    # the autoencoder - for quantification then this would need some more complex
-    # reshaping as there we will have to consider the signals across acquisitons and
-    # datatypes.
 
     # Input spectra (for autoencoder and quantifier)
     d_spectra_in = tf.convert_to_tensor(d_data[0], dtype=tf.float32)
-    d_spectra_in = tf.reshape(d_spectra_in,
-                                (d_spectra_in.shape[0],
-                                 d_spectra_in.shape[1] * d_spectra_in.shape[2], d_spectra_in.shape[3]))
+    d_spectra_in = reshape_spectra_data(d_spectra_in)
 
     # Output spectra for autoencoder
     d_spectra_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
-    d_spectra_out = tf.reshape(d_spectra_out,
-                                 (d_spectra_out.shape[0],
-                                  d_spectra_out.shape[1] * d_spectra_out.shape[2], d_spectra_out.shape[3]))
+    d_spectra_out = reshape_spectra_data(d_spectra_out)
     # Output concentrations for quantifier
     d_conc = tf.convert_to_tensor(d_data[-1], dtype=tf.float32)
 
     train_data_spectra = tf.data.Dataset.from_tensor_slices(d_spectra_in)
     train_data_target = tf.data.Dataset.from_tensor_slices((d_spectra_out, d_conc))
 
-    if v_data != None:
-        v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
-        v_spectra_in = tf.reshape(v_spectra_in,
-                                  (v_spectra_in.shape[0],
-                                   v_spectra_in.shape[1] * v_spectra_in.shape[2], v_spectra_in.shape[3]))
+    if v_data is not None:
+      v_spectra_in = tf.convert_to_tensor(v_data[0], dtype=tf.float32)
+      v_spectra_in = reshape_spectra_data(v_spectra_in)
 
-        v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
-        v_spectra_out = tf.reshape(v_spectra_out,
-                                   (v_spectra_out.shape[0],
-                                    v_spectra_out.shape[1] * v_spectra_out.shape[2], v_spectra_out.shape[3]))
-        v_conc = tf.convert_to_tensor(v_data[-1], dtype=tf.float32)
-        val_data_spectra = tf.data.Dataset.from_tensor_slices(v_spectra_in)
-        val_data_target = tf.data.Dataset.from_tensor_slices((v_spectra_out, v_conc))
+      v_spectra_out = tf.convert_to_tensor(v_data[1], dtype=tf.float32)
+      v_spectra_out = reshape_spectra_data(v_spectra_out)
+      v_conc = tf.convert_to_tensor(v_data[-1], dtype=tf.float32)
+      val_data_spectra = tf.data.Dataset.from_tensor_slices(v_spectra_in)
+      val_data_target = tf.data.Dataset.from_tensor_slices((v_spectra_out, v_conc))
 
     else:
-        val_data_spectra = None
-        val_data_target = None
+      val_data_spectra = None
+      val_data_target = None
     if verbose > 0:
-        print("  Spectra In:",d_spectra_in.shape,"[spectrum, acquisition x datatype, frequency]")
-        print("  Spectra Out:", d_spectra_out.shape, "[spectrum, acquisition x datatype, frequency]")
-        print("  Concentrations Out:",d_conc.shape,"[spectrum, metabolite_concentration]")
+      print("  Spectra In:",d_spectra_in.shape,"[spectrum, acquisition x datatype, frequency]")
+      print("  Spectra Out:", d_spectra_out.shape, "[spectrum, acquisition x datatype, frequency]")
+      print("  Concentrations Out:",d_conc.shape,"[spectrum, metabolite_concentration]")
 
     # Autoencoder Quantification Network training
     if verbose > 0:
-      print("# Train Autoencoder Quantification Network %s" % str(self))
+      print(f"# Train Autoencoder Quantification Network {self!s}")
 
     learning_rate = Cfg.val['base_learning_rate'] * batch_size / 16.0
     loss_huber = keras.losses.Huber(name='huber_loss')
-    loss_mse = keras.losses.MeanAbsoluteError()
-    loss = "huber_loss"
 
     if len(devices) > 1:
       # Multi-GPU training
@@ -384,10 +389,47 @@ class Autoencoder_quantifier:
         optimiser = keras.optimizers.Adam(learning_rate=learning_rate * dev_multiplier,
                                           beta_1=Cfg.val['beta1'],
                                           beta_2=Cfg.val['beta2'],
-                                          epsilon=Cfg.val['epsilon'])
-        self.aeq.compile(loss=[loss_huber,loss_huber],
-                        optimizer=optimiser,
-                        metrics=['mae'])
+                                          epsilon=Cfg.val['epsilon'],
+                                          clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                          clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
+        # NOTE: loss_weights are hardcoded for the two-head CAEQ at present.
+        # Consider making these per-model or per-training-run tunables in future.
+        # CAEQ loss weights with optional ramp of quantifier weight during warmup
+        if Cfg.val.get('caeq_weight_ramp', True):
+          # Use callback to ramp quantifier weight from start to target over warmup epochs
+          warmup = int(Cfg.val.get('caeq_weight_ramp_warmup_epochs', 10))
+          q_start = float(Cfg.val.get('caeq_weight_q_start', 0.1))
+          q_target = float(Cfg.val.get('caeq_weight_q', 1.0))
+          ae_w = float(Cfg.val.get('caeq_weight_ae', 1.0))
+          class _CaeqWeightRamp(keras.callbacks.Callback):
+            def __init__(self, warmup_epochs, w_start, w_target, ae_weight):
+              super().__init__()
+              self.warmup = max(1, warmup_epochs)
+              self.w_start = w_start
+              self.w_target = w_target
+              self.ae_weight = ae_weight
+            def on_epoch_begin(self, epoch, logs=None):
+              alpha = min(1.0, epoch / float(self.warmup))
+              q_w = self.w_start + (self.w_target - self.w_start) * alpha
+              try:
+                self.model.loss_weights = {'ae': self.ae_weight, 'q': float(q_w)}
+              except Exception as e:
+                if verbose > 0:
+                  print(f"WARNING: Could not update CAEQ loss_weights during ramp: {e}")
+          weight_ramp_cb = _CaeqWeightRamp(warmup, q_start, q_target, ae_w)
+          loss_w = {'ae': ae_w, 'q': q_start}
+        else:
+          loss_w = {
+            'ae': Cfg.val.get('caeq_weight_ae', 1.0),
+            'q':  Cfg.val.get('caeq_weight_q', 1.0)
+          }
+        self.caeq.compile(loss={'ae': loss_huber, 'q': loss_huber},
+                          optimizer=optimiser,
+                          loss_weights=loss_w,
+                          metrics={
+                            'ae': ['mae'],
+                            'q': ['mae']
+                          })
     else:
       # Single GPU / CPU training
       dev_multiplier = 1
@@ -396,112 +438,272 @@ class Autoencoder_quantifier:
       optimiser = keras.optimizers.Adam(learning_rate=learning_rate,
                                         beta_1=Cfg.val['beta1'],
                                         beta_2=Cfg.val['beta2'],
-                                        epsilon=Cfg.val['epsilon'])
-      self.aeq.compile(loss=[loss_huber,loss_huber],
-                      optimizer=optimiser,
-                      metrics=['mae'])
+                                        epsilon=Cfg.val['epsilon'],
+                                        clipnorm=(Cfg.val.get('optimizer_clipnorm', 0.0) or None),
+                                        clipvalue=(Cfg.val.get('optimizer_clipvalue', 0.0) or None))
+      # NOTE: loss_weights are hardcoded for the two-head CAEQ at present.
+      # Consider making these per-model or per-training-run tunables in future.
+      if Cfg.val.get('caeq_weight_ramp', True):
+        warmup = int(Cfg.val.get('caeq_weight_ramp_warmup_epochs', 10))
+        q_start = float(Cfg.val.get('caeq_weight_q_start', 0.1))
+        q_target = float(Cfg.val.get('caeq_weight_q', 1.0))
+        ae_w = float(Cfg.val.get('caeq_weight_ae', 1.0))
+        class _CaeqWeightRamp(keras.callbacks.Callback):
+          def __init__(self, warmup_epochs, w_start, w_target, ae_weight):
+            super().__init__()
+            self.warmup = max(1, warmup_epochs)
+            self.w_start = w_start
+            self.w_target = w_target
+            self.ae_weight = ae_weight
+          def on_epoch_begin(self, epoch, logs=None):
+            alpha = min(1.0, epoch / float(self.warmup))
+            q_w = self.w_start + (self.w_target - self.w_start) * alpha
+            try:
+              self.model.loss_weights = {'ae': self.ae_weight, 'q': float(q_w)}
+            except Exception as e:
+              if verbose > 0:
+                print(f"WARNING: Could not update CAEQ loss_weights during ramp: {e}")
+        weight_ramp_cb = _CaeqWeightRamp(warmup, q_start, q_target, ae_w)
+        loss_w = {'ae': ae_w, 'q': q_start}
+      else:
+        loss_w = {
+          'ae': Cfg.val.get('caeq_weight_ae', 1.0),
+          'q':  Cfg.val.get('caeq_weight_q', 1.0)
+        }
+      self.caeq.compile(loss={'ae': loss_huber, 'q': loss_huber},
+                        optimizer=optimiser,
+                        loss_weights=loss_w,
+                        metrics={
+                          'ae': ['mae'],
+                          'q': ['mae']
+                        })
+
+    # Calculate FLOPs
+    try:
+      self.flops = calculate_flops(self.caeq, d_spectra_in.shape[1:])
+    except Exception:
+      self.flops = None
 
     for dpi in image_dpi:
-        plot_model(self.aeq,
-                  to_file=os.path.join(folder,'architecture-quantification-network@'+str(dpi)+'.png'),
-                  show_shapes=True,
-                  show_dtype=True,
-                  show_layer_names=True,
-                  rankdir='TB',
-                  expand_nested=True,
-                  dpi=dpi)
+      try:
+        plot_model(self.caeq,
+                   to_file=os.path.join(folder,'architecture@'+str(dpi)+'.png'),
+                   show_shapes=True,
+                   show_dtype=True,
+                   show_layer_names=True,
+                   rankdir='TB',
+                   expand_nested=True,
+                   dpi=dpi)
+      except Exception as e:
+        try:
+          plot_model(self.caeq,
+                     to_file=os.path.join(folder,'architecture@'+str(dpi)+'.svg'),
+                     show_shapes=True,
+                     show_dtype=True,
+                     show_layer_names=True,
+                     rankdir='TB',
+                     expand_nested=True,
+                     dpi=dpi)
+          if verbose > 0:
+            print("# WARNING: Graphviz PNG plot failed; wrote SVG instead:", e)
+        except Exception as e2:
+          if verbose > 0:
+            print("# WARNING: Skipping model architecture plot (Graphviz error):", e2)
 
     if verbose > 0:
-        self.aeq.summary()
+      self.caeq.summary()
 
 
     timer = TimeHistory(epochs)
-    callbacks = [keras.callbacks.EarlyStopping(monitor='loss',
-                                                 min_delta=1e-8,
-                                                 patience=25,
-                                                 mode='min',
-                                                 verbose=(verbose > 0),
-                                                 restore_best_weights=True),
-                   timer]
+    # Decouple monitors: ES on q_mae, LR on total loss. Gate ES until after ramp warmup.
+    if v_data is not None:
+      es_monitor_metric = f"val_{Cfg.val.get('es_monitor_metric_caeq','q_mae')}"
+      lr_monitor_metric = f"val_{Cfg.val.get('lr_monitor_metric_caeq','loss')}"
+    else:
+      # For CAEQ training model, metrics are a dict per output; fall back to loss on training-only
+      es_monitor_metric = 'loss'
+      lr_monitor_metric = Cfg.val.get('lr_monitor_metric_caeq','loss')
+    callbacks = [
+      keras.callbacks.EarlyStopping(monitor=es_monitor_metric,
+                                    min_delta=Cfg.val.get('es_min_delta', 1e-8),
+                                    patience=Cfg.val.get('early_stopping_patience', 25),
+                                    start_from_epoch=Cfg.val.get('caeq_weight_ramp_warmup_epochs', 25),
+                                    mode='min',
+                                    verbose=(verbose > 0),
+                                    restore_best_weights=True),
+      keras.callbacks.ReduceLROnPlateau(monitor=lr_monitor_metric,
+                                        factor=0.5,
+                                        patience=max(Cfg.val.get('reduce_lr_patience', 20), Cfg.val.get('caeq_weight_ramp_warmup_epochs', 25)) + Cfg.val.get('caeq_weight_ramp_cooldown', 5),
+                                        min_lr=Cfg.val.get('reduce_lr_min_lr', 1e-7),
+                                        mode='min',
+                                        verbose=(verbose > 0)),
+      LrHistory(),
+      *( [weight_ramp_cb] if 'weight_ramp_cb' in locals() else [] ),
+      timer
+    ]
 
     # Dataset options
     train_data=tf.data.Dataset.zip((train_data_spectra,train_data_target))
-    if v_data!=None:
-        val_data=tf.data.Dataset.zip((val_data_spectra, val_data_target))
+    if v_data is not None:
+      val_data=tf.data.Dataset.zip((val_data_spectra, val_data_target))
     else:
-        val_data=None
+      val_data=None
 
+    # Dataset options
+    # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
+    # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    train_data = train_data.batch(batch_size * dev_multiplier).with_options(options)
+    if Cfg.val.get('cache_datasets', False):
+      train_data = train_data.cache()
+      if val_data is not None:
+        val_data = val_data.cache()
+    shuffle_buffer = max(1024, batch_size * dev_multiplier * 8)
+    shuffle_seed = getattr(self, 'shuffle_seed', getattr(self, 'seed', None))
+    train_data = (train_data
+                    .shuffle(shuffle_buffer, seed=shuffle_seed, reshuffle_each_iteration=True)
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
     if val_data is not None:
-        val_data = val_data.batch(batch_size * dev_multiplier).with_options(options)
+      val_data = (val_data
+                    .batch(batch_size * dev_multiplier)
+                    .with_options(options)
+                    .prefetch(tf.data.AUTOTUNE))
 
     # Train
-    history = self.aeq.fit(train_data,
-                          validation_data=val_data,
-                          epochs=epochs,
-                          verbose=(verbose > 0)*2,
-                          shuffle=True,
-                          callbacks=callbacks)
+    history = self.caeq.fit(train_data,
+                            validation_data=val_data,
+                            epochs=epochs,
+                            verbose=(verbose > 0)*2,
+                            shuffle=True,
+                            callbacks=callbacks)
     le = len(history.history['loss'])
     history.history['time (ms)'] = np.add(timer.times[:le,1],-timer.times[:le,0]) // 1000000
 
     if verbose > 0:
       print("# Evaluating Quantifier")
-    d_score = self.aeq.evaluate(d_spectra_in, (d_spectra_out,d_conc), verbose=(verbose > 0)*2)
-    if v_data != None:
-      v_score = self.aeq.evaluate(v_spectra_in, (v_spectra_out,v_conc), verbose=(verbose > 0)*2)
+    d_score = self.caeq.evaluate(d_spectra_in, (d_spectra_out,d_conc), verbose=(verbose > 0)*2)
+    if v_data is not None:
+      v_score = self.caeq.evaluate(v_spectra_in, (v_spectra_out,v_conc), verbose=(verbose > 0)*2)
     else:
       v_score = np.array([np.nan,np.nan,np.nan,np.nan,np.nan])
     if verbose > 0:
-      print(f"             Train          Validation")
-      print(f"TOTAL_HUBER_LOSS:  {d_score[0]:.12f} {v_score[0]:.12f}")
-      print(f"AE_LOSS       :  {d_score[1]:.12f} {v_score[1]:.12f}")
-      print(f"Q_LOSS       :  {d_score[2]:.12f} {v_score[2]:.12f}")
-      print(f"AE_MAE       :  {d_score[3]:.12f} {v_score[3]:.12f}")
-      print(f"Q_MAE       :  {d_score[4]:.12f} {v_score[4]:.12f}")
-    self._save_results(folder, "cae_quantifier", history.history, d_score, v_score, loss, image_dpi, screen_dpi, verbose)
+      print( "             Train          Validation")
+      print(f"TOTAL_LOSS:  {d_score[0]:.12f} {v_score[0]:.12f}")
+      print(f"AE_LOSS   :  {d_score[1]:.12f} {v_score[1]:.12f}")
+      print(f"Q_LOSS    :  {d_score[2]:.12f} {v_score[2]:.12f}")
+      print(f"AE_MAE    :  {d_score[3]:.12f} {v_score[3]:.12f}")
+      print(f"Q_MAE     :  {d_score[4]:.12f} {v_score[4]:.12f}")
+    self._save_results(folder, "caeq", history.history, d_score, v_score, "TOTAL_LOSS", image_dpi, screen_dpi, verbose)
 
-    d_res = {loss:d_score[2],"MAE":d_score[4]}
-    v_res = {loss:v_score[2],"MAE":v_score[4]}
+    d_res = {"TOTAL_LOSS": d_score[0], "AE_LOSS": d_score[1], "Q_LOSS": d_score[2], "AE_MAE": d_score[3], "Q_MAE": d_score[4]}
+    v_res = {"TOTAL_LOSS": v_score[0], "AE_LOSS": v_score[1], "Q_LOSS": v_score[2], "AE_MAE": v_score[3], "Q_MAE": v_score[4]}
 
     return d_res, v_res
 
-  def predict(self, spec_in, reshape=True, verbose=0):
+  def predict(self, spec_in, reshape=True, verbose=0, return_both=False):
     """Predict concentrations or spectra from input spectra.
 
-    Args:
+    Parameters
+    ----------
         spec_in (array-like): Input spectra data
         reshape (bool, optional): Whether to reshape input data. Defaults to True
         verbose (int, optional): Verbosity level. Defaults to 0
 
-    Returns:
+    Returns
+    -------
         numpy.ndarray: Predicted concentrations or spectra
     """
     out_shape = spec_in.shape # Preserve shape of input spectra to reshape output (spectra only) accordingly
     if reshape:
       spec_in = tf.convert_to_tensor(spec_in, dtype=tf.float32)
       spec_in = tf.reshape(spec_in,(spec_in.shape[0],spec_in.shape[1]*spec_in.shape[2],spec_in.shape[3]))
+    # Dataset options
+    # Robust against TF AutoShardPolicy changes on single-machine multi-GPU
+    # Set tf.data sharding to OFF and apply options to both train and validation datasets. This avoids recent AutoShardPolicy regressions on single-machine multi-GPU while keeping behavior stable on CPU/single-GPU.
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-    data = tf.data.Dataset.from_tensor_slices((spec_in)).batch(32).with_options(options)
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    bsz = Cfg.val.get('predict_batch_size', 32)
+    data = tf.data.Dataset.from_tensor_slices(spec_in).batch(bsz).with_options(options).prefetch(tf.data.AUTOTUNE)
+    if return_both:
+      ae_pred, q_pred = self.caeq.predict(data, verbose=(verbose > 0) * 2)
+      spectra = np.array(tf.reshape(ae_pred, out_shape), dtype=np.float64)
+      conc = np.array(q_pred, dtype=np.float64)
+      return spectra, conc
     if self.output == "concentrations":
-        return np.array(self.aeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
+      return np.array(self.caeq.predict(data, verbose=(verbose > 0) * 2)[1], dtype=np.float64)
     if self.output == "spectra":
-        return np.array(tf.reshape(self.aeq.predict(data, verbose=(verbose > 0) * 2)[0], out_shape), dtype=np.float64)
+      return np.array(tf.reshape(self.caeq.predict(data, verbose=(verbose > 0) * 2)[0], out_shape), dtype=np.float64)
     raise RuntimeError(f"Unknown output {self.output}")
-
 
   def save(self, folder):
     """Save the trained model to disk.
 
-    Args:
+    Parameters
+    ----------
         folder (str): Directory to save the model
     """
-    path=os.path.join(folder, "tf_model")
-    self.aeq.save(path)
-    with open(os.path.join(path, "mrsnet.json"), 'w') as f:
+    os.makedirs(folder, exist_ok=True)
+    self.caeq.save(os.path.join(folder, "model.keras"))
+
+    # Calculate model metrics from summary
+    # Capture model summary output
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    self.caeq.summary()
+    sys.stdout = old_stdout
+    summary_output = buffer.getvalue()
+    # Parse parameter counts from summary with robust fallbacks
+    total_params = None
+    trainable_params = None
+    non_trainable_params = None
+    for line in summary_output.split('\n'):
+      if 'Total params:' in line:
+        # Extract total params
+        total_match = line.split('Total params:')[1].split()[0].replace(',', '')
+        try:
+          total_params = int(total_match)
+        except Exception:
+          total_params = None
+      elif 'Trainable params:' in line:
+        # Extract trainable params
+        trainable_match = line.split('Trainable params:')[1].split()[0].replace(',', '')
+        try:
+          trainable_params = int(trainable_match)
+        except Exception:
+          trainable_params = None
+      elif 'Non-trainable params:' in line:
+        # Extract non-trainable params
+        non_trainable_match = line.split('Non-trainable params:')[1].split()[0].replace(',', '')
+        try:
+          non_trainable_params = int(non_trainable_match)
+        except Exception:
+          non_trainable_params = None
+    # Fallbacks using model APIs
+    if total_params is None:
+      try:
+        total_params = int(self.caeq.count_params())
+      except Exception:
+        total_params = 0
+    if trainable_params is None:
+      try:
+        trainable_params = int(np.sum([tf.size(v).numpy() for v in self.caeq.trainable_variables]))
+      except Exception:
+        trainable_params = 0
+    if non_trainable_params is None:
+      try:
+        non_trainable_params = int(np.sum([tf.size(v).numpy() for v in self.caeq.non_trainable_variables]))
+      except Exception:
+        non_trainable_params = max(0, total_params - trainable_params)
+
+    # Calculate FLOPs if possible
+    if hasattr(self, 'flops'):
+      flops = self.flops
+    else:
+      flops = None
+
+    with open(os.path.join(folder, "mrsnet.json"), 'w') as f:
       print(json.dumps({
           'model': self.model,
           'metabolites': self.metabolites,
@@ -510,87 +712,90 @@ class Autoencoder_quantifier:
           'datatype': self.datatype,
           'norm': self.norm,
           'train_dataset_name': self.train_dataset_name,
-          'output': self.output
+          'output': self.output,
+          'seed': getattr(self, 'seed', None),
+          'shuffle_seed': getattr(self, 'shuffle_seed', None),
+          'trainable_params': trainable_params,
+          'non_trainable_params': non_trainable_params,
+          'total_params': trainable_params + non_trainable_params,
+          'flops': flops
         }, indent=2, sort_keys=True), file=f)
 
   @staticmethod
   def load(path):
-      """Load a saved model from disk.
+    """Load a saved model from disk.
 
-      Args:
-          path (str): Directory containing the saved model
+    Parameters
+    ----------
+        path (str): Directory containing the saved model
 
-      Returns:
-          Autoencoder_quantifier: Loaded model instance
-      """
-      with open(os.path.join(path, "tf_model", "mrsnet.json"), 'r') as f:
-          data = json.load(f)
-      model = Autoencoder_quantifier(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
-                          data['datatype'], data['norm'])
-      model.output = data['output']
-      model.train_dataset_name = data['train_dataset_name']
-      model.aeq = load_model(os.path.join(path, "tf_model"))
-      return model
+    Returns
+    -------
+        AutoencoderQuantifier: Loaded model instance
+    """
+    with open(os.path.join(path, "mrsnet.json")) as f:
+        data = json.load(f)
+    model = AutoencoderQuantifier(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
+                        data['datatype'], data['norm'])
+    model.output = data['output']
+    model.train_dataset_name = data['train_dataset_name']
+    model.caeq = load_model(os.path.join(path, "model.keras"),
+                            custom_objects={
+                              "FCAutoEncQuant": FCAutoEncQuant
+                            },
+                            safe_mode=False)
+    return model
 
   def _save_results(self, folder, prefix, history, d_score, v_score, loss, image_dpi, screen_dpi, verbose):
-      """Save training results to files.
+    """Save training results to files.
 
-      Args:
-          folder (str): Output directory
-          prefix (str): File prefix for saved files
-          history (dict): Training history
-          d_score (list): Training scores
-          v_score (list): Validation scores
-          loss (str): Loss function name
-          image_dpi (list): Image DPI settings
-          screen_dpi (int): Screen DPI setting
-          verbose (int): Verbosity level
-      """
-      keys = sorted(history.keys())
-      # History data
-      with open(os.path.join(folder, prefix + '_history.csv'), "w") as out_file:
-          writer = csv.writer(out_file, delimiter=",")
-          if self.model[0:4] == "caeq":
-              writer.writerows([[self.model + " " + prefix.upper() + " Training Results", "", "", "", ""],
-                                [""],
-                                ["", "Train", "Validation"],
-                                ["TOTAL_LOSS", d_score[0], v_score[0]],
-                                ["AE_LOSS",d_score[1], v_score[1]],
-                                ["AEQ_LOSS", d_score[2], v_score[2]],
-                                ["AE_MAE",d_score[3], v_score[3]],
-                                ["AEQ_MAE", d_score[4], v_score[4]],
-                                [""],
-                                ["History"]])
-          else:
-              writer.writerows(
-                  [[self.model + " " + prefix.upper() + " Training Results"],
-                   [""],
-                   ["", "Train", "Validation"],
-                   [loss.upper(), d_score[0], v_score[0]],
-                   ["MAE", d_score[1], v_score[1]],
-                   [""],
-                   ["History"]])
-          writer.writerow(keys)
-          writer.writerows(zip(*[history[key] for key in keys]))
-      # Plot
-      fig, axes = plt.subplots(1, 3)
-      fig.suptitle(f"{self.model} {prefix.upper()} Training Results")
-      for key in keys:
-          if loss in key or 'loss' in key:
-              axes[0].semilogy(history[key], label=key)
-              axes[0].set_ylabel(loss.upper())
-              axes[0].legend(loc='upper right')
-          if 'mae' in key:
-              axes[1].semilogy(history[key], label=key)
-              axes[1].set_ylabel('MAE')
-              axes[1].legend(loc='upper right')
-          if 'time' in key:
-              axes[2].plot(history[key], label=key)
-              axes[2].set_ylabel('Time (ms)')
-              axes[2].legend(loc='upper right')
-      for dpi in image_dpi:
-          plt.savefig(os.path.join(folder, prefix + '_history@' + str(dpi) + '.png'), dpi=dpi)
-      if verbose > 1:
-          fig.set_dpi(screen_dpi)
-          plt.show(block=True)
-      plt.close()
+    Parameters
+    ----------
+        folder (str): Output directory
+        prefix (str): File prefix for saved files
+        history (dict): Training history
+        d_score (list): Training scores
+        v_score (list): Validation scores
+        loss (str): Loss function name
+        image_dpi (list): Image DPI settings
+        screen_dpi (int): Screen DPI setting
+        verbose (int): Verbosity level
+    """
+    keys = sorted(history.keys())
+    # History data
+    with open(os.path.join(folder, prefix + '_history.csv'), "w") as out_file:
+      writer = csv.writer(out_file, delimiter=",")
+      writer.writerows([[self.model + " " + prefix.upper() + " Training Results", "", "", "", ""],
+                        [""],
+                        ["", "Train", "Validation"],
+                        ["TOTAL_LOSS", d_score[0], v_score[0]],
+                        ["AE_LOSS",d_score[1], v_score[1]],
+                        ["Q_LOSS", d_score[2], v_score[2]],
+                        ["AE_MAE",d_score[3], v_score[3]],
+                        ["Q_MAE", d_score[4], v_score[4]],
+                        [""],
+                        ["History"]])
+      writer.writerow(keys)
+      writer.writerows(zip(*[history[key] for key in keys], strict=False))
+    # Plot
+    fig, axes = plt.subplots(1, 3)
+    fig.suptitle(f"{self.model} {prefix.upper()} Training Results")
+    for key in keys:
+      if loss in key or 'loss' in key:
+        axes[0].semilogy(history[key], label=key)
+        axes[0].set_ylabel(loss.upper())
+        axes[0].legend(loc='upper right')
+      if 'mae' in key:
+        axes[1].semilogy(history[key], label=key)
+        axes[1].set_ylabel('MAE')
+        axes[1].legend(loc='upper right')
+      if 'time' in key:
+        axes[2].plot(history[key], label=key)
+        axes[2].set_ylabel('Time (ms)')
+        axes[2].legend(loc='upper right')
+    for dpi in image_dpi:
+      plt.savefig(os.path.join(folder, prefix + '_history@' + str(dpi) + '.png'), dpi=dpi)
+    if verbose > 1:
+      fig.set_dpi(screen_dpi)
+      plt.show(block=True)
+    plt.close()
