@@ -90,7 +90,7 @@ def _statistical_significance_test(rows: pd.DataFrame, alpha: float = 0.05, meth
       - 'very_high': α=0.20 (very sensitive, detects subtle differences)
       - 'effect_size': α=0.05 + Cohen's d>0.2 (statistically significant AND practically meaningful)
 
-  Returns:
+  Returns
   -------
     List of tuples (i, j) indicating models i and j are significantly different
 
@@ -198,8 +198,10 @@ def _statistical_significance_test(rows: pd.DataFrame, alpha: float = 0.05, meth
 
 
 def _select_topn_conc(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
-  # Use validation first, fall back to training
+  # Concentration models identified by arch in CONC_ARCHS; use validation first, fall back to training
   df = df.copy()
+  df['arch'] = df['model'].astype(str).map(_arch_of_model)
+  df = df[df['arch'].isin(CONC_ARCHS)]
   df['score'] = df['val_mae_mean'].fillna(df['train_mae_mean'])
   out = df[pd.notna(df['score'])].sort_values('score', ascending=True).head(top_n)
   return out
@@ -1389,52 +1391,74 @@ def _render_benchmark_all_comparison(df: pd.DataFrame, out_dir: Path, dpi: int, 
   Shows the best models (lowest MAE) based on average performance across all available benchmark datasets
   with optional min/max error bars when available.
   """
-  # Find all benchmark columns (exclude individual experiment benchmarks, focus on combined ones)
-  bench_cols = [col for col in df.columns
-                if (col.startswith('bench_') or col.startswith('benchmark_')) and col.endswith('_mae')]
+  # Prefer precomputed combined benchmark ('benchmark_all') if available
+  col_all_mae = 'bench_benchmark_all_mae'
+  col_all_min = 'bench_benchmark_all_mae_min'
+  col_all_max = 'bench_benchmark_all_mae_max'
 
-  # Filter out individual experiment benchmarks (E1, E2, etc.) to focus on combined benchmarks
-  combined_bench_cols = [col for col in bench_cols
-                        if not any(f'E{i}_' in col for i in range(1, 20))]  # Exclude E1, E2, ..., E19
+  use_precomputed_all = col_all_mae in df.columns and df[col_all_mae].notna().any()
 
-  # If no combined benchmarks, fall back to all benchmarks
-  if not combined_bench_cols:
-    combined_bench_cols = bench_cols
+  # If not using precomputed aggregate, determine which benchmark columns to average
+  combined_bench_cols: list[str] = []
+  if not use_precomputed_all:
+    bench_cols = [col for col in df.columns
+                  if (col.startswith('bench_') or col.startswith('benchmark_')) and col.endswith('_mae')]
+    combined_bench_cols = [col for col in bench_cols
+                           if not any(f'E{i}_' in col for i in range(1, 20))]
+    if not combined_bench_cols:
+      combined_bench_cols = bench_cols
 
-  if not combined_bench_cols:
-    return
-
-  # Calculate average benchmark MAE for each model
   model_benchmarks = []
   for _, row in df.iterrows():
     model_name = row.get('model')
     if pd.isna(model_name):
       continue
 
-    # Collect all benchmark MAE values for this model
-    bench_values = []
-    for col in combined_bench_cols:
-      val = row.get(col)
-      if pd.notna(val):
-        try:
-          bench_values.append(float(val))
-        except (ValueError, TypeError):
-          continue
+    if use_precomputed_all and pd.notna(row.get(col_all_mae)):
+      # Use the precomputed aggregate from benchmark_all
+      try:
+        avg_mae = float(row.get(col_all_mae))
+      except (ValueError, TypeError):
+        continue
+      min_mae = float(row.get(col_all_min)) if pd.notna(row.get(col_all_min)) else avg_mae
+      max_mae = float(row.get(col_all_max)) if pd.notna(row.get(col_all_max)) else avg_mae
+      std_mae = 0.0
+      num_benchmarks = np.nan  # not meaningful for precomputed aggregate
+    else:
+      # Fallback: compute average over non-individual combined benchmarks
+      bench_cols = [col for col in df.columns
+                    if (col.startswith('bench_') or col.startswith('benchmark_')) and col.endswith('_mae')]
+      combined_bench_cols = [col for col in bench_cols
+                             if not any(f'E{i}_' in col for i in range(1, 20))]
+      if not combined_bench_cols:
+        combined_bench_cols = bench_cols
+      if not combined_bench_cols:
+        continue
 
-    if bench_values:
+      bench_values = []
+      for col in combined_bench_cols:
+        val = row.get(col)
+        if pd.notna(val):
+          try:
+            bench_values.append(float(val))
+          except (ValueError, TypeError):
+            continue
+      if not bench_values:
+        continue
       avg_mae = np.mean(bench_values)
       min_mae = np.min(bench_values)
       max_mae = np.max(bench_values)
       std_mae = np.std(bench_values) if len(bench_values) > 1 else 0.0
+      num_benchmarks = len(bench_values)
 
-      model_benchmarks.append({
-        'model': model_name,
-        'avg_bench_mae': avg_mae,
-        'min_bench_mae': min_mae,
-        'max_bench_mae': max_mae,
-        'std_bench_mae': std_mae,
-        'num_benchmarks': len(bench_values)
-      })
+    model_benchmarks.append({
+      'model': model_name,
+      'avg_bench_mae': avg_mae,
+      'min_bench_mae': min_mae,
+      'max_bench_mae': max_mae,
+      'std_bench_mae': std_mae,
+      'num_benchmarks': num_benchmarks
+    })
 
   if not model_benchmarks:
     return
@@ -1471,7 +1495,10 @@ def _render_benchmark_all_comparison(df: pd.DataFrame, out_dir: Path, dpi: int, 
   ax.set_xticks(x_pos)
   ax.set_xticklabels(labels, rotation=60, ha='right')
   ax.set_ylabel('Average Benchmark MAE')
-  ax.set_title(f'Benchmark Comparison: Average across {len(combined_bench_cols)} combined datasets (lower is better)')
+  if use_precomputed_all:
+    ax.set_title('Benchmark Comparison: benchmark_all (lower is better)')
+  else:
+    ax.set_title(f'Benchmark Comparison: Average across {len(combined_bench_cols)} combined datasets (lower is better)')
   if log_scale:
     ax.set_yscale('log')
   ax.grid(axis='y', linestyle='--', alpha=0.3)

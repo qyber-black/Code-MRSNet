@@ -139,10 +139,13 @@ def _load_meta(trainer_dir: Path, root: Path) -> RunMeta | None:
     # Not a canonical run path; fallback to minimal info
     model_name = trainer_dir.parents[1].name if len(trainer_dir.parents) >= 2 else trainer_dir.name
     dataset_name = trainer_dir.parent.name
+    def _or_unknown(s: str | None) -> str:
+      return s if s else "unknown"
+
     meta = RunMeta(
       model_name=model_name,
       trainer=trainer_dir.name,
-      dataset_name=_normalize_token(dataset_name),
+      dataset_name=_or_unknown(_normalize_token(dataset_name)),
       path=str(trainer_dir),
     )
   else:
@@ -155,10 +158,13 @@ def _load_meta(trainer_dir: Path, root: Path) -> RunMeta | None:
     p_batch = parts[-4]
     p_epochs = parts[-3]
     p_dataset = parts[-2]
+    def _or_unknown(s: str | None) -> str:
+      return s if s else "unknown"
+
     meta = RunMeta(
       model_name=p_model,
       trainer=trainer_dir.name,
-      dataset_name=_normalize_token(p_dataset),
+      dataset_name=_or_unknown(_normalize_token(p_dataset)),
       path=str(trainer_dir),
       metabolites=p_metabolites,
       pulse_sequence=p_pulse,
@@ -267,13 +273,18 @@ def _collect_train_val_maes(trainer_dir: Path) -> tuple[list[float | None], list
   folds = sorted(trainer_dir.glob(f"{FOLD_PREFIX}*"))
   if folds:
     for f in folds:
-      v = _extract_mae(_load_json(f / "validation_concentration_errors.json"))
-      t = _extract_mae(_load_json(f / "train_concentration_errors.json"))
+      # Prefer concentration errors; fallback to spectra errors (used by AE runs)
+      vj = _load_json(f / "validation_concentration_errors.json") or _load_json(f / "validation_spectra_errors.json")
+      tj = _load_json(f / "train_concentration_errors.json") or _load_json(f / "train_spectra_errors.json")
+      v = _extract_mae(vj)
+      t = _extract_mae(tj)
       val_maes.append(v)
       train_maes.append(t)
   else:
-    v = _extract_mae(_load_json(trainer_dir / "validation_concentration_errors.json"))
-    t = _extract_mae(_load_json(trainer_dir / "train_concentration_errors.json"))
+    vj = _load_json(trainer_dir / "validation_concentration_errors.json") or _load_json(trainer_dir / "validation_spectra_errors.json")
+    tj = _load_json(trainer_dir / "train_concentration_errors.json") or _load_json(trainer_dir / "train_spectra_errors.json")
+    v = _extract_mae(vj)
+    t = _extract_mae(tj)
     if v is not None:
       val_maes.append(v)
     if t is not None:
@@ -293,24 +304,44 @@ def _normalize_benchmark_name(name: str) -> str:
 
 def _collect_benchmarks(trainer_dir: Path) -> dict[str, dict[str, float | None]]:
   res: dict[str, dict[str, float | None]] = {}
+  # Process concentration benchmarks first (if present)
   for file_path in sorted(trainer_dir.glob("*_concentration_errors.json")):
     fn = file_path.name
     if fn.startswith(("train_", "validation_")):
       continue
     j = _load_json(file_path)
     bench_name = _normalize_benchmark_name(fn.replace("_concentration_errors.json", ""))
-    # Extract only abserror mean/std/min/max for MAE reporting
-    metrics = {"mae": None, "mae_std": None, "mae_min": None, "mae_max": None}
+    metrics_conc: dict[str, float | None] = {"mae": None, "mae_std": None, "mae_min": None, "mae_max": None}
     try:
       t = (j or {}).get("total", {})
       absj = t.get("abserror", {})
-      metrics["mae"] = _safe_float(absj.get("mean"))
-      metrics["mae_std"] = _safe_float(absj.get("std"))
-      metrics["mae_min"] = _safe_float(absj.get("min"))
-      metrics["mae_max"] = _safe_float(absj.get("max"))
+      metrics_conc["mae"] = _safe_float(absj.get("mean"))
+      metrics_conc["mae_std"] = _safe_float(absj.get("std"))
+      metrics_conc["mae_min"] = _safe_float(absj.get("min"))
+      metrics_conc["mae_max"] = _safe_float(absj.get("max"))
     except Exception: # noqa: S110
       pass
-    res[bench_name] = metrics
+    res[bench_name] = metrics_conc
+  # Then include spectra benchmarks for AE runs (skip if already present)
+  for file_path in sorted(trainer_dir.glob("*_spectra_errors.json")):
+    fn = file_path.name
+    if fn.startswith(("train_", "validation_")):
+      continue
+    bench_name = _normalize_benchmark_name(fn.replace("_spectra_errors.json", ""))
+    if bench_name in res:
+      continue
+    j = _load_json(file_path)
+    metrics_spec: dict[str, float | None] = {"mae": None, "mae_std": None, "mae_min": None, "mae_max": None}
+    try:
+      t = (j or {}).get("total", {})
+      absj = t.get("abserror", {})
+      metrics_spec["mae"] = _safe_float(absj.get("mean"))
+      metrics_spec["mae_std"] = _safe_float(absj.get("std"))
+      metrics_spec["mae_min"] = _safe_float(absj.get("min"))
+      metrics_spec["mae_max"] = _safe_float(absj.get("max"))
+    except Exception: # noqa: S110
+      pass
+    res[bench_name] = metrics_spec
   return res
 
 
@@ -482,11 +513,13 @@ def main() -> None:
           # Average benchmark metrics across trainer types
           existing_metrics = existing.combined_benchmarks[bench_name]
           for metric_name in ["mae", "mae_std", "mae_min", "mae_max"]:
-            if existing_metrics.get(metric_name) is not None and bench_metrics.get(metric_name) is not None:
+            a = existing_metrics.get(metric_name)
+            b = bench_metrics.get(metric_name)
+            if a is not None and b is not None:
               # Simple average for now - could be improved with proper statistical aggregation
-              existing_metrics[metric_name] = (existing_metrics[metric_name] + bench_metrics[metric_name]) / 2
-            elif bench_metrics.get(metric_name) is not None:
-              existing_metrics[metric_name] = bench_metrics[metric_name]
+              existing_metrics[metric_name] = (float(a) + float(b)) / 2.0
+            elif b is not None:
+              existing_metrics[metric_name] = b
 
   # Convert grouped runs to rows
   rows: list[dict] = []
