@@ -1,6 +1,6 @@
 # run.py - Generic MRSNet Execution Script
 
-> SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+> SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University\
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
 

@@ -15,7 +15,7 @@ import json
 import math
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Trainer folder name prefixes to detect runs
@@ -87,6 +87,20 @@ class GroupedRun:
 
   # Combined benchmark data
   combined_benchmarks: dict[str, dict[str, float | None]]
+
+  # Additionally tracked metrics (per-fold across trainer types)
+  # Explicit separation of concentration vs spectra MAEs
+  all_val_maes_conc: list[float | None] = field(default_factory=list)
+  all_train_maes_conc: list[float | None] = field(default_factory=list)
+  all_val_maes_spec: list[float | None] = field(default_factory=list)
+  all_train_maes_spec: list[float | None] = field(default_factory=list)
+
+  # Note: CAEQ training losses are not stored; we rely on JSON evaluation metrics only
+
+  # CAEQ losses (per-fold across trainer types), if available
+  # Keys: 'total', 'ae', 'q'
+  caeq_val_losses: dict[str, list[float | None]] | None = None
+  caeq_train_losses: dict[str, list[float | None]] | None = None
 
 
 def _iter_trainer_dirs(root: Path) -> Iterable[Path]:
@@ -266,30 +280,100 @@ def _extract_mae(j: dict | None) -> float | None:
     return None
 
 
-def _collect_train_val_maes(trainer_dir: Path) -> tuple[list[float | None], list[float | None]]:
-  """Return lists of per-fold validation and training MAEs (empty lists if none)."""
-  val_maes: list[float | None] = []
-  train_maes: list[float | None] = []
+def _warn_missing(path: Path, what: str) -> None:
+  try:
+    print(f"# Warning: Missing {what} JSON: {path}")
+  except Exception:
+    pass
+
+
+def _collect_all_metrics(trainer_dir: Path) -> dict[str, list[float | None]]:
+  """Collect per-fold train/val MAEs (concentration and spectra) from JSON results only."""
   folds = sorted(trainer_dir.glob(f"{FOLD_PREFIX}*"))
+
+  # Determine which JSONs are expected for this trainer by inspecting presence across folds
+  # and heuristics from model name in mrsnet.json. This avoids warning for files models don't produce.
+  def _any_exists(rel: str) -> bool:
+    if folds:
+      for f in folds:
+        if (f / rel).exists():
+          return True
+    else:
+      if (trainer_dir / rel).exists():
+        return True
+    return False
+
+  expected_conc = _any_exists("validation_concentration_errors.json") or _any_exists("train_concentration_errors.json")
+  expected_spec = _any_exists("validation_spectra_errors.json") or _any_exists("train_spectra_errors.json")
+
+  # Heuristic fallback by model name if nothing found yet
+  if not expected_conc or not expected_spec:
+    probe = None
+    fold0 = next((d for d in folds), None)
+    if fold0 is not None:
+      probe = _load_json(fold0 / "mrsnet.json") or _load_json(trainer_dir / "mrsnet.json")
+    else:
+      probe = _load_json(trainer_dir / "mrsnet.json")
+    model_name = str((probe or {}).get("model", "")).lower()
+    if model_name:
+      # CNN: concentration-only
+      if "cnn" in model_name:
+        expected_conc = True
+        # don't force expected_spec
+      # Autoencoders: spectra-only
+      if any(tok in model_name for tok in ("autoenc", "ae_", "_ae", "_ae-", "-ae_", "vae")):
+        expected_spec = True
+      # CAEQ/AEQ: both
+      if any(tok in model_name for tok in ("caeq", "aeq", "autoencquant", "quantifier")):
+        expected_conc = True
+        expected_spec = True
+
+  # Initialize lists
+  val_mae_conc: list[float | None] = []
+  train_mae_conc: list[float | None] = []
+  val_mae_spec: list[float | None] = []
+  train_mae_spec: list[float | None] = []
+
+  def _from_dir(d: Path) -> None:
+    # MAEs
+    vp = d / "validation_concentration_errors.json"
+    tp = d / "train_concentration_errors.json"
+    spv = d / "validation_spectra_errors.json"
+    spt = d / "train_spectra_errors.json"
+    v_conc = _extract_mae(_load_json(vp))
+    if expected_conc and v_conc is None and vp.exists() is False:
+      _warn_missing(vp, "validation concentration errors")
+    t_conc = _extract_mae(_load_json(tp))
+    if expected_conc and t_conc is None and tp.exists() is False:
+      _warn_missing(tp, "train concentration errors")
+    v_spec = _extract_mae(_load_json(spv))
+    if expected_spec and v_spec is None and spv.exists() is False:
+      _warn_missing(spv, "validation spectra errors")
+    t_spec = _extract_mae(_load_json(spt))
+    if expected_spec and t_spec is None and spt.exists() is False:
+      _warn_missing(spt, "train spectra errors")
+    if v_conc is not None:
+      val_mae_conc.append(v_conc)
+    if t_conc is not None:
+      train_mae_conc.append(t_conc)
+    if v_spec is not None:
+      val_mae_spec.append(v_spec)
+    if t_spec is not None:
+      train_mae_spec.append(t_spec)
+
   if folds:
     for f in folds:
-      # Prefer concentration errors; fallback to spectra errors (used by AE runs)
-      vj = _load_json(f / "validation_concentration_errors.json") or _load_json(f / "validation_spectra_errors.json")
-      tj = _load_json(f / "train_concentration_errors.json") or _load_json(f / "train_spectra_errors.json")
-      v = _extract_mae(vj)
-      t = _extract_mae(tj)
-      val_maes.append(v)
-      train_maes.append(t)
+      _from_dir(f)
   else:
-    vj = _load_json(trainer_dir / "validation_concentration_errors.json") or _load_json(trainer_dir / "validation_spectra_errors.json")
-    tj = _load_json(trainer_dir / "train_concentration_errors.json") or _load_json(trainer_dir / "train_spectra_errors.json")
-    v = _extract_mae(vj)
-    t = _extract_mae(tj)
-    if v is not None:
-      val_maes.append(v)
-    if t is not None:
-      train_maes.append(t)
-  return val_maes, train_maes
+    _from_dir(trainer_dir)
+
+  return {
+    'val_mae_conc': val_mae_conc,
+    'train_mae_conc': train_mae_conc,
+    'val_mae_spec': val_mae_spec,
+    'train_mae_spec': train_mae_spec,
+    # No CAEQ losses collected here; rely on JSON MAEs only
+  }
 
 
 def _normalize_benchmark_name(name: str) -> str:
@@ -376,6 +460,22 @@ def _flatten_grouped_row(
   for i, t in enumerate(grouped_run.all_train_maes):
     row[f"train_mae_fold{i}"] = None if t is None else float(t)
 
+  # Explicit per-fold conc/spec MAEs
+  if grouped_run.all_val_maes_conc:
+    for i, v in enumerate(grouped_run.all_val_maes_conc):
+      row[f"val_mae_conc_fold{i}"] = None if v is None else float(v)
+  if grouped_run.all_train_maes_conc:
+    for i, t in enumerate(grouped_run.all_train_maes_conc):
+      row[f"train_mae_conc_fold{i}"] = None if t is None else float(t)
+  if grouped_run.all_val_maes_spec:
+    for i, v in enumerate(grouped_run.all_val_maes_spec):
+      row[f"val_mae_spec_fold{i}"] = None if v is None else float(v)
+  if grouped_run.all_train_maes_spec:
+    for i, t in enumerate(grouped_run.all_train_maes_spec):
+      row[f"train_mae_spec_fold{i}"] = None if t is None else float(t)
+
+  # CAEQ per-fold losses removed; rely on JSON-derived MAEs only
+
   # Aggregates (mean/std) across all folds from all trainer types
   def _safe_mean(xs: list[float | None]) -> float | None:
     vals = [float(x) for x in xs if x is not None]
@@ -392,6 +492,35 @@ def _flatten_grouped_row(
   row["val_mae_std"] = _safe_std(grouped_run.all_val_maes)
   row["train_mae_mean"] = _safe_mean(grouped_run.all_train_maes)
   row["train_mae_std"] = _safe_std(grouped_run.all_train_maes)
+
+  # Aggregates for conc/spec MAEs
+  row["val_mae_mean_conc"] = _safe_mean(grouped_run.all_val_maes_conc)
+  row["val_mae_std_conc"] = _safe_std(grouped_run.all_val_maes_conc)
+  row["train_mae_mean_conc"] = _safe_mean(grouped_run.all_train_maes_conc)
+  row["train_mae_std_conc"] = _safe_std(grouped_run.all_train_maes_conc)
+  row["val_mae_mean_spec"] = _safe_mean(grouped_run.all_val_maes_spec)
+  row["val_mae_std_spec"] = _safe_std(grouped_run.all_val_maes_spec)
+  row["train_mae_mean_spec"] = _safe_mean(grouped_run.all_train_maes_spec)
+  row["train_mae_std_spec"] = _safe_std(grouped_run.all_train_maes_spec)
+
+  # Derive combined (total-like) MAE from JSON MAEs (conc + spec)
+  def _to_float_or_none(x: object | None) -> float | None:
+    try:
+      return float(x) if x is not None else None
+    except Exception:
+      return None
+
+  def _combine_if_available(v1: float | None, v2: float | None) -> float | None:
+    if v1 is None and v2 is None:
+      return None
+    if v1 is None:
+      return float(v2)
+    if v2 is None:
+      return float(v1)
+    return float(v1) + float(v2)
+
+  row['val_mae_total_mean'] = _combine_if_available(_to_float_or_none(row.get('val_mae_mean_conc')), _to_float_or_none(row.get('val_mae_mean_spec')))
+  row['train_mae_total_mean'] = _combine_if_available(_to_float_or_none(row.get('train_mae_mean_conc')), _to_float_or_none(row.get('train_mae_mean_spec')))
 
   # Model props
   row.update(
@@ -473,7 +602,10 @@ def main() -> None:
     if grouping_key not in grouped_runs:
       # Create new grouped run
       props = _load_model_props(td)
-      val_maes, train_maes = _collect_train_val_maes(td)
+      metrics = _collect_all_metrics(td)
+      # Backward-compatible default lists: prefer concentration MAEs, else spectra MAEs
+      default_val_maes = metrics['val_mae_conc'] if metrics['val_mae_conc'] else metrics['val_mae_spec']
+      default_train_maes = metrics['train_mae_conc'] if metrics['train_mae_conc'] else metrics['train_mae_spec']
       bench = bench_cache.get(str(td), {})
 
       grouped_runs[grouping_key] = GroupedRun(
@@ -489,8 +621,12 @@ def main() -> None:
         trainer_types=[meta.trainer],
         trainer_paths=[meta.path],
         model_props=props,
-        all_val_maes=val_maes.copy(),
-        all_train_maes=train_maes.copy(),
+        all_val_maes=default_val_maes.copy(),
+        all_train_maes=default_train_maes.copy(),
+        all_val_maes_conc=metrics['val_mae_conc'].copy(),
+        all_train_maes_conc=metrics['train_mae_conc'].copy(),
+        all_val_maes_spec=metrics['val_mae_spec'].copy(),
+        all_train_maes_spec=metrics['train_mae_spec'].copy(),
         combined_benchmarks=bench.copy(),
       )
     else:
@@ -499,10 +635,17 @@ def main() -> None:
       existing.trainer_types.append(meta.trainer)
       existing.trainer_paths.append(meta.path)
 
-      # Collect additional MAEs
-      val_maes, train_maes = _collect_train_val_maes(td)
-      existing.all_val_maes.extend(val_maes)
-      existing.all_train_maes.extend(train_maes)
+      # Collect additional metrics and extend
+      metrics = _collect_all_metrics(td)
+      existing.all_val_maes_conc.extend(metrics['val_mae_conc'])
+      existing.all_train_maes_conc.extend(metrics['train_mae_conc'])
+      existing.all_val_maes_spec.extend(metrics['val_mae_spec'])
+      existing.all_train_maes_spec.extend(metrics['train_mae_spec'])
+      # Maintain backward-compatible lists
+      default_val_maes = metrics['val_mae_conc'] if metrics['val_mae_conc'] else metrics['val_mae_spec']
+      default_train_maes = metrics['train_mae_conc'] if metrics['train_mae_conc'] else metrics['train_mae_spec']
+      existing.all_val_maes.extend(default_val_maes)
+      existing.all_train_maes.extend(default_train_maes)
 
       # Combine benchmark data (average across trainer types)
       bench = bench_cache.get(str(td), {})

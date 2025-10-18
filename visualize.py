@@ -57,6 +57,16 @@ def _shorten_acq_text(val: object) -> str:
   return sl
 
 
+def _get_col(df: pd.DataFrame, col: str) -> pd.Series:
+  """Return column as numeric Series if present, else NaN series with matching index."""
+  if col in df.columns:
+    try:
+      return pd.to_numeric(df[col], errors='coerce')
+    except Exception:
+      return pd.Series(np.nan, index=df.index, dtype='float64')
+  return pd.Series(np.nan, index=df.index, dtype='float64')
+
+
 def _collect_folds(row: pd.Series, prefix: str) -> list[float]:
   vals: list[float] = []
   i = 0
@@ -198,23 +208,120 @@ def _statistical_significance_test(rows: pd.DataFrame, alpha: float = 0.05, meth
 
 
 def _select_topn_conc(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
-  # Concentration models identified by arch in CONC_ARCHS; use validation first, fall back to training
+  # Concentration models: rank by concentration MAE (validation, fallback to train)
   df = df.copy()
   df['arch'] = df['model'].astype(str).map(_arch_of_model)
   df = df[df['arch'].isin(CONC_ARCHS)]
-  df['score'] = df['val_mae_mean'].fillna(df['train_mae_mean'])
-  out = df[pd.notna(df['score'])].sort_values('score', ascending=True).head(top_n)
+  score_val = _get_col(df, 'val_mae_mean_conc')
+  score_train = _get_col(df, 'train_mae_mean_conc')
+  df.loc[:, 'score'] = score_val.fillna(score_train).fillna(_get_col(df, 'val_mae_mean').fillna(_get_col(df, 'train_mae_mean')))
+  out = df[pd.notna(df['score'])].sort_values(by='score', ascending=True).head(top_n)
   return out
 
 
 def _select_topn_spec(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
-  # Spectra models identified by arch in SPEC_ARCHS; use validation/training means
+  # Spectra models: rank by spectra MAE (validation, fallback to train)
   df = df.copy()
   df['arch'] = df['model'].astype(str).map(_arch_of_model)
-  df = df[df['arch'].isin(SPEC_ARCHS)]
-  df['score'] = df['val_mae_mean'].fillna(df['train_mae_mean'])
-  out = df[pd.notna(df['score'])].sort_values('score', ascending=True).head(top_n)
+  mask = df['arch'].isin(SPEC_ARCHS)
+  df = df.loc[mask].copy()
+  score_val = _get_col(df, 'val_mae_mean_spec')
+  score_train = _get_col(df, 'train_mae_mean_spec')
+  df.loc[:, 'score'] = score_val.fillna(score_train).fillna(_get_col(df, 'val_mae_mean').fillna(_get_col(df, 'train_mae_mean')))
+  out = df[pd.notna(df['score'])].sort_values(by='score', ascending=True).head(top_n)
   return out
+
+
+def _select_topn_caeq_by_loss(df: pd.DataFrame, top_n: int, loss_key: str) -> pd.DataFrame:
+  # CAEQ-only selection by JSON-derived metrics: 'q'->conc MAE, 'ae'->spec MAE, 'total'->combined MAE
+  df = df.copy()
+  df['arch'] = df['model'].astype(str).map(_arch_of_model)
+  mask = df['arch'] == 'caeq'
+  df = df.loc[mask].copy()
+  if loss_key == 'q':
+    val_col = 'val_mae_mean_conc'
+    train_col = 'train_mae_mean_conc'
+  elif loss_key == 'ae':
+    val_col = 'val_mae_mean_spec'
+    train_col = 'train_mae_mean_spec'
+  else:
+    val_col = 'val_mae_total_mean'
+    train_col = 'train_mae_total_mean'
+  df.loc[:, 'score'] = _get_col(df, val_col).fillna(_get_col(df, train_col))
+  out = df[pd.notna(df['score'])].sort_values(by='score', ascending=True).head(top_n)
+  return out
+
+
+def _project_metric_for_table(df: pd.DataFrame, kind: str) -> pd.DataFrame:
+  """Project chosen metric into generic columns expected by renderer.
+
+  kind: 'conc' | 'spec' | 'total'
+  """
+  df2 = df.copy()
+  if kind == 'conc':
+    df2.loc[:, 'val_mae_mean'] = _get_col(df2, 'val_mae_mean_conc')
+    df2.loc[:, 'train_mae_mean'] = _get_col(df2, 'train_mae_mean_conc')
+    df2.loc[:, 'val_mae_std'] = _get_col(df2, 'val_mae_std_conc')
+    df2.loc[:, 'train_mae_std'] = _get_col(df2, 'train_mae_std_conc')
+    # Map fold columns so plots use concentration folds
+    i = 0
+    while True:
+      v_col = f'val_mae_conc_fold{i}'
+      t_col = f'train_mae_conc_fold{i}'
+      if v_col not in df2.columns and t_col not in df2.columns:
+        break
+      if v_col in df2.columns:
+        df2.loc[:, f'val_mae_fold{i}'] = _get_col(df2, v_col)
+      if t_col in df2.columns:
+        df2.loc[:, f'train_mae_fold{i}'] = _get_col(df2, t_col)
+      i += 1
+  elif kind == 'spec':
+    df2.loc[:, 'val_mae_mean'] = _get_col(df2, 'val_mae_mean_spec')
+    df2.loc[:, 'train_mae_mean'] = _get_col(df2, 'train_mae_mean_spec')
+    df2.loc[:, 'val_mae_std'] = _get_col(df2, 'val_mae_std_spec')
+    df2.loc[:, 'train_mae_std'] = _get_col(df2, 'train_mae_std_spec')
+    # Map fold columns so plots use spectra folds
+    i = 0
+    while True:
+      v_col = f'val_mae_spec_fold{i}'
+      t_col = f'train_mae_spec_fold{i}'
+      if v_col not in df2.columns and t_col not in df2.columns:
+        break
+      if v_col in df2.columns:
+        df2.loc[:, f'val_mae_fold{i}'] = _get_col(df2, v_col)
+      if t_col in df2.columns:
+        df2.loc[:, f'train_mae_fold{i}'] = _get_col(df2, t_col)
+      i += 1
+  elif kind == 'total':
+    df2.loc[:, 'val_mae_mean'] = _get_col(df2, 'val_mae_total_mean')
+    df2.loc[:, 'train_mae_mean'] = _get_col(df2, 'train_mae_total_mean')
+    # std unknown for total; leave NaN
+    # Build synthetic total folds by summing available conc/spec folds per index
+    i = 0
+    while True:
+      v_conc = f'val_mae_conc_fold{i}'
+      v_spec = f'val_mae_spec_fold{i}'
+      t_conc = f'train_mae_conc_fold{i}'
+      t_spec = f'train_mae_spec_fold{i}'
+      any_val = (v_conc in df2.columns) or (v_spec in df2.columns)
+      any_trn = (t_conc in df2.columns) or (t_spec in df2.columns)
+      if not any_val and not any_trn:
+        break
+      if any_val:
+        vc = _get_col(df2, v_conc)
+        vs = _get_col(df2, v_spec)
+        df2.loc[:, f'val_mae_fold{i}'] = vc.fillna(0.0).add(vs.fillna(0.0), fill_value=0.0)
+        # If both are NaN for a row, set NaN (not 0)
+        both_nan = vc.isna() & vs.isna()
+        df2.loc[both_nan, f'val_mae_fold{i}'] = np.nan
+      if any_trn:
+        tc = _get_col(df2, t_conc)
+        ts = _get_col(df2, t_spec)
+        df2.loc[:, f'train_mae_fold{i}'] = tc.fillna(0.0).add(ts.fillna(0.0), fill_value=0.0)
+        both_nan_t = tc.isna() & ts.isna()
+        df2.loc[both_nan_t, f'train_mae_fold{i}'] = np.nan
+      i += 1
+  return df2
 
 
 def _model_params_str(model_name: str) -> list[str]:
@@ -1519,7 +1626,7 @@ def _render_benchmark_all_comparison(df: pd.DataFrame, out_dir: Path, dpi: int, 
   fig.savefig(out_file, dpi=dpi, bbox_inches='tight')
   plt.close(fig)
 
-def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log_scale: bool, top_n: int = 25, sensitivity: str = 'high') -> None:
+def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log_scale: bool, top_n: int = 25, sensitivity: str = 'high', val_metric: str = 'val_mae', train_metric: str = 'train_mae', metric_label: str = 'MAE') -> None:
   if df.empty:
     return
   os.makedirs(out_pdf.parent, exist_ok=True)
@@ -1538,6 +1645,7 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
     rows = df.head(n_models)
 
     # Perform statistical significance testing with configurable sensitivity
+    # Use standard MAE folds for significance test (keeps implementation stable)
     significant_pairs = _statistical_significance_test(rows, sensitivity=sensitivity)
 
     # Determine parameter columns and which vary across selected rows
@@ -1597,13 +1705,13 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
       name_bot = header_bottom_params[ci] if ci < len(header_bottom_params) else ''
       if name_bot:
         ax_hb.text(0.01, 0.65, name_bot.capitalize(), ha='left', va='center', fontsize=12, fontweight='bold')
-    # MAE header with two rows (Val/Train)
+    # Metric header with two rows (Val/Train)
     ax_mae_h_top = fig.add_subplot(gs[0, num_param_cols])
     ax_mae_h_top.axis('off')
-    ax_mae_h_top.text(0.5, 0.65, 'Val. MAE ± Std', ha='center', va='center', fontsize=12, fontweight='bold')
+    ax_mae_h_top.text(0.5, 0.65, f'Val. {metric_label} ± Std', ha='center', va='center', fontsize=12, fontweight='bold')
     ax_mae_h_bot = fig.add_subplot(gs[1, num_param_cols])
     ax_mae_h_bot.axis('off')
-    ax_mae_h_bot.text(0.5, 0.65, 'Train MAE ± Std', ha='center', va='center', fontsize=12, fontweight='bold')
+    ax_mae_h_bot.text(0.5, 0.65, f'Train {metric_label} ± Std', ha='center', va='center', fontsize=12, fontweight='bold')
 
     # Plot header
     ax_plot_h = fig.add_subplot(gs[0, num_param_cols + 1])
@@ -1618,15 +1726,15 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
         return np.nan
     vals = []
     for _, rr in rows.iterrows():
-      vm = safe_float(rr.get('val_mae_mean'))
-      tm = safe_float(rr.get('train_mae_mean'))
+      vm = safe_float(rr.get(f'{val_metric}_mean'))
+      tm = safe_float(rr.get(f'{train_metric}_mean'))
       # Prefer min/max across folds if present, else fall back to mean±std
-      vmin = safe_float(rr.get('val_mae_min'))
-      vmax = safe_float(rr.get('val_mae_max'))
-      tmin = safe_float(rr.get('train_mae_min'))
-      tmax = safe_float(rr.get('train_mae_max'))
-      vs = safe_float(rr.get('val_mae_std')) if pd.notna(rr.get('val_mae_std')) else np.nan
-      ts = safe_float(rr.get('train_mae_std')) if pd.notna(rr.get('train_mae_std')) else np.nan
+      vmin = safe_float(rr.get(f'{val_metric}_min'))
+      vmax = safe_float(rr.get(f'{val_metric}_max'))
+      tmin = safe_float(rr.get(f'{train_metric}_min'))
+      tmax = safe_float(rr.get(f'{train_metric}_max'))
+      vs = safe_float(rr.get(f'{val_metric}_std')) if pd.notna(rr.get(f'{val_metric}_std')) else np.nan
+      ts = safe_float(rr.get(f'{train_metric}_std')) if pd.notna(rr.get(f'{train_metric}_std')) else np.nan
       if not np.isnan(vm):
         lo = vmin if not np.isnan(vmin) else (vm - vs if not np.isnan(vs) else vm)
         hi = vmax if not np.isnan(vmax) else (vm + vs if not np.isnan(vs) else vm)
@@ -1679,29 +1787,29 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
           ax_pb.text(0.01, 0.55, txt, ha='left', va='center', fontsize=12, family='monospace')
 
       # Collect metrics
-      v_mean = r.get('val_mae_mean')
-      t_mean = r.get('train_mae_mean')
-      v_std = r.get('val_mae_std')
-      t_std = r.get('train_mae_std')
-      v_folds = _collect_folds(r, 'val_mae')
-      t_folds = _collect_folds(r, 'train_mae')
-      v_min = (np.nanmin(v_folds) if len(v_folds) > 0 else r.get('val_mae_min'))
-      v_max = (np.nanmax(v_folds) if len(v_folds) > 0 else r.get('val_mae_max'))
-      t_min = (np.nanmin(t_folds) if len(t_folds) > 0 else r.get('train_mae_min'))
-      t_max = (np.nanmax(t_folds) if len(t_folds) > 0 else r.get('train_mae_max'))
+      v_mean = r.get(f'{val_metric}_mean')
+      t_mean = r.get(f'{train_metric}_mean')
+      v_std = r.get(f'{val_metric}_std')
+      t_std = r.get(f'{train_metric}_std')
+      v_folds = _collect_folds(r, val_metric)
+      t_folds = _collect_folds(r, train_metric)
+      v_min = (np.nanmin(v_folds) if len(v_folds) > 0 else r.get(f'{val_metric}_min'))
+      v_max = (np.nanmax(v_folds) if len(v_folds) > 0 else r.get(f'{val_metric}_max'))
+      t_min = (np.nanmin(t_folds) if len(t_folds) > 0 else r.get(f'{train_metric}_min'))
+      t_max = (np.nanmax(t_folds) if len(t_folds) > 0 else r.get(f'{train_metric}_max'))
 
       # Column 1: MAE text spanning two rows (validation on top, training on bottom)
       ax_mae = fig.add_subplot(gs[top:bot+1, num_param_cols])
       ax_mae.axis('off')
 
-      # Validation MAE on top row
+      # Validation metric on top row
       if pd.notna(v_mean):
         txt = f"{float(v_mean):.5f}"
         if pd.notna(v_std):
           txt += f" ± {float(v_std):.5f}"
         ax_mae.text(0.5, 0.75, txt, ha='center', va='center', fontsize=11, color='#1f4e79')
 
-      # Training MAE on bottom row
+      # Training metric on bottom row
       if pd.notna(t_mean):
         txt = f"{float(t_mean):.5f}"
         if pd.notna(t_std):
@@ -1826,7 +1934,7 @@ def main() -> None:
 
   # Concentration results: overall top-N
   top_conc = _select_topn_conc(df, args.top_n)
-  _render_top_table(top_conc, f'Top {args.top_n} Concentration Models (Overall)', out_dir / 'top_concentration_overall.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
+  _render_top_table(_project_metric_for_table(top_conc, 'conc'), f'Top {args.top_n} Concentration Models (Overall)', out_dir / 'top_concentration_overall.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
 
   # Concentration results per-architecture (only if multiple architectures exist)
   df['arch'] = df['model'].astype(str).map(_arch_of_model)
@@ -1836,18 +1944,30 @@ def main() -> None:
       sub = df[df['arch'] == arch]
       if len(sub) > 1:
         top_arch = _select_topn_conc(sub, args.top_n)
-        _render_top_table(top_arch, f'Top {args.top_n} {arch.upper()} Concentration Models', out_dir / f'top_concentration_{arch}.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
+        _render_top_table(_project_metric_for_table(top_arch, 'conc'), f'Top {args.top_n} {arch.upper()} Concentration Models', out_dir / f'top_concentration_{arch}.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
 
   # Spectra results: overall and per-arch (ae, caeq)
   top_spec = _select_topn_spec(df, args.top_n)
-  _render_top_table(top_spec, f'Top {args.top_n} Spectra Models (Overall)', out_dir / 'top_spectra_overall.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
+  _render_top_table(_project_metric_for_table(top_spec, 'spec'), f'Top {args.top_n} Spectra Models (Overall)', out_dir / 'top_spectra_overall.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
   spec_archs_present = df[df['arch'].isin(SPEC_ARCHS)]['arch'].dropna().unique()
   if len(spec_archs_present) > 1:
     for arch in SPEC_ARCHS:
       sub = df[df['arch'] == arch]
       if len(sub) > 1:
         top_arch = _select_topn_spec(sub, args.top_n)
-        _render_top_table(top_arch, f'Top {args.top_n} {arch.upper()} Spectra Models', out_dir / f'top_spectra_{arch}.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
+        _render_top_table(_project_metric_for_table(top_arch, 'spec'), f'Top {args.top_n} {arch.upper()} Spectra Models', out_dir / f'top_spectra_{arch}.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
+
+  # CAEQ-only additional top-N plots by Q-loss (concentration) and Total loss
+  if 'caeq' in df['arch'].values:
+    # Q-loss ranking (quantification-focused)
+    top_caeq_q = _select_topn_caeq_by_loss(df, args.top_n, 'q')
+    if not top_caeq_q.empty:
+      _render_top_table(_project_metric_for_table(top_caeq_q, 'conc'), f'Top {args.top_n} CAEQ by Q (Conc. MAE)', out_dir / 'top_caeq_q.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
+
+    # Total loss ranking (combined)
+    top_caeq_total = _select_topn_caeq_by_loss(df, args.top_n, 'total')
+    if not top_caeq_total.empty:
+      _render_top_table(_project_metric_for_table(top_caeq_total, 'total'), f'Top {args.top_n} CAEQ by Total (Conc+Spec MAE)', out_dir / 'top_caeq_total.pdf', args.dpi, args.log_scale, args.top_n, args.sensitivity)
 
   # Benchmark plots for each model
   _render_benchmark_plots(df, out_dir, args.dpi, args.log_scale)
@@ -1862,5 +1982,3 @@ def main() -> None:
 
 if __name__ == '__main__':
   main()
-
-

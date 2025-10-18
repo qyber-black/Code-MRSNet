@@ -1,8 +1,8 @@
 # MRSNet API Documentation
 
-> SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-> SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University
-> SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+> SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University\
+> SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University\
+> SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University\
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
 ## Overview
