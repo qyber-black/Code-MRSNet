@@ -102,6 +102,7 @@ The script supports all MRSNet commands:
 - **`compare`**: Compare spectra
 - **`quantify`**: Quantify spectra in DICOMs
 - **`select`**: Model selection and hyperparameter optimization
+- **`sim2real`**: Analyse sim-to-real gap across benchmark series
 
 ## Result Checking
 
@@ -149,7 +150,7 @@ This mirrors the outputs written by `analyse_model` during `mrsnet.py benchmark`
     {
       "name": "cnn_real",
       "args": {
-        "model": "cnn_default",
+        "model": "cnn_medium_sigmoid_pool",
         "acquisitions": ["edit_off", "edit_on"],
         "datatype": ["real"]
       }
@@ -157,15 +158,15 @@ This mirrors the outputs written by `analyse_model` during `mrsnet.py benchmark`
     {
       "name": "cnn_imaginary",
       "args": {
-        "model": "cnn_default",
+        "model": "cnn_medium_sigmoid_pool",
         "acquisitions": ["edit_off", "edit_on"],
         "datatype": ["real", "imaginary"]
       }
     },
     {
-      "name": "fcnn_real",
+      "name": "caeq_real",
       "args": {
-        "model": "fcnn_default",
+        "model": "caeq_fc_5_6_tanh_tanh_0.2_384_2_sigmoid_sigmoid_-1.0",
         "acquisitions": ["edit_off", "edit_on"],
         "datatype": ["real"]
       }
@@ -227,7 +228,7 @@ This mirrors the outputs written by `analyse_model` during `mrsnet.py benchmark`
       "name": "cnn_training",
       "command": "train",
       "args": {
-        "model": "cnn_default",
+        "model": "cnn_medium_sigmoid_pool",
         "acquisitions": ["edit_off", "edit_on"],
         "datatype": ["real"],
         "validate": 0.8
@@ -238,7 +239,7 @@ This mirrors the outputs written by `analyse_model` during `mrsnet.py benchmark`
       "command": "benchmark",
       "args": {
         "norm": "max",
-        "model": "data/model/cnn_default/Cr-GABA-Gln-Glu-NAA/megapress/edit_off-edit_on/real/sum/16/1000/fid-a-2d_2000_4096_siemens_123.23_2.0_Cr-GABA-Gln-Glu-NAA_megapress_sobol_1.0-adc_normal-0.0-0.03_10000-1/Split_0.8-1"
+        "model": "data/model/cnn_medium_sigmoid_pool/Cr-GABA-Gln-Glu-NAA/megapress/edit_off-edit_on/real/sum/16/1000/fid-a-2d_2000_4096_siemens_123.23_2.0_Cr-GABA-Gln-Glu-NAA_megapress_sobol_1.0-adc_normal-0.0-0.03_10000-1/Split_0.8-1"
       },
       "depends_on": "cnn_training"
     }
@@ -261,38 +262,38 @@ This mirrors the outputs written by `analyse_model` during `mrsnet.py benchmark`
   },
   "runs": [
     {
-      "name": "fcnn_training",
+      "name": "cnn_training",
       "command": "train",
       "args": {
-        "model": "fcnn_default",
+        "model": "cnn_medium_sigmoid_pool",
         "acquisitions": ["edit_off", "edit_on"],
         "datatype": ["real"]
       }
     },
     {
-      "name": "qmrs_training",
+      "name": "caeq_training",
       "command": "train",
       "args": {
-        "model": "qmrs_default",
+        "model": "caeq_fc_5_6_tanh_tanh_0.2_384_2_sigmoid_sigmoid_-1.0",
         "acquisitions": ["edit_off", "edit_on"],
         "datatype": ["real"]
       }
     },
     {
-      "name": "fcnn_benchmark",
+      "name": "cnn_benchmark",
       "command": "benchmark",
       "args": {
         "norm": "max"
       },
-      "depends_on": "fcnn_training"
+      "depends_on": "cnn_training"
     },
     {
-      "name": "qmrs_benchmark",
+      "name": "caeq_benchmark",
       "command": "benchmark",
       "args": {
         "norm": "max"
       },
-      "depends_on": "qmrs_training"
+      "depends_on": "caeq_training"
     }
   ]
 }

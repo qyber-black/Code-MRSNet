@@ -50,6 +50,7 @@ The main command-line interface providing the following subcommands:
 - `select` - Model selection on datasets
 - `quantify` - Quantify spectra in DICOM files
 - `benchmark` - Run benchmark on models
+- `sim2real` - Analyse sim-to-real gap across benchmark series
 
 ## Core Classes and Functions
 
@@ -716,8 +717,10 @@ ds = Dataset.load('/path/to/dataset')
 
 # Train different models
 models = [
-    CNN('cnn_small_softmax', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+    CNN('cnn_medium_sigmoid_pool', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
         'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
+    AutoencoderQuantifier('caeq_fc_5_6_tanh_tanh_0.2_384_2_sigmoid_sigmoid_-1.0', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
+                          'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
     EncDec('encdec_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
            'megapress', ['edit_off', 'difference'], ['magnitude', 'phase'], 'sum'),
     FoundationalCNN('fcnn_default', ['Cr', 'GABA', 'Glu', 'Gln', 'NAA'],
@@ -890,7 +893,8 @@ python mrsnet.py basis --source lcmodel --metabolites Cr GABA Glu Gln NAA
 python mrsnet.py simulate --source lcmodel --sample random --num 1000
 
 # Train different models
-python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m cnn_small_softmax
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m cnn_medium_sigmoid_pool
+python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m caeq_fc_5_6_tanh_tanh_0.2_384_2_sigmoid_sigmoid_-1.0
 python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m encdec_default
 python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m fcnn_default
 python mrsnet.py train -d /path/to/dataset -e 100 --validate 5 -m qmrs_default

@@ -132,7 +132,7 @@ with this data are automatically installed with the above git submodule command.
 
 The additional git submodules containing the data are
 
-* [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-mrs-megapress-spectra) -
+* [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-megapress-spectra) -
   Swansea benchmark phantom datasets collected at Swansea University's 3T Siemens scanner (in `data/benchmark`);
 * [Data - MRSNet - Models - Dist](https://qyber.black/mrs/data-mrsnet-model-dist) -
   Best performing trained models for MRSNet (in `data/model-dist`);
@@ -197,9 +197,9 @@ MRSNet supports several deep learning architectures:
 Each model supports configurable parameters via model strings. For example:
 * `encdec_default` - Default EncDec configuration
 * `fcnn_32_64_128` - FCNN with custom filter sizes
-* `qmrs_16_32_64_128_0.3` - QMRS with custom architecture parameters
-* `qnet_original` - QNet with simplified LLS (practical implementation)
-* `qnet_basis_original` - QNet with full basis set LLS (scientifically accurate)
+* `qmrs_16_32_64_128_0.3_6` - QMRS with custom architecture parameters
+* `qnet_default` - QNet with simplified LLS (practical implementation)
+* `qnet_basis_default` - QNet with full basis set LLS (scientifically accurate)
 
 ### QNet Implementation Variants
 
@@ -222,10 +222,10 @@ MRSNet provides two QNet implementations for different use cases:
 
 ```bash
 # Basic QNet (simplified LLS)
-./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_original -vv
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_default -vv
 
 # Full basis set QNet (scientifically accurate)
-./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_basis_original -vv
+./mrsnet.py train -d TRAIN-DATA-PATH -e 100 -m qnet_basis_default -vv
 ```
 
 The QNetBasis variant automatically extracts basis parameters (source, manufacturer, omega, linewidth) from the training dataset path, ensuring the correct basis set is used for each training run.
