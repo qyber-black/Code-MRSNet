@@ -295,7 +295,7 @@ Usage (in addition to estimation flags):
 
 Outputs and plots:
 - Writes `<series>_<variant>_metrics_lw_mc.json` with per-trial summaries (mean/std across trials)
-- Adds error bars to per-series and overall plots in `visualize_sim2real.py`
+- Adds error bars to per-series and overall plots via `data/sim2gap/visualize_sim2real.py`
 - Appends folder tags `_lwMC<trials>-S<scale>-<dist>` to separate runs
 
 Notes:
