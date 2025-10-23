@@ -1,0 +1,130 @@
+{
+  "common": {
+    "command": "sim2real",
+    "manufacturer": ["siemens"],
+    "omega": [123.23],
+    "pulse_sequence": ["megapress"],
+    "sample_rate": 2000,
+    "samples": 4096,
+    "noise_mc_trials": 100,
+    "noise_sigma": 0.03,
+    "noise_mu": 0.0,
+    "verbose": 1
+  },
+  "runs": [
+    {
+      "name": "sim2real_fida2d_fixed",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "linewidth": [2.0]
+      }
+    },
+    {
+      "name": "sim2real_fida2d_fixed_clean",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "linewidth": [2.0],
+        "noise_mc_trials": 0,
+        "noise_sigma": 0.0,
+        "noise_mu": 0.0
+      }
+    },
+    {
+      "name": "sim2real_fida2d_estimated_with_noise",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "estimate_linewidth": true,
+        "linewidth_method": "lorentzian",
+        "linewidth_range": [0.5, 10.0],
+        "linewidth_step": 0.1,
+        "linewidth_min_snr": 3.0,
+        "linewidth_max_peaks": 3,
+        "linewidth_prefer_single": "lorentzian",
+        "linewidth_prefer_sigma_mode": "hybrid"
+      }
+    },
+    {
+      "name": "sim2real_fida2d_estimated_clean",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "estimate_linewidth": true,
+        "linewidth_method": "lorentzian",
+        "linewidth_range": [0.5, 10.0],
+        "linewidth_step": 0.1,
+        "linewidth_min_snr": 3.0,
+        "linewidth_max_peaks": 3,
+        "linewidth_prefer_single": "lorentzian",
+        "linewidth_prefer_sigma_mode": "hybrid",
+        "noise_mc_trials": 0,
+        "noise_sigma": 0.0,
+        "noise_mu": 0.0
+      }
+    },
+    {
+      "name": "sim2real_fida2d_estimated_lwmc_clean",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "estimate_linewidth": true,
+        "linewidth_method": "lorentzian",
+        "linewidth_range": [0.5, 10.0],
+        "linewidth_step": 0.1,
+        "linewidth_min_snr": 3.0,
+        "linewidth_max_peaks": 3,
+        "linewidth_prefer_single": "lorentzian",
+        "linewidth_prefer_sigma_mode": "hybrid",
+        "noise_mc_trials": 0,
+        "noise_sigma": 0.0,
+        "noise_mu": 0.0,
+        "lw_mc_trials": 50,
+        "lw_mc_scale": 1.0,
+        "lw_mc_dist": "normal"
+      }
+    },
+    {
+      "name": "sim2real_fida2d_estimated_lwmc_with_noise",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "estimate_linewidth": true,
+        "linewidth_method": "lorentzian",
+        "linewidth_range": [0.5, 10.0],
+        "linewidth_step": 0.1,
+        "linewidth_min_snr": 3.0,
+        "linewidth_max_peaks": 3,
+        "linewidth_prefer_single": "lorentzian",
+        "linewidth_prefer_sigma_mode": "hybrid",
+        "lw_mc_trials": 50,
+        "lw_mc_scale": 1.0,
+        "lw_mc_dist": "normal"
+      }
+    },
+    {
+      "name": "sim2real_fida2d_estimated_quick",
+      "command": "sim2real",
+      "args": {
+        "source": ["fid-a-2d"],
+        "estimate_linewidth": true,
+        "linewidth_method": "lorentzian",
+        "linewidth_range": [0.5, 10.0],
+        "linewidth_step": 0.1,
+        "linewidth_min_snr": 3.0,
+        "linewidth_single_spectrum": true,
+        "linewidth_prefer_single": "lorentzian",
+        "linewidth_prefer_sigma_mode": "hybrid"
+      }
+    },
+    {
+      "name": "sim2real_lcmodel_fixed",
+      "command": "sim2real",
+      "args": {
+        "source": ["lcmodel"],
+        "linewidth": [2.0]
+      }
+    }
+  ]
+}

@@ -330,6 +330,22 @@ def add_arguments_linewidth_estimation(p):
                  help='Minimum SNR threshold for peak detection in linewidth estimation.')
   p.add_argument('--linewidth_max_peaks', type=int, default=3,
                  help='Maximum number of peaks to use for averaging in linewidth estimation.')
+  # Linewidth Monte Carlo (uncertainty) options
+  p.add_argument('--lw_mc_trials', type=int, default=0,
+                 help='Number of Monte Carlo trials for linewidth jitter (0 disables).')
+  p.add_argument('--lw_mc_scale', type=float, default=1.0,
+                 help='Global multiplier for per-spectrum linewidth uncertainty (sigma).')
+  p.add_argument('--lw_mc_dist', choices=['normal', 'uniform'], default='normal',
+                 help='Distribution to sample linewidth jitter from.')
+  # Prefer single estimator with confidence gating
+  p.add_argument('--linewidth_prefer_single', choices=['none', 'lorentzian', 'water_peak', 'metabolite_peak'], default='none',
+                 help='Prefer a single estimator when confident; otherwise fallback to auto/median.')
+  p.add_argument('--linewidth_prefer_mad_thresh', type=float, default=None,
+                 help='Max |preferred - median| in Hz to accept single estimator (default: 2*linewidth_step).')
+  p.add_argument('--linewidth_prefer_snr_min', type=float, default=None,
+                 help='Minimum SNR proxy to accept single estimator (default: linewidth_min_snr).')
+  p.add_argument('--linewidth_prefer_sigma_mode', choices=['snr', 'mad', 'hybrid'], default='hybrid',
+                 help='How to compute sigma when single estimator is accepted: snr floor, MAD spread, or max of both.')
 
 def gen_basis(args):
   """Generate basis set for MRS spectra.
@@ -1510,7 +1526,14 @@ def sim2real(args):
   # If using linewidth estimation to build per-spectrum bases, reflect that in folder name
   if args.estimate_linewidth and not args.linewidth_use_fixed:
     est_mode = "single" if args.linewidth_single_spectrum else "perSpec"
-    basis_tag += f"_estLW-{args.linewidth_method}-step{args.linewidth_step}-{est_mode}"
+    # Include key estimator constraints to disambiguate runs
+    basis_tag += f"_estLW-{args.linewidth_method}-step{args.linewidth_step}-{est_mode}-rng{args.linewidth_range[0]}-{args.linewidth_range[1]}-snr{args.linewidth_min_snr}-pk{args.linewidth_max_peaks}"
+  # Always include noise MC configuration tags to avoid overwrites between noise settings
+  if isinstance(args.noise_mc_trials, int) and args.noise_mc_trials > 0 and (args.noise_sigma > 0.0 or args.noise_mu > 0.0):
+    basis_tag += f"_noiseT{int(args.noise_mc_trials)}-S{float(args.noise_sigma)}-M{float(args.noise_mu)}"
+  # Add LW-MC tags if enabled
+  if isinstance(args.lw_mc_trials, int) and args.lw_mc_trials > 0:
+    basis_tag += f"_lwMC{int(args.lw_mc_trials)}-S{float(args.lw_mc_scale)}-{args.lw_mc_dist}"
   out_base = os.path.join(Cfg.val['path_sim2real'], basis_tag)
   os.makedirs(out_base, exist_ok=True)
 
@@ -1536,6 +1559,7 @@ def sim2real(args):
       # Prepare individual bases with per-spectrum linewidths
       individual_bases = []
       individual_linewidths = []
+      individual_sigmas = []
 
       if args.estimate_linewidth and not args.linewidth_use_fixed:
         # Use individual estimated linewidths for each spectrum
@@ -1544,10 +1568,11 @@ def sim2real(args):
 
         for i, s in enumerate(bm.spectra):
           # Estimate linewidth for this specific spectrum
-          spectrum_lw = estimate_linewidth_for_spectrum(s, args, verbose=0)  # Silent estimation
+          spectrum_lw, spectrum_sigma = estimate_linewidth_for_spectrum(s, args, verbose=0)  # Silent estimation
 
           if spectrum_lw is not None:
             individual_linewidths.append(spectrum_lw)
+            individual_sigmas.append(spectrum_sigma if spectrum_sigma is not None else args.linewidth_step)
             # Create basis with this spectrum's linewidth
             ba_i = basis.Basis(metabolites=combined.metabolites,
                                source=src, manufacturer=man,
@@ -1556,11 +1581,12 @@ def sim2real(args):
                                sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
             individual_bases.append(ba_i)
             if args.verbose > 1:
-              print(f"# Spectrum {i}: using linewidth {spectrum_lw:.2f} Hz")
+              print(f"# Spectrum {i}: using linewidth {spectrum_lw:.2f} Hz (σ≈{spectrum_sigma:.2f} Hz)")
           else:
             # Fallback to averaged or fixed linewidth
             fallback_lw = estimated_lw if estimated_lw is not None else args.linewidth_fallback
             individual_linewidths.append(fallback_lw)
+            individual_sigmas.append(args.linewidth_step)
             ba_i = basis.Basis(metabolites=combined.metabolites,
                                source=src, manufacturer=man,
                                omega=omg, linewidth=fallback_lw,
@@ -1600,10 +1626,117 @@ def sim2real(args):
         import numpy as np
         series_lw = float(np.median(individual_linewidths))
 
-      _ = compare_basis(bm, individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
-                        out_dir=out_dir, save_prefix=save_prefix,
-                        noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu,
-                        individual_linewidths=individual_linewidths, overall_linewidth=series_lw)
+      base_metrics = compare_basis(bm, individual_bases, verbose=args.verbose, screen_dpi=Cfg.val['screen_dpi'],
+                                   out_dir=out_dir, save_prefix=save_prefix,
+                                   noise_mc_trials=args.noise_mc_trials, noise_sigma=args.noise_sigma, noise_mu=args.noise_mu,
+                                   individual_linewidths=individual_linewidths, overall_linewidth=series_lw)
+
+      # Print per-series LW uncertainty summary when available
+      if args.estimate_linewidth and not args.linewidth_use_fixed and len(individual_sigmas) == len(individual_linewidths) and len(individual_sigmas) > 0:
+        try:
+          import numpy as _np
+          med = float(_np.median(individual_sigmas))
+          q1 = float(_np.percentile(individual_sigmas, 25))
+          q3 = float(_np.percentile(individual_sigmas, 75))
+          if args.verbose > 0:
+            print(f"# LW σ for {b_id}/{variant}: median={med:.2f} Hz, IQR={q1:.2f}–{q3:.2f} Hz (n={len(individual_sigmas)})")
+        except Exception:
+          pass
+
+      # Optional LW-MC over per-spectrum linewidths
+      if isinstance(args.lw_mc_trials, int) and args.lw_mc_trials > 0 and len(individual_linewidths) == len(bm.spectra):
+        import numpy as _np
+        lw_trials = int(args.lw_mc_trials)
+        scale = float(args.lw_mc_scale)
+        dist = args.lw_mc_dist
+        min_lw, max_lw = args.linewidth_range
+        step = args.linewidth_step
+        # Construct sigmas: use per-spectrum estimates when available; else fallback to step
+        sigmas = individual_sigmas if len(individual_sigmas) == len(individual_linewidths) else [step for _ in range(len(individual_linewidths))]
+        trial_metrics = []
+        med_lw_trials = []
+        # Sigma summary and nominal jitter bounds
+        try:
+          import numpy as _np
+          sig_arr = _np.array(sigmas, dtype=float)
+          sigma_median = float(_np.median(sig_arr))
+          sigma_q1 = float(_np.percentile(sig_arr, 25))
+          sigma_q3 = float(_np.percentile(sig_arr, 75))
+          lower_bounds = [max(min_lw, float(individual_linewidths[i]) - scale * float(sigmas[i])) for i in range(len(individual_linewidths))]
+          upper_bounds = [min(max_lw, float(individual_linewidths[i]) + scale * float(sigmas[i])) for i in range(len(individual_linewidths))]
+          lb_min = float(_np.min(lower_bounds)) if len(lower_bounds) else None
+          ub_max = float(_np.max(upper_bounds)) if len(upper_bounds) else None
+        except Exception:
+          sigma_median = None; sigma_q1 = None; sigma_q3 = None; lb_min = None; ub_max = None
+
+        if args.verbose > 0:
+          try:
+            print(f"# LW-MC for {b_id}/{variant}: dist={dist}, trials={lw_trials}, step={step:.2f} Hz, clamp=[{min_lw:.2f},{max_lw:.2f}] Hz, nominal jitter bounds≈[{lb_min:.2f if lb_min is not None else float('nan')},{ub_max:.2f if ub_max is not None else float('nan')}] Hz, σ median={sigma_median:.2f if sigma_median is not None else float('nan')} Hz, IQR={sigma_q1:.2f if sigma_q1 is not None else float('nan')}–{sigma_q3:.2f if sigma_q3 is not None else float('nan')} Hz")
+          except Exception:
+            pass
+        err_trials = []
+        for _t in range(lw_trials):
+          lw_samp = []
+          for i, mu in enumerate(individual_linewidths):
+            sd = max(step, scale * (sigmas[i]))
+            if dist == 'uniform':
+              a = mu - sd
+              b = mu + sd
+              v = _np.random.uniform(a, b)
+            else:
+              v = _np.random.normal(mu, sd)
+            v = max(min_lw, min(max_lw, v))
+            # round to nearest step
+            v = round(v / step) * step
+            lw_samp.append(float(v))
+          med_lw_trials.append(float(_np.median(lw_samp)))
+          # Build trial bases
+          trial_bases = []
+          for v in lw_samp:
+            ba_i = basis.Basis(metabolites=bm.metabolites,
+                               source=src, manufacturer=man,
+                               omega=omg, linewidth=v,
+                               pulse_sequence=ps,
+                               sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+            trial_bases.append(ba_i)
+          m = compare_basis(bm, trial_bases, verbose=0, screen_dpi=Cfg.val['screen_dpi'],
+                            out_dir=None, save_prefix=None,
+                            noise_mc_trials=0, noise_sigma=0.0, noise_mu=0.0,
+                            individual_linewidths=lw_samp, overall_linewidth=float(_np.median(lw_samp)))
+          trial_metrics.append(m['summary'])
+          err_trials.append(m.get('signed_spectrum'))
+        # Write LW-MC summary JSON adjacent to metrics (same prefix)
+        try:
+          import json as _json
+          out_json = os.path.join(out_dir, f"{save_prefix}_metrics_lw_mc.json")
+          with open(out_json, 'w') as f:
+            _json.dump({
+              'trials': lw_trials,
+              'scale': scale,
+              'dist': dist,
+              'clamp_min': float(min_lw),
+              'clamp_max': float(max_lw),
+              'step': float(step),
+              'sigma_median': sigma_median,
+              'sigma_q1': sigma_q1,
+              'sigma_q3': sigma_q3,
+              'nominal_lower_min': lb_min,
+              'nominal_upper_max': ub_max,
+              'median_lw_trials': med_lw_trials,
+              'summary_trials': trial_metrics
+            }, f, indent=2)
+        except Exception:
+          pass
+
+        # Render bands including LW-MC effect
+        try:
+          _ = compare_basis(bm, individual_bases, verbose=0, screen_dpi=Cfg.val['screen_dpi'],
+                            out_dir=out_dir, save_prefix=save_prefix,
+                            noise_mc_trials=0, noise_sigma=0.0, noise_mu=0.0,
+                            individual_linewidths=individual_linewidths, overall_linewidth=series_lw,
+                            extra_error_trials=err_trials)
+        except Exception:
+          pass
 
       # Append to combined dataset
       for s, c in zip(bm.spectra, bm.concentrations, strict=False):
@@ -1624,9 +1757,10 @@ def sim2real(args):
         if args.verbose > 0:
           print(f"# Linewidth estimation failed for combined analysis, use fallback: {args.linewidth_fallback:.2f} Hz")
 
-    # Prepare individual bases for combined analysis with per-spectrum linewidths
+    # Prepare individual bases for combined analysis with per-spectrum linewidths and uncertainties
     combined_individual_bases = []
     combined_individual_linewidths = []
+    combined_individual_sigmas = []
 
     if args.estimate_linewidth and not args.linewidth_use_fixed:
       # Use individual estimated linewidths for each spectrum in combined analysis
@@ -1634,11 +1768,12 @@ def sim2real(args):
         print("# Creating individual basis sets for combined analysis with per-spectrum linewidths")
 
       for i, s in enumerate(combined.spectra):
-        # Estimate linewidth for this specific spectrum
-        spectrum_lw = estimate_linewidth_for_spectrum(s, args, verbose=0)  # Silent estimation
+        # Estimate linewidth and sigma for this specific spectrum
+        spectrum_lw, spectrum_sigma = estimate_linewidth_for_spectrum(s, args, verbose=0)  # Silent estimation
 
         if spectrum_lw is not None:
           combined_individual_linewidths.append(spectrum_lw)
+          combined_individual_sigmas.append(spectrum_sigma if spectrum_sigma is not None else args.linewidth_step)
           # Create basis with this spectrum's linewidth
           ba_i = basis.Basis(metabolites=combined.metabolites,
                              source=src, manufacturer=man,
@@ -1652,6 +1787,7 @@ def sim2real(args):
           # Fallback to averaged or fixed linewidth
           fallback_lw = estimated_lw if estimated_lw is not None else args.linewidth_fallback
           combined_individual_linewidths.append(fallback_lw)
+          combined_individual_sigmas.append(args.linewidth_step)
           ba_i = basis.Basis(metabolites=combined.metabolites,
                              source=src, manufacturer=man,
                              omega=omg, linewidth=fallback_lw,
@@ -1662,17 +1798,19 @@ def sim2real(args):
             print(f"# Combined spectrum {i}: estimation failed, using fallback {fallback_lw:.2f} Hz")
     else:
       # Use fixed linewidth for all spectra in combined analysis
+      lw_val = float(lw)
       if args.verbose > 0:
-        print(f"# Using fixed linewidth {lw:.2f} Hz for all combined analysis spectra")
+        print(f"# Using fixed linewidth {lw_val:.2f} Hz for all combined analysis spectra")
 
-        for _ in enumerate(combined.spectra):
-          combined_individual_linewidths.append(lw)
-          ba_i = basis.Basis(metabolites=combined.metabolites,
-                             source=src, manufacturer=man,
-                             omega=omg, linewidth=lw,
-                             pulse_sequence=ps,
-                             sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
-          combined_individual_bases.append(ba_i)
+      for _ in enumerate(combined.spectra):
+        combined_individual_linewidths.append(lw_val)
+        combined_individual_sigmas.append(args.linewidth_step)
+        ba_i = basis.Basis(metabolites=combined.metabolites,
+                           source=src, manufacturer=man,
+                           omega=omg, linewidth=lw_val,
+                           pulse_sequence=ps,
+                           sample_rate=args.sample_rate, samples=args.samples).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
+        combined_individual_bases.append(ba_i)
 
     # Include LW info for combined analysis in save prefix
     save_prefix = "all"
@@ -1698,7 +1836,7 @@ def sim2real(args):
                       individual_linewidths=combined_individual_linewidths, overall_linewidth=combined_overall_lw)
 
 def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
-  """Estimate linewidth for a single spectrum (individual acquisition).
+  """Estimate linewidth for a single spectrum (individual acquisition) with uncertainty.
 
   For MEGAPRESS spectra, preferentially uses edit_off spectra which have
   the best SNR and no editing artifacts.
@@ -1714,8 +1852,8 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
 
   Returns
   -------
-  float or None
-      Estimated linewidth in Hz, rounded to nearest step, or None if estimation fails
+  tuple[float | None, float | None]
+      (estimated linewidth in Hz rounded to step, estimated sigma in Hz) or (None, None) if estimation fails
   """
   # For MEGAPRESS, prefer edit_off spectra for linewidth estimation
   spectrum = None
@@ -1736,23 +1874,47 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
   if spectrum is None:
     if verbose > 1:
       print("# No valid spectrum data found for linewidth estimation")
-    return None
+    return None, None
 
   try:
-    # Estimate linewidth for this spectrum
-    estimated_lw = spectrum.estimate_linewidth(method=args.linewidth_method, verbose=verbose)
+    # Estimate linewidth for this spectrum using requested method and fallbacks for variability
+    methods_to_try = []
+    if args.linewidth_method == 'auto':
+      methods_to_try = ['lorentzian', 'water_peak', 'metabolite_peak']
+    else:
+      methods_to_try = [args.linewidth_method]
+
+    estimates = []
+    for meth in methods_to_try:
+      try:
+        v = spectrum.estimate_linewidth(method=meth, verbose=max(0, verbose-1))
+        if v is not None:
+          estimates.append(float(v))
+      except Exception:
+        continue
+
+    if len(estimates) == 0:
+      if verbose > 1:
+        print(f"# Linewidth estimation failed for all methods")
+      return None, None
+    # Aggregate and derive uncertainty proxy as robust spread across methods
+    import numpy as _np
+    estimated_lw = float(_np.median(estimates))
+    # Robust sigma from MAD scaled to std (~1.4826 * MAD) with floor at step
+    mad = float(_np.median(_np.abs(estimates - estimated_lw))) if len(estimates) > 1 else 0.0
+    robust_sigma = 1.4826 * mad
 
     if estimated_lw is None:
       if verbose > 1:
         print(f"# Linewidth estimation failed for {spectrum.acquisition} spectrum")
-      return None
+    return None, None
 
     # Validate range
     min_lw, max_lw = args.linewidth_range
     if estimated_lw < min_lw or estimated_lw > max_lw:
       if verbose > 1:
         print(f"# Estimated linewidth {estimated_lw:.2f} Hz outside valid range [{min_lw}, {max_lw}] for {spectrum.acquisition}")
-      return None
+    return None, None
 
     # Round to nearest step
     rounded_lw = round(estimated_lw / args.linewidth_step) * args.linewidth_step
@@ -1760,12 +1922,48 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
     if verbose > 1:
       print(f"# {spectrum.acquisition} spectrum linewidth: {estimated_lw:.2f} Hz -> {rounded_lw:.2f} Hz")
 
-    return rounded_lw
+    # Compose sigma with optional preference for a single estimator if confident
+    snr_floor = args.linewidth_min_snr if hasattr(args, 'linewidth_min_snr') else 3.0
+    frac = 1.0 / max(snr_floor, 1.0)
+    sigma_floor = frac * max(rounded_lw, args.linewidth_step)
+    sigma_est = max(robust_sigma, sigma_floor)
+
+    preferred = getattr(args, 'linewidth_prefer_single', 'none')
+    if preferred and preferred != 'none':
+      # If the preferred method produced a value, and it's close to the median within threshold, accept it
+      try:
+        v_pref = None
+        if preferred in methods_to_try:
+          # Recompute preferred only to capture exact value if present
+          v_pref = spectrum.estimate_linewidth(method=preferred, verbose=0)
+        if v_pref is not None:
+          v_pref = float(v_pref)
+          thresh = args.linewidth_prefer_mad_thresh if args.linewidth_prefer_mad_thresh is not None else (2.0 * args.linewidth_step)
+          snr_req = args.linewidth_prefer_snr_min if args.linewidth_prefer_snr_min is not None else snr_floor
+          # Simple SNR proxy: inverse of sigma_floor factor
+          snr_proxy = 1.0 / max(frac, 1e-6)
+          if abs(v_pref - estimated_lw) <= thresh and snr_proxy >= snr_req:
+            estimated_lw = v_pref
+            rounded_lw = round(estimated_lw / args.linewidth_step) * args.linewidth_step
+            mode = getattr(args, 'linewidth_prefer_sigma_mode', 'hybrid')
+            if mode == 'snr':
+              sigma_est = sigma_floor
+            elif mode == 'mad':
+              sigma_est = robust_sigma if robust_sigma > 0 else args.linewidth_step
+            else:  # hybrid -> max
+              sigma_est = max(sigma_floor, robust_sigma)
+      except Exception:
+        pass
+    # Clamp and floor sigma
+    min_lw, max_lw = args.linewidth_range
+    sigma_est = max(args.linewidth_step, min(sigma_est, (max_lw - min_lw) / 4.0))
+
+    return rounded_lw, sigma_est
 
   except Exception as e:
     if verbose > 1:
       print(f"# Linewidth estimation failed for {spectrum.acquisition}: {e}")
-    return None
+    return None, None
 
 def estimate_linewidth_from_dataset(dataset, args, verbose=0):
   """Estimate linewidth from experimental dataset.

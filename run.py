@@ -498,6 +498,8 @@ class MRSNetRunner:
             return self._check_model_exists(run_config)
         elif command == 'benchmark':
             return self._check_benchmark_exists(run_config)
+        elif command == 'sim2real':
+            return self._check_sim2real_exists(run_config)
         # Add more result checking logic for other commands as needed
 
         return False
@@ -537,6 +539,77 @@ class MRSNetRunner:
 
             print(f"❌ ERROR: {description}")
             return False
+
+    def _check_sim2real_exists(self, run_config: dict[str, Any]) -> bool:
+        """Check if sim2real results already exist for the configured basis tag.
+
+        Looks for any *_metrics.json under the computed output folder (data/sim2real/<basis_tag>).
+        This mirrors the basis_tag logic used by the sim2real command in mrsnet.py,
+        including linewidth estimation and noise tags.
+        """
+        args = self._merge_args(run_config)
+
+        # Build basis_tag similar to mrsnet.py sim2real
+        def get_first(v, default=None):
+            if isinstance(v, list):
+                return v[0] if v else default
+            return v if v is not None else default
+
+        src = get_first(args.get('source'), 'fid-a-2d')
+        man = get_first(args.get('manufacturer'), 'siemens')
+        omg = get_first(args.get('omega'), 123.23)
+        lw = get_first(args.get('linewidth'), '2.0')
+        ps = get_first(args.get('pulse_sequence'), 'megapress')
+        sr = args.get('sample_rate', 2000)
+        smp = args.get('samples', 4096)
+
+        basis_tag = f"{src}_{man}_{omg}_{lw}_{ps}_{sr}_{smp}"
+
+        est_lw = bool(args.get('estimate_linewidth', False)) and not bool(args.get('linewidth_use_fixed', False))
+        if est_lw:
+            est_mode = 'single' if bool(args.get('linewidth_single_spectrum', False)) else 'perSpec'
+            method = args.get('linewidth_method', 'auto')
+            step = args.get('linewidth_step', 0.5)
+            rng = args.get('linewidth_range', [0.5, 10.0])
+            min_snr = args.get('linewidth_min_snr', 3.0)
+            max_peaks = args.get('linewidth_max_peaks', 3)
+            basis_tag += f"_estLW-{method}-step{step}-{est_mode}-rng{rng[0]}-{rng[1]}-snr{min_snr}-pk{max_peaks}"
+
+        trials = int(args.get('noise_mc_trials', 0) or 0)
+        sigma = float(args.get('noise_sigma', 0.0) or 0.0)
+        mu = float(args.get('noise_mu', 0.0) or 0.0)
+        if trials > 0 and (sigma > 0.0 or mu > 0.0):
+            basis_tag += f"_noiseT{trials}-S{sigma}-M{mu}"
+        # Add LW-MC tags if present
+        lw_trials = int(args.get('lw_mc_trials', 0) or 0)
+        lw_scale = float(args.get('lw_mc_scale', 1.0) or 1.0)
+        lw_dist = args.get('lw_mc_dist', 'normal')
+        if lw_trials > 0:
+            basis_tag += f"_lwMC{lw_trials}-S{lw_scale}-{lw_dist}"
+
+        # Locate output folder from cfg or default path
+        out_root = 'data/sim2real'
+        try:
+            root_dir = os.path.dirname(os.path.abspath(__file__))
+            cfg_path = os.path.join(root_dir, 'cfg.json')
+            if os.path.isfile(cfg_path):
+                with open(cfg_path) as f:
+                    cfg_vals = json.load(f)
+                out_root = cfg_vals.get('path_sim2real', out_root)
+        except Exception as e:
+            print(f"# Warning: failed to read cfg.json for sim2real path: {e}")
+
+        out_dir = os.path.join(out_root, basis_tag)
+        if not os.path.isdir(out_dir):
+            return False
+
+        # Any *_metrics.json under this folder indicates prior execution
+        import glob as _glob
+        found = _glob.glob(os.path.join(out_dir, "*_metrics.json"))
+        if found:
+            print(f"✅ Found existing sim2real artifacts in {out_dir}")
+            return True
+        return False
 
     def _resolve_dependencies(self, run_config: dict[str, Any]) -> bool:
         """Check if dependencies are satisfied."""

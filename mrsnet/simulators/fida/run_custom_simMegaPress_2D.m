@@ -110,7 +110,7 @@ for ii = 1:length(metabolites)
         p.lw    = linewidths(jj);   % change lw default
         spinSys = metabolites{ii}; % spin system to simulate
         load spinSystems;          % load spin systems and select desired metabolite
-        sys = eval(['sys' spinSys])
+        sys = eval(['sys' spinSys]);
 
         % Run full simulation and save output in f_name
         f_name = sprintf('FIDA2D_%s_MEGAPRESS_ALL_%.2f_%d_%d_%.2f.mat',metabolites{ii}, p.lw, p.sw, npts, mrsnet_omega);

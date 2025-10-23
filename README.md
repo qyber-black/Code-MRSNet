@@ -187,6 +187,7 @@ MRSNet supports several deep learning architectures:
 * `cnn_*` - Convolutional Neural Networks (various configurations)
 * `ae_*` - Autoencoder models
 * `aeq_*` - Autoencoder-quantifier models
+* `caeq_*` - Convolutional Autoencoder-Quantifier (CAEQ) models
 * `encdec_*` - Encoder-Decoder architecture with WaveNet blocks and attention GRU
 * `fcnn_*` - FoundationalCNN with CReLU activation and 7-layer architecture
 * `qmrs_*` - CNN-LSTM hybrid with multi-headed MLP for parameter prediction
@@ -279,6 +280,26 @@ Key features:
 - **Basis Comparison**: Compares experimental spectra against simulated basis sets
 - **Per-Spectrum Analysis**: Supports individual linewidth estimation for each spectrum
 - **Monte Carlo Noise**: Includes noise analysis for robustness testing
+
+### Linewidth Monte Carlo (LW-MC) Uncertainty
+
+Estimate the impact of linewidth estimation uncertainty on sim2real metrics by jittering per-spectrum linewidths and recomputing the comparison across trials.
+
+Usage (in addition to estimation flags):
+```
+./mrsnet.py sim2real --source fid-a-2d --manufacturer siemens --omega 123.23 --linewidth 2.0 \
+  --pulse_sequence megapress --sample_rate 2000 --samples 4096 \
+  --estimate_linewidth --linewidth_method auto --linewidth_range 0.5 10.0 --linewidth_step 0.5 \
+  --lw_mc_trials 50 --lw_mc_scale 1.0 --lw_mc_dist normal -v
+```
+
+Outputs and plots:
+- Writes `<series>_<variant>_metrics_lw_mc.json` with per-trial summaries (mean/std across trials)
+- Adds error bars to per-series and overall plots in `visualize_sim2real.py`
+- Appends folder tags `_lwMC<trials>-S<scale>-<dist>` to separate runs
+
+Notes:
+- LW-MC is independent from ADC noise MC. Run both to quantify separate effects; combined bands will be shown when both are present.
 
 The analysis generates comparison plots and metrics stored in `data/sim2real/` showing
 how well the simulated basis matches experimental data across different benchmark

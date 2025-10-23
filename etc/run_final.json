@@ -37,6 +37,10 @@
      "args": {"model": "encdec_default",
               "acquisitions": ["edit_off", "edit_on"],
               "datatype": ["real"]}},
+    {"name": "caeq_ir_off_on", "command": "train",
+     "args": {"model": "caeq_fc_5_6_tanh_tanh_0.2_384_2_sigmoid_sigmoid_-1.0",
+              "acquisitions": ["edit_off", "edit_on"],
+              "datatype": ["imaginary", "real"]}},
     {"name": "cnn_simple_bm", "command": "benchmark",
      "args": {"norm": "max"}, "depends_on": "cnn_simple_off_on"},
     {"name": "cnn_para_bm", "command": "benchmark",
@@ -49,6 +53,8 @@
      "args": {"norm": "max"}, "depends_on": "qnet_real_off_on"},
     {"name": "qnet_basis_bm", "command": "benchmark",
      "args": {"norm": "max"}, "depends_on": "qnet_basis_real_off_on"},
+    {"name": "caeq_bm", "command": "benchmark",
+     "args": {"norm": "max"}, "depends_on": "caeq_ir_off_on"},
     {"name": "encdec_bm", "command": "benchmark",
      "args": {"norm": "max"}, "depends_on": "encdec_real_off_on"}
   ]

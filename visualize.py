@@ -57,6 +57,27 @@ def _shorten_acq_text(val: object) -> str:
   return sl
 
 
+def _abbreviate_caeq_model_string(model_name: str) -> str:
+  """Abbreviate CAEQ model strings for better table display.
+
+  Replaces:
+  - tanh -> th
+  - linear -> lin
+  - sigmoid -> sig
+  - softmax -> sm
+  """
+  if not model_name.startswith('caeq_'):
+    return model_name
+
+  # Apply abbreviations
+  abbreviated = model_name.replace('tanh', 'th')
+  abbreviated = abbreviated.replace('linear', 'lin')
+  abbreviated = abbreviated.replace('sigmoid', 'sig')
+  abbreviated = abbreviated.replace('softmax', 'sm')
+
+  return abbreviated
+
+
 def _get_col(df: pd.DataFrame, col: str) -> pd.Series:
   """Return column as numeric Series if present, else NaN series with matching index."""
   if col in df.columns:
@@ -1767,6 +1788,9 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
           mtxt = str(r.get('simplified_name'))
         else:
           mtxt = str(mval) if (pd.notna(mval) and str(mval) not in ('', 'nan')) else '-'
+
+        # Apply CAEQ abbreviation for better table display
+        mtxt = _abbreviate_caeq_model_string(mtxt)
         # Align left within the spanned area for readability
         ax_model_span.text(0.01, 0.55, mtxt, ha='left', va='center', fontsize=12, family='monospace')
 
@@ -1805,14 +1829,18 @@ def _render_top_table(df: pd.DataFrame, title: str, out_pdf: Path, dpi: int, log
       # Validation metric on top row
       if pd.notna(v_mean):
         txt = f"{float(v_mean):.5f}"
-        if pd.notna(v_std):
+        # Only show std if we have at least two values (folds)
+        show_v_std = pd.notna(v_std) and len(v_folds) >= 2
+        if show_v_std:
           txt += f" ± {float(v_std):.5f}"
         ax_mae.text(0.5, 0.75, txt, ha='center', va='center', fontsize=11, color='#1f4e79')
 
       # Training metric on bottom row
       if pd.notna(t_mean):
         txt = f"{float(t_mean):.5f}"
-        if pd.notna(t_std):
+        # Only show std if we have at least two values (folds)
+        show_t_std = pd.notna(t_std) and len(t_folds) >= 2
+        if show_t_std:
           txt += f" ± {float(t_std):.5f}"
         ax_mae.text(0.5, 0.25, txt, ha='center', va='center', fontsize=11, color='#8b0000')
 

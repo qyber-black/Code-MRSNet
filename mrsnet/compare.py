@@ -25,7 +25,8 @@ from mrsnet.dataset import Dataset
 def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=0, screen_dpi=96,
                  out_dir=None, save_prefix=None,
                  noise_mc_trials=0, noise_sigma=0.03, noise_mu=0.0,
-                 individual_linewidths=None, overall_linewidth=None):
+                 individual_linewidths=None, overall_linewidth=None,
+                 extra_error_trials=None):
   """Compare dataset spectra to spectra generated from basis.
 
   Generates reference spectra from a basis set using the dataset's concentrations
@@ -181,6 +182,9 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
   print(f"              Real: {dd[2,2]:12f} {rm[2,2]:12f} {m[2,2]:12f} {s[2,2]:12f} {corr[2,2]:12.6f}")
   print(f"         Imaginary: {dd[2,3]:12f} {rm[2,3]:12f} {m[2,3]:12f} {s[2,3]:12f} {corr[2,3]:12.6f}")
 
+  # Signed error averaged across samples for plotting and return
+  signed_spectrum = np.mean((r_inp - d_inp), axis=0)
+
   # Always save summary plots and metrics
   if out_dir is not None:
     os.makedirs(out_dir, exist_ok=True)
@@ -188,7 +192,6 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
       rep_basis = basis[0] if isinstance(basis, list) and len(basis) > 0 else basis
       save_prefix = f"{rep_basis.source}_{rep_basis.manufacturer}_{rep_basis.omega}_{rep_basis.linewidth}_{rep_basis.pulse_sequence}_{rep_basis.sample_rate}_{rep_basis.samples}"
     # Combined signed error + histogram plots per representation (magnitude/real/imaginary)
-    signed_spectrum = np.mean((r_inp - d_inp), axis=0)  # [acq, dtype, freq]
     # Plot for Magnitude (dtype 0)
     fig_mag = plot_mae_hist_combo(signed_spectrum, nu, all_diff, 0, screen_dpi,
                                   noise_trials=None, dtype_name="Magnitude")
@@ -214,6 +217,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
 
     # Optional Monte Carlo noise analysis on reference spectra
     noise_info = None
+    band_trials = None
     if isinstance(noise_mc_trials, int) and noise_mc_trials > 0 and (noise_sigma > 0.0 or noise_mu > 0.0):
       # Accumulators over trials
       dd_trials = []
@@ -309,21 +313,34 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
         "cosine_mean": np.nanmean(cos_trials, axis=0).tolist(),
         "cosine_std": np.nanstd(cos_trials, axis=0).tolist()
       }
-      # Re-render combined plots with noise bands for Magnitude, Real, Imaginary
+      band_trials = err_spec_trials_all
+
+    # If external error trials are provided (e.g., linewidth MC), render bands too
+    if extra_error_trials is not None:
+      try:
+        import numpy as _np
+        if band_trials is None:
+          band_trials = _np.asarray(extra_error_trials)
+        else:
+          band_trials = _np.concatenate([_np.asarray(band_trials), _np.asarray(extra_error_trials)], axis=0)
+      except Exception:
+        pass
+
+    if band_trials is not None:
       fig_mag = plot_mae_hist_combo(signed_spectrum, nu, all_diff, 0, screen_dpi,
-                                    noise_trials=err_spec_trials_all, dtype_name="Magnitude")
+                                    noise_trials=band_trials, dtype_name="Magnitude")
       fig_mag.savefig(os.path.join(out_dir, f"{save_prefix}_error_mag.png"), dpi=300)
       plt.close(fig_mag)
       fig_phase = plot_mae_hist_combo(signed_spectrum, nu, all_diff, 1, screen_dpi,
-                                      noise_trials=err_spec_trials_all, dtype_name="Phase")
+                                      noise_trials=band_trials, dtype_name="Phase")
       fig_phase.savefig(os.path.join(out_dir, f"{save_prefix}_error_phase.png"), dpi=300)
       plt.close(fig_phase)
       fig_real = plot_mae_hist_combo(signed_spectrum, nu, all_diff, 2, screen_dpi,
-                                     noise_trials=err_spec_trials_all, dtype_name="Real")
+                                     noise_trials=band_trials, dtype_name="Real")
       fig_real.savefig(os.path.join(out_dir, f"{save_prefix}_error_real.png"), dpi=300)
       plt.close(fig_real)
       fig_imag = plot_mae_hist_combo(signed_spectrum, nu, all_diff, 3, screen_dpi,
-                                     noise_trials=err_spec_trials_all, dtype_name="Imaginary")
+                                     noise_trials=band_trials, dtype_name="Imaginary")
       fig_imag.savefig(os.path.join(out_dir, f"{save_prefix}_error_imag.png"), dpi=300)
       plt.close(fig_imag)
 
@@ -395,6 +412,7 @@ def compare_basis(ds, basis, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, verbose=
     "corr": corr,
     "cosine": cos,
     "mae_spectrum": np.mean(np.abs(r_inp - d_inp), axis=0),
+    "signed_spectrum": signed_spectrum,
     "nu": nu,
     "peak_stats": compute_peak_stats(d_inp, nu),
     "summary": {
