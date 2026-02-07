@@ -1,0 +1,84 @@
+# pyproject.toml
+#
+# SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[tool.ruff]
+line-length = 120
+indent-width = 2
+target-version = "py311"
+
+[tool.ruff.lint]
+# Base rule sets: Pyflakes, pycodestyle errors and warnings.
+select = ["E", "F", "W"]
+
+# Extend with more specific rule sets relevant to the project rules.
+extend-select = [
+    "I",         # isort (import sorting)
+    "N",         # pep8-naming
+    "D",         # pydocstyle (docstrings) - Handled below if you enable it
+    #"ANN",       # flake8-annotations (typing) - Handled in per-file-ignores
+    "S",         # flake8-bandit (security)
+    "B",         # flake8-bugbear (potential bugs)
+    "C4",        # flake8-comprehensions (nicer comprehensions)
+    #"T20",       # flake8-print (use logging instead)
+    "PT",        # flake8-pytest-style
+    "UP",        # pyupgrade (modernize code)
+    "RUF",       # Ruff-specific rules
+]
+
+# Ignore specific rules if necessary
+ignore = ["E501", "E741", "B006"]
+
+# Allow autofix for all enabled rules (when `--fix`)
+fixable = ["ALL"]
+unfixable = []
+
+# Exclude common directories and potentially virtual environments.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+# Allow missing type hints in test files.
+"tests/*" = ["ANN", "T201", "S101"]
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''

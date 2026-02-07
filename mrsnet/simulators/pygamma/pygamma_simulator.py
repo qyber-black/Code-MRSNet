@@ -9,25 +9,51 @@
 # Pulse sequence simulation code has been taken from VeSPA and implemented here with minor modifications.
 # https://github.com/vespa-mrs/vespa/
 
+"""PyGamma simulator for MRSNet.
+
+This module provides interfaces to the PyGamma library for
+simulating MRS basis spectra using various pulse sequences.
+"""
+
 import argparse
-import os
-import pdb
-from datetime import datetime
 import json
+import os
+
 import numpy as np
 import pygamma as pg
 
 import mrsnet.molecules as molecules
-from mrsnet.simulators.pygamma.pygamma_pulse_sequences import fid, press, steam, megapress
 from mrsnet.cfg import Cfg
+from mrsnet.simulators.pygamma.pygamma_pulse_sequences import fid, megapress, press, steam
+
 
 def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache_dir,
                         npts, adc_dt):
+  """Generate PyGamma spectra for a single metabolite.
+
+  Parameters
+  ----------
+      metabolite_name (str): Name of the metabolite to simulate
+      omega (float): B0 field strength in Hz
+      pulse_sequence (str): Pulse sequence type ('fid', 'press', 'steam', 'megapress')
+      linewidth (float): Linewidth parameter
+      cache_dir (str): Directory for caching results
+      npts (int): Number of points in the spectrum
+      adc_dt (float): ADC dwell time
+
+  Returns
+  -------
+      list: List of simulated spectra for different acquisitions
+
+  Raises
+  ------
+      RuntimeError: If pulse sequence is not recognized
+  """
   # by having multiple linewidths it allows the use of the same 'mx' object to run the binning over,
   # rather than have to recalcualte the pulse sequence again. it would be more efficient to save the mx table
   # but this functionality is currently (Sept-2018) broken in PyGamma
 
-  id = hash(datetime.now().strftime('%f%S%H%M%a%d%b%Y'))
+  #id = hash(datetime.now().strftime('%f%S%H%M%a%d%b%Y'))
   mol_spectra = []
   print('Cache miss. Simulating ' + metabolite_name + ' : ' + pulse_sequence)
   infile = os.path.join(Cfg.val['path_root'], 'mrsnet', 'simulators', 'pygamma', 'metabolite_models',
@@ -45,7 +71,7 @@ def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache
   elif pulse_sequence.lower() == 'megapress':
     mx = megapress(spin_system, omega=omega)
   else:
-    raise Exception('Unrecognised PyGamma pulse sequence: ' + pulse_sequence)
+    raise RuntimeError('Unrecognised PyGamma pulse sequence: ' + pulse_sequence)
 
   for count, acq in enumerate(mx):
     raw = {}
@@ -65,11 +91,24 @@ def pygamma_spectra_sim(metabolite_name, omega, pulse_sequence, linewidth, cache
     json.dump(mol_spectra, save_file)
 
 def binning(mx, linewidth, dt, npts):
+  """Apply broadening and decay to the model and generate ADC data.
+
+  Parameters
+  ----------
+      mx: PyGamma model object
+      linewidth (float): Linewidth parameter
+      dt (float): ADC sampling time
+      npts (int): Number of points
+
+  Returns
+  -------
+      numpy.ndarray: ADC data array
+  """
   # add some broadening and decay to the model
   mx.resolution(0.5)              # Combine transitions within 0.5 rad/sec
   mx.broaden(linewidth)
   acq = mx.T(npts, dt)
-  ADC = []
+  ADC = []  # noqa: N806
   for ii in range(0, acq.pts()):
     ADC.extend([acq.get(ii).real() + (1j * acq.get(ii).imag())])
   return np.array(ADC)
