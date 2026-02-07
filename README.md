@@ -3,7 +3,7 @@
 > SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University\
 > SPDX-FileCopyrightText: Copyright (C) 2020-2026 Frank C Langbein <frank@langbein.org>, Cardiff University\
 > SPDX-FileCopyrightText: Copyright (C) 2021-2022 S Shermer <lw1660@gmail.com>, Swansea University\
-> SPDX-FileCopyrightText: Copyright (C) 2022-2025 Zien Ma, PhD student at Cardiff University\
+> SPDX-FileCopyrightText: Copyright (C) 2022-2026 Zien Ma, PhD student at Cardiff University\
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
 MRSNet is aimed at MR spectral quantification using artificial neural
@@ -142,7 +142,7 @@ The additional git submodules containing the data are
 
 * [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-megapress-spectra) -
   Swansea benchmark phantom datasets collected at Swansea University's 3T Siemens scanner (in `data/benchmark`);
-* [Data - MRSNet - Models - Dist](https://qyber.black/mrs/data-mrsnet-model-dist) -
+* [Data - MRSNet - Models - Dist](https://qyber.black/mrs/results-mrsnet-models-dist) -
   Best performing trained models for MRSNet (in `data/model-dist`);
 * [Data - MRSNet - Basis Spectra - Dist](https://qyber.black/mrs/data-mrsnet-basis) -
   Standard basis sets used for MEGAPRESS simulation (in `data/basis-dist`).
@@ -152,15 +152,28 @@ The additional git submodules containing the data are
 There are further git repositories on qyber.black with more data, generated for the
 publications, etc. that you can also use for your own analysis:
 
-* [Data - MRSNet - Models CNN](https://qyber.black/mrs/results-mrsnet-model-cnn): contains
+* [Data - MRSNet - Models CNN](https://qyber.black/mrs/results-mrsnet-models-cnn): contains
   a large amount of CNN models that you could clone into `data/model-cnn` and then add that
   path to the model search path in `cfg.json` or `mrsnet.json`. Note that this is a very
   large repository. It contains the complete analysis data for the CNN models.
+* [Data - MRSNet - Models YAE](https://qyber.black/mrs/results-mrsnet-models-yae): contains
+  a large amount of YAE models that you could clone into `data/model-yae` and then add that
+  path to the model search path in `cfg.json` or `mrsnet.json`. Note that this is a very
+  large repository. It contains the complete analysis data for the YAE models for model selection.
+* [Results - MRSNet - Extra Models](https://qyber.black/mrs/results-mrsnet-models-extra):
+  KFold-5 evaluation results (metrics and plots) for the additional literature models
+  (EncDec, fCNN, QMRS, QNet, QNetBasis). Results-only; no trained weights. Clone into
+  `data/model-extra`. Add `model-extra` to the model search path in `cfg.json` or
+  `mrsnet.json` if you want to run benchmarks against these result folders. You can clone
+  this into `data/models-extra`.
 * [Data - MRSNet - Simulated Spectra - MEGAPRESS](https://qyber.black/mrs/data-mrsnet-simulated-spectra-megapress):
   contains a range of simulated MEGAPRESS spectra with our simulators using the basis datasets in
   `data/basis-dist`. These datasets have been used in the papers for training and testing the
   models. You may use these to train your own models, etc. You can clone this into
   `data/sim-spectra-megapress`. Note, this is a very large repository.
+* [Results - MRSNet - Sim2Real](https://qyber.black/mrs/results-mrsnet-sim2real):
+  contains results from comparing simulated basis spectra against the phantom benchmark
+  to quantify the sim2real gap.
 
 ## Simulating Spectra
 
