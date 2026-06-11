@@ -453,7 +453,8 @@ class Dataset:
     return None
 
   def export(self, metabolites=None, high_ppm=-4.5, low_ppm=-1, n_fft_pts=2048, norm='sum',
-             acquisitions=['edit_off','difference'],datatype='magnitude', normalise=True, export_concentrations=True, verbose=0):
+             acquisitions=['edit_off','difference'],datatype='magnitude', normalise=True, export_concentrations=True, verbose=0,
+             free_spectra=False):
     """Export dataset to tensor format for model training.
 
     Parameters
@@ -491,6 +492,13 @@ class Dataset:
       d_inp = joblib.Parallel(n_jobs=-1, prefer="threads")(joblib.delayed(Dataset._export_spectra)(s,
                     acquisitions, datatype, high_ppm, low_ppm, n_fft_pts, normalise)
                 for s in tqdm(self.spectra, disable=(verbose<1)))
+      if free_spectra:
+        # Release the ~20 GB complex source array before the np.array() below,
+        # which otherwise doubles the export while the source is still resident.
+        # This is the host-OOM peak for the caeq runs (noisy+clean both loaded).
+        import gc
+        self.spectra = None
+        gc.collect()
       d_inp = np.array(d_inp, dtype=np.float64)
       if verbose > 0:
         print("  Shape: " + str(d_inp.shape) + " - [spectrum, acquisition, datatype, frequency]")

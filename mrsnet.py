@@ -885,17 +885,26 @@ def train(args):
             break
       if ds_noisy is None:
         raise RuntimeError(f"Dataset {args.dataset} not found")
+      model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
+                                    args.acquisitions, args.datatype, args.norm)
+      # free_spectra=True releases each ~20 GB complex source array *inside*
+      # export(), before its doubling np.array() copy, so we never hold a source
+      # array and its float64 export copy at once. Combined with loading the clean
+      # set only after the noisy export, this keeps the caeq peak well under the
+      # 62 GB host (previously >50 GB -> kernel OOM-kill). Results are unchanged.
+      import gc
+      d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
+                                        acquisitions=args.acquisitions, datatype=args.datatype,
+                                        high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
+                                        export_concentrations=True, verbose=args.verbose,
+                                        free_spectra=True)
+      ds_noisy.spectra = None
+      gc.collect()
       ds_clean = None
       try:
         ds_clean = dataset.Dataset.load(ds_noisy_path, force_clean=True)
       except Exception:
         ds_clean = None
-      model = AutoencoderQuantifier(args.model, args.metabolites, ds_noisy.pulse_sequence,
-                                    args.acquisitions, args.datatype, args.norm)
-      d_noise, d_conc = ds_noisy.export(metabolites=args.metabolites, norm=args.norm,
-                                        acquisitions=args.acquisitions, datatype=args.datatype,
-                                        high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                        export_concentrations=True, verbose=args.verbose)
       if ds_clean is None:
         print("WARNING: Training on clean dataset")
         import numpy as np
@@ -906,7 +915,10 @@ def train(args):
         d_clean, _ = ds_clean.export(metabolites=args.metabolites, norm=args.norm,
                                      acquisitions=args.acquisitions, datatype=args.datatype,
                                      high_ppm=model.high_ppm, low_ppm=model.low_ppm, n_fft_pts=model.fft_samples,
-                                     export_concentrations=False, verbose=args.verbose)
+                                     export_concentrations=False, verbose=args.verbose,
+                                     free_spectra=True)
+        ds_clean.spectra = None
+        gc.collect()
       data = [d_noise, d_clean, d_conc]  # output last
       data_name = ds_noisy.name + "_" + ds_rest
   elif args.model[0:4] == 'qnet':

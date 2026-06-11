@@ -1,19 +1,24 @@
 # .gitignore - MRSNet
 #
 # SPDX-FileCopyrightText: Copyright (C) 2019 Max Chandler, PhD student at Cardiff University
-# SPDX-FileCopyrightText: Copyright (C) 2020-2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2020-2026 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-FileCopyrightText: Copyright (C) 2022-2024 Zien Ma, PhD student at Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-__pycache__
 *.pyc
-/data/basis*
-/data/model*
-/data/sim-spectra*
-/data/data-exp*
-/data/sim2real*
-/local/**
-/mrsnet/simulators/pygamma/gamma/
+.*
 /.cursor/**
 /.idea
+/data/basis*
+/data/data-biggaba*
+/data/data-exp*
+/data/model*
+/data/sim-benchmark*
+/data/sim-spectra*
+/data/sim2real*
+/data/sim_fit*
+/local/**
+/mrsnet/simulators/pygamma/gamma/
+/mrsnet/simulators/spinach/
 /venv
+__pycache__
 cfg.json
