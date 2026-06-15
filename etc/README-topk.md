@@ -49,3 +49,33 @@ Then the paper-side within-family rank analysis (Spearman/Kendall of simulation 
 phantom rank, slopegraph) is added to
 `paper-mrsnet-autoencoder/scripts/sim2real/` and folded into the ranking-stability
 section. (Written against the real output once this job has run.)
+
+## Training-seed replication (`run_topk_seeds.json`)
+
+To check whether the *between-candidate* phantom spread is real or just training
+stochasticity, `run_topk_seeds.json` retrains a small spread-defining subset with
+independent random seeds: **CNN-2** (phantom-best), **CNN-4** (phantom-worst),
+**CNN-5** (sim-best); **CAEQ-1** (sim-best / phantom-worst), **CAEQ-2** (phantom-best).
+Each `train` draws a fresh OS-entropy seed (`mrsnet/train.py`) and lands in a new
+`NoValidation-N` instance, so `--force` (which bypasses the skip-if-exists check)
+accumulates independent seeds rather than re-using the existing one.
+
+```bash
+# from the code-mrsnet repo root, with the project venv -- run LOCALLY (not Slurm)
+venv/bin/python run.py etc/run_topk_seeds.json --dry-run      # inspect first
+for i in 1 2 3 4; do venv/bin/python run.py etc/run_topk_seeds.json --force; done
+# -> 4 extra seeds per candidate (= 5 incl. the existing run_topk instance)
+venv/bin/python aggregate.py data/model                       # refresh aggregate
+```
+
+The paper-side analysis auto-detects every `NoValidation-*` instance and reports the
+across-seed mean/std of the phantom MAE (no code change needed):
+
+```bash
+# from the paper repo
+/path/to/code-mrsnet/venv/bin/python scripts/sim2real/rank_comparison_topk.py
+```
+
+With the seeds present, the within-family table gains a `±std` on each Bench. MAE and
+the prose can state how the seed-to-seed spread compares with the between-candidate
+spread. Until then the analysis runs on the single existing instance per candidate.

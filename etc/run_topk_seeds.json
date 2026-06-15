@@ -1,0 +1,95 @@
+{
+  "_comment": "Seed-replication subset for the within-family ranking-stability analysis (Part 2). Retrains a small, informative subset of the top-k candidates at the EXACT deployment protocol (same as etc/run_topk.json) to characterise training-seed stochasticity against the between-candidate phantom spread. Each train run draws a fresh OS-entropy seed (mrsnet/train.py) and lands in a new NoValidation-N instance, so re-running with --force accumulates independent seeds. LAUNCH LOCALLY (not Slurm), e.g. 4 passes for 4 extra seeds each (=5 incl. the existing run_topk instance): for i in 1 2 3 4; do venv/bin/python run.py etc/run_topk_seeds.json --force; done . The analysis (paper-mrsnet-autoencoder scripts/sim2real/rank_comparison_topk.py) auto-detects every NoValidation-* instance and reports the across-seed mean/std. Subset: CNN-2 phantom-best, CNN-4 phantom-worst, CNN-5 sim-best; CAEQ-1 sim-best/phantom-worst, CAEQ-2 phantom-best.",
+  "common": {
+    "metabolites": [
+      "Cr",
+      "GABA",
+      "Gln",
+      "Glu",
+      "NAA"
+    ],
+    "dataset": "data/sim-spectra-megapress/fid-a-2d_2000_4096/siemens/123.23/2.0/Cr-GABA-Gln-Glu-NAA/megapress/sobol/1.0-adc_normal-0.0-0.03/100000-1",
+    "epochs": 2000,
+    "validate": 0,
+    "batchsize": 16,
+    "norm": "sum",
+    "verbose": 1
+  },
+  "runs": [
+    {
+      "name": "cnn2_seed_train",
+      "command": "train",
+      "args": {
+        "model": "cnn_-2_-3_9_9_5_3_0.0_0.3_256_512_2048_sigmoid",
+        "acquisitions": ["edit_off", "edit_on"],
+        "datatype": ["imaginary", "real"]
+      }
+    },
+    {
+      "name": "cnn4_seed_train",
+      "command": "train",
+      "args": {
+        "model": "cnn_-1_-3_7_5_7_1_0.0_0.3_512_512_2048_sigmoid",
+        "acquisitions": ["edit_off", "edit_on"],
+        "datatype": ["imaginary", "real"]
+      }
+    },
+    {
+      "name": "cnn5_seed_train",
+      "command": "train",
+      "args": {
+        "model": "cnn_-2_-3_7_9_5_3_0.0_0.3_512_512_2048_sigmoid",
+        "acquisitions": ["edit_off", "edit_on"],
+        "datatype": ["imaginary", "real"]
+      }
+    },
+    {
+      "name": "caeq1_seed_train",
+      "command": "train",
+      "args": {
+        "model": "caeq_fc_5_7_tanh_tanh_0.2_448_4_sigmoid_sigmoid_-1.0",
+        "acquisitions": ["edit_off", "edit_on"],
+        "datatype": ["imaginary", "real"]
+      }
+    },
+    {
+      "name": "caeq2_seed_train",
+      "command": "train",
+      "args": {
+        "model": "caeq_fc_5_6_tanh_tanh_0.2_384_2_sigmoid_softmax_-1.0",
+        "acquisitions": ["edit_off", "edit_on"],
+        "datatype": ["imaginary", "real"]
+      }
+    },
+    {
+      "name": "cnn2_seed_bm",
+      "command": "benchmark",
+      "args": { "norm": "max" },
+      "depends_on": "cnn2_seed_train"
+    },
+    {
+      "name": "cnn4_seed_bm",
+      "command": "benchmark",
+      "args": { "norm": "max" },
+      "depends_on": "cnn4_seed_train"
+    },
+    {
+      "name": "cnn5_seed_bm",
+      "command": "benchmark",
+      "args": { "norm": "max" },
+      "depends_on": "cnn5_seed_train"
+    },
+    {
+      "name": "caeq1_seed_bm",
+      "command": "benchmark",
+      "args": { "norm": "max" },
+      "depends_on": "caeq1_seed_train"
+    },
+    {
+      "name": "caeq2_seed_bm",
+      "command": "benchmark",
+      "args": { "norm": "max" },
+      "depends_on": "caeq2_seed_train"
+    }
+  ]
+}
