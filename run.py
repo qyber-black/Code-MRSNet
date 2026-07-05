@@ -26,6 +26,9 @@ JSON Format:
     "norm": "sum",
     "verbose": 1
   },
+  "cfg": {
+    "caeq_weight_ae": 0.0
+  },
   "runs": [
     {
       "name": "cnn_training",
@@ -117,6 +120,12 @@ class MRSNetRunner:
             args.update(run_config["args"])
         return args
 
+    def _merge_cfg_overrides(self, run_config: dict[str, Any]) -> dict[str, Any]:
+        """Merge common and run-specific Cfg overrides for one run."""
+        overrides = dict(self.config.get("cfg", {}))
+        overrides.update(run_config.get("cfg", {}))
+        return overrides
+
     def _build_command(self, run_config: dict[str, Any]) -> list[str]:
         """Build mrsnet.py command from run configuration."""
         # Get command from run config, fallback to common config
@@ -134,6 +143,20 @@ class MRSNetRunner:
         # benchmark accepts only: --model, --norm and -v/--verbose
         if command == "benchmark":
             allowed_keys = {"model", "norm", "verbose"}
+            args = {k: v for k, v in args.items() if k in allowed_keys}
+        elif command == "export-decoder":
+            allowed_keys = {
+                "model",
+                "dataset",
+                "benchmark",
+                "output",
+                "label",
+                "norm",
+                "force_clean",
+                "no_normalise",
+                "limit",
+                "verbose",
+            }
             args = {k: v for k, v in args.items() if k in allowed_keys}
 
         # Add arguments to command
@@ -206,7 +229,7 @@ class MRSNetRunner:
             return False
 
         # Use helper to locate latest model folder containing model.keras
-        latest_path = self._find_latest_model_path(args)
+        latest_path = self._find_latest_model_path(args, self._merge_cfg_overrides(run_config))
         if latest_path is not None:
             print(f"✅ Found existing model: {os.path.join(latest_path, 'model.keras')}")
             return True
@@ -259,7 +282,47 @@ class MRSNetRunner:
             pass
         return None
 
-    def _find_latest_model_path(self, args: dict[str, Any]) -> str | None:
+    def _cfg_model_bases(self, cfg_overrides: dict[str, Any] | None = None) -> list[str]:
+        """Return model roots from defaults, cfg.json and per-run overrides."""
+        model_bases: list[str] = [
+            "data/model",
+            "data/model-dist",
+            "data/model-ae",
+            "data/model-cae",
+            "data/model-cnn",
+        ]
+        try:
+            root_dir = os.path.dirname(os.path.abspath(__file__))
+            cfg_path = os.path.join(root_dir, "cfg.json")
+            if os.path.isfile(cfg_path):
+                with open(cfg_path) as f:
+                    cfg_vals = json.load(f)
+                path_model = cfg_vals.get("path_model")
+                if path_model:
+                    model_bases.append(path_model)
+                for p in cfg_vals.get("search_model", []) or []:
+                    model_bases.append(p)
+        except Exception as e:
+            print(f"# Warning: failed to read cfg.json for model search paths: {e}")
+
+        if cfg_overrides:
+            path_model = cfg_overrides.get("path_model")
+            if path_model:
+                model_bases.insert(0, path_model)
+            for p in cfg_overrides.get("search_model", []) or []:
+                model_bases.append(p)
+
+        seen = set()
+        dedup_bases: list[str] = []
+        for b in model_bases:
+            if b not in seen:
+                dedup_bases.append(b)
+                seen.add(b)
+        return dedup_bases
+
+    def _find_latest_model_path(
+        self, args: dict[str, Any], cfg_overrides: dict[str, Any] | None = None
+    ) -> str | None:
         """Return the path to the latest trainer folder containing model.keras.
 
         If KFold-like, returns the fold-* directory containing model.keras; otherwise
@@ -307,36 +370,8 @@ class MRSNetRunner:
         else:
             trainer_base = "NoValidation"
 
-        model_bases: list[str] = [
-            "data/model",
-            "data/model-dist",
-            "data/model-ae",
-            "data/model-cae",
-            "data/model-cnn",
-        ]
-        try:
-            root_dir = os.path.dirname(os.path.abspath(__file__))
-            cfg_path = os.path.join(root_dir, "cfg.json")
-            if os.path.isfile(cfg_path):
-                with open(cfg_path) as f:
-                    cfg_vals = json.load(f)
-                path_model = cfg_vals.get("path_model")
-                if path_model:
-                    model_bases.append(path_model)
-                for p in cfg_vals.get("search_model", []) or []:
-                    model_bases.append(p)
-        except Exception as e:
-            print(f"# Warning: failed to read cfg.json for model search paths: {e}")
-
-        seen = set()
-        dedup_bases: list[str] = []
-        for b in model_bases:
-            if b not in seen:
-                dedup_bases.append(b)
-                seen.add(b)
-
         found_candidates: list[tuple[int, str]] = []
-        for base in dedup_bases:
+        for base in self._cfg_model_bases(cfg_overrides):
             base_path = os.path.join(
                 base,
                 model,
@@ -462,6 +497,9 @@ class MRSNetRunner:
                 bench_root = cfg_vals.get("path_benchmark", bench_root)
         except Exception as e:
             print(f"# Warning: failed to read cfg.json for benchmark path: {e}")
+        cfg_overrides = self._merge_cfg_overrides(run_config)
+        if cfg_overrides.get("path_benchmark"):
+            bench_root = cfg_overrides["path_benchmark"]
 
         # Read benchmark_sequences.json
         seq_file = os.path.join(bench_root, "benchmark_sequences.json")
@@ -504,6 +542,31 @@ class MRSNetRunner:
         print("✅ Found existing benchmark artifacts for all sequences and aggregate")
         return True
 
+    def _check_export_decoder_exists(self, run_config: dict[str, Any]) -> bool:
+        """Check if decoder export artifacts already exist."""
+        command = run_config.get("command")
+        if command is None:
+            command = self.config["common"].get("command")
+            if command is None:
+                return False
+
+        if command != "export-decoder":
+            return False
+
+        args = self._merge_args(run_config)
+        output = args.get("output")
+        label = args.get("label")
+        if not output or not label:
+            return False
+
+        safe_label = "".join(c if c.isalnum() or c in "_.-" else "_" for c in str(label)).strip("_")
+        npz_path = os.path.join(str(output), f"{safe_label}_decoder_export.npz")
+        json_path = os.path.join(str(output), f"{safe_label}_decoder_export.json")
+        if os.path.isfile(npz_path) and os.path.isfile(json_path):
+            print(f"✅ Found existing decoder export: {npz_path}")
+            return True
+        return False
+
     def _check_result_exists(self, run_config: dict[str, Any]) -> bool:
         """Check if results already exist for this run."""
         if self.force:
@@ -520,17 +583,23 @@ class MRSNetRunner:
             return self._check_model_exists(run_config)
         elif command == "benchmark":
             return self._check_benchmark_exists(run_config)
+        elif command == "export-decoder":
+            return self._check_export_decoder_exists(run_config)
         elif command == "sim2real":
             return self._check_sim2real_exists(run_config)
         # Add more result checking logic for other commands as needed
 
         return False
 
-    def _run_command(self, cmd: list[str], description: str) -> bool:
+    def _run_command(
+        self, cmd: list[str], description: str, cfg_overrides: dict[str, Any] | None = None
+    ) -> bool:
         """Execute a command and return success status."""
         print(f"\n{'=' * 60}")
         print(f"RUNNING: {description}")
         print(f"COMMAND: {' '.join(cmd)}")
+        if cfg_overrides:
+            print(f"CFG_OVERRIDES: {json.dumps(cfg_overrides, sort_keys=True)}")
         print(f"{'=' * 60}")
 
         if self.dry_run:
@@ -543,6 +612,8 @@ class MRSNetRunner:
             # Ensure child Python processes do not buffer stdout/stderr
             env = os.environ.copy()
             env.setdefault("PYTHONUNBUFFERED", "1")
+            if cfg_overrides:
+                env["MRSNET_CFG_OVERRIDES"] = json.dumps(cfg_overrides, sort_keys=True)
 
             # Inherit parent's stdout/stderr to stream output live to terminal
             result = subprocess.run(cmd, check=True, env=env)  # noqa: S603
@@ -693,10 +764,13 @@ class MRSNetRunner:
                     dep_model_path = dep_art.get("model_path")
                     if not dep_model_path and self.results.get(dep):
                         # Attempt discovery from dependency's args
-                        dep_args = self._merge_args(
-                            next((rc for rc in self.config["runs"] if rc.get("name") == dep), {})
+                        dep_run_config = next(
+                            (rc for rc in self.config["runs"] if rc.get("name") == dep), {}
                         )
-                        dep_model_path = self._find_latest_model_path(dep_args)
+                        dep_args = self._merge_args(dep_run_config)
+                        dep_model_path = self._find_latest_model_path(
+                            dep_args, self._merge_cfg_overrides(dep_run_config)
+                        )
                     if dep_model_path:
                         # Inject model into run_config args for this execution, preserving existing args (e.g., norm)
                         existing_args = dict(run_config.get("args", {}))
@@ -719,12 +793,15 @@ class MRSNetRunner:
             # Build and execute command
             try:
                 cmd = self._build_command(run_config)
-                success = self._run_command(cmd, f"{name} ({command})")
+                cfg_overrides = self._merge_cfg_overrides(run_config)
+                success = self._run_command(cmd, f"{name} ({command})", cfg_overrides)
                 self.results[name] = success
 
                 # Record artifacts for train runs: model_path discovered after success
                 if success and command == "train":
-                    latest_path = self._find_latest_model_path(self._merge_args(run_config))
+                    latest_path = self._find_latest_model_path(
+                        self._merge_args(run_config), cfg_overrides
+                    )
                     if latest_path:
                         self.artifacts.setdefault(name, {})["model_path"] = latest_path
 

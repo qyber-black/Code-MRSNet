@@ -138,6 +138,7 @@ class Cfg:
   # * selectgpo_no_search - only use existing results; do not execute GPO search
   # * spectrum_set_phase_correct: show phase correction effect
   dev_flags = set()  # noqa: RUF012
+  overrides = {}  # noqa: RUF012
   file = os.path.expanduser(os.path.join('~','.config','mrsnet.json'))
 
   @staticmethod
@@ -173,6 +174,19 @@ class Cfg:
             else:
               if fc != root_cfg_file: # We fix this here later
                 raise RuntimeError(f"Unknown config file entry {k} in {fc}")
+    if 'MRSNET_CFG_OVERRIDES' in os.environ:
+      try:
+        overrides = json.loads(os.environ['MRSNET_CFG_OVERRIDES'])
+      except json.JSONDecodeError as err:
+        raise RuntimeError("Invalid JSON in MRSNET_CFG_OVERRIDES") from err
+      if not isinstance(overrides, dict):
+        raise RuntimeError("MRSNET_CFG_OVERRIDES must be a JSON object")
+      for k in overrides:
+        if k not in Cfg.val:
+          raise RuntimeError(f"Unknown config override entry {k} in MRSNET_CFG_OVERRIDES")
+      Cfg.overrides = overrides
+      for k, v in overrides.items():
+        Cfg.val[k] = v
     # Check data folders and create as needed
     data_dir = os.path.join(Cfg.val["path_root"],'data')
     paths = {

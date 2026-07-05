@@ -241,6 +241,7 @@ class AutoencoderQuantifier:
       if p[1] == "fc":
         # Convert trained autoencoder to trainable quantifier
         # caeq_fc_[LIN]_[LOUT]_[ACT]_[ACT-LAST]_[DO]_[UNITS]_[LAYERS]_[ACT]_[ACT-LAST]_[DP]
+        # Optional trailing tokens are experiment tags used only to separate result folders.
         lin = int(p[2])
         lout = int(p[3])
         activation = p[4]
@@ -713,6 +714,7 @@ class AutoencoderQuantifier:
           'norm': self.norm,
           'train_dataset_name': self.train_dataset_name,
           'output': self.output,
+          'cfg_overrides': getattr(Cfg, 'overrides', {}),
           'seed': getattr(self, 'seed', None),
           'shuffle_seed': getattr(self, 'shuffle_seed', None),
           'trainable_params': trainable_params,

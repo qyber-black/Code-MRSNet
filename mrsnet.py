@@ -109,6 +109,12 @@ def main():
   add_arguments_benchmark(p_benchmark)
   p_benchmark.set_defaults(func=benchmark)
 
+  # Export decoder spectra
+  p_export_decoder = subparsers.add_parser('export-decoder', help='Export CAEQ/YAE decoder spectra.')
+  add_arguments_default(p_export_decoder)
+  add_arguments_export_decoder(p_export_decoder)
+  p_export_decoder.set_defaults(func=export_decoder)
+
   # Sim-to-real benchmark comparison
   p_sim2real = subparsers.add_parser('sim2real', help='Analyse sim-to-real gap across benchmark series.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -292,6 +298,31 @@ def add_arguments_benchmark(p):
   p.add_argument('-m', '--model', help='Model to quantify spectra (path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N]).')
   p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='max',
                  help='Concentration normalisation: sum or max equal to 1; default means to use quantifier norm; none uses raw output)')
+
+def add_arguments_export_decoder(p):
+  """Add decoder export command-line arguments.
+
+  Args:
+      p (argparse.ArgumentParser): Parser to add arguments to
+  """
+  p.add_argument('-m', '--model', required=True,
+                 help='CAEQ/YAE model folder or model path ending MODEL/METABOLITES/PULSE_SEQUENCE/ACQUISITIONS/DATATYPE/NORM/BATCH_SIZE/EPOCHS/TRAIN_DATASET/TRAINER-ID[/fold-N].')
+  p.add_argument('-d', '--dataset', type=str, default=None,
+                 help='Dataset folder to export. If omitted, use --benchmark.')
+  p.add_argument('--benchmark', action='store_true',
+                 help='Export all configured benchmark series and an aggregate benchmark_all file.')
+  p.add_argument('--output', type=str, default=None,
+                 help='Output folder for decoder-export npz/json files (default: data/decoder-spectra).')
+  p.add_argument('--label', type=str, default=None,
+                 help='Output label prefix. Defaults to dataset name or benchmark_all.')
+  p.add_argument('--norm', choices=['sum', 'max', 'none', 'default'], default='default',
+                 help='Concentration normalisation for exported labels; default means model norm.')
+  p.add_argument('--force-clean', action='store_true',
+                 help='For saved simulated datasets, load clean spectra instead of noisy spectra.')
+  p.add_argument('--no-normalise', action='store_true',
+                 help='Do not normalise spectra before feeding them to the model. Normally leave disabled.')
+  p.add_argument('--limit', type=int, default=0,
+                 help='Limit number of spectra exported from each dataset or benchmark series.')
 
 def add_arguments_noise_mc(p):
   """Add noise Monte Carlo comparison arguments.
@@ -1498,6 +1529,15 @@ def benchmark(args):
                   show_conc=True, save_conc=True,
                   verbose=args.verbose, prefix="benchmark_all_"+args.norm,
                   image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'], norm=args.norm)
+
+def export_decoder(args):
+  """Export decoder spectra from a trained CAEQ/YAE model.
+
+  Args:
+      args: Parsed command-line arguments
+  """
+  from mrsnet.decoder_export import export_decoder as _export_decoder
+  _export_decoder(args)
 
 def sim2real(args):
   """Analyse sim-to-real gap across benchmark series using basis-to-dataset comparison.
