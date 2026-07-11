@@ -962,10 +962,15 @@ class Spectrum:
             RuntimeError: If pulse sequence is not megapress
         """
         # B0 correction across multiple acquisitions
-        for a in spectra:
-            if spectra[a].pulse_sequence != "megapress":
-                raise RuntimeError("Multi-b0-correction only for megapress")
-        b0_shift, _ = spectra["edit_off"].correct_b0()
+        pulse_sequences = {spectra[a].pulse_sequence for a in spectra}
+        if pulse_sequences == {"megapress"}:
+            ref = "edit_off"
+        elif pulse_sequences == {"press"}:
+            # Unedited PRESS has a single sub-spectrum; reference against it.
+            ref = "unedited"
+        else:
+            raise RuntimeError(f"Multi-b0-correction only for megapress or press, got {pulse_sequences}")
+        b0_shift, _ = spectra[ref].correct_b0()
         if b0_shift is None:
             b0_shift = 0.0  # No shift as no peak found
         for a in spectra:
@@ -992,10 +997,19 @@ class Spectrum:
             lw = float(fida_data["linewidth"][0][0])
         else:
             lw = None
+        # Unedited (PRESS) files carry pulse_sequence='press' and no 'edit' field;
+        # megapress files carry the 'edit' flag that selects edit_on / edit_off.
+        ps = str(fida_data["pulse_sequence"][0]) if "pulse_sequence" in fida_data else "megapress"
+        if ps == "press" or "edit" not in fida_data:
+            pulse_sequence = "press"
+            acquisition = "unedited"
+        else:
+            pulse_sequence = "megapress"
+            acquisition = "edit_on" if fida_data["edit"][0][0] != 0 else "edit_off"
         s = Spectrum(
             id=id,
-            pulse_sequence="megapress",
-            acquisition="edit_on" if fida_data["edit"][0][0] != 0 else "edit_off",
+            pulse_sequence=pulse_sequence,
+            acquisition=acquisition,
             omega=float(fida_data["omega"][0][0]),
             source=source,
             metabolites=[molecules.short_name(str(fida_data["m_name"][0]))],

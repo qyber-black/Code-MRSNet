@@ -182,8 +182,8 @@ def add_arguments_basis(p):
   p.add_argument('--linewidth', type=str, nargs='+', default=['2.0'],
                  help='Linewidths to be used. For simulation, supports ranges: a:step:b (per-spectrum) and a::step::b (per-metabolite). For lcmodel/su-* only a single fixed value or None is allowed.')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs='+',
-                 choices=['megapress'], default=["megapress"],
-                 help='Pulse sequence (placeholder).')
+                 choices=['megapress', 'press'], default=["megapress"],
+                 help='Pulse sequence(s) to simulate.')
 
 def add_arguments_fft(p):
   """Add FFT command-line arguments.
@@ -239,8 +239,8 @@ def add_arguments_compare(p):
   p.add_argument('--linewidth', type=float, default=2.0,
                  help='Linewidths to be used for simulation (ignored for lcmodel, su-*).')
   p.add_argument('--pulse_sequence', type=lambda s : s.lower(), nargs=1,
-                 choices=['megapress'], default="megapress",
-                 help='Pulse sequence (placeholder).')
+                 choices=['megapress', 'press'], default="megapress",
+                 help='Pulse sequence to simulate.')
 
 def add_arguments_train_select(p):
   """Add model selection command-line arguments.

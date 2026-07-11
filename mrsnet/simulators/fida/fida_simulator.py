@@ -18,7 +18,8 @@ import subprocess
 from mrsnet.cfg import Cfg
 
 
-def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, save_dir):
+def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, save_dir,
+                 pulse_sequence="megapress"):
   """Generate FID-A spectra using MATLAB.
 
   Args:
@@ -29,17 +30,23 @@ def fida_spectra(metabolite_names, omega, linewidth, npts, sample_rate, source, 
       sample_rate (float): Sample rate in Hz
       source (str): FID-A source type ("fid-a" or "fid-a-2d")
       save_dir (str): Directory to save generated spectra
+      pulse_sequence (str): Pulse sequence to simulate ("megapress" or "press")
 
   Raises
   ------
-      RuntimeError: If source type is unknown or MATLAB is not installed
+      RuntimeError: If source type or pulse sequence is unknown or MATLAB is not installed
   """
-  if source == "fid-a":
-    script="run_custom_simMegaPressShapedEdit"
-  elif source =="fid-a-2d":
-    script="run_custom_simMegaPress_2D"
-  else:
+  scripts = {
+    ("megapress", "fid-a"): "run_custom_simMegaPressShapedEdit",
+    ("megapress", "fid-a-2d"): "run_custom_simMegaPress_2D",
+    ("press", "fid-a"): "run_custom_simPressShaped",
+    ("press", "fid-a-2d"): "run_custom_simPress_2D",
+  }
+  if source not in ("fid-a", "fid-a-2d"):
     raise RuntimeError(f"Unknown fid-a basis {source}")
+  if (pulse_sequence, source) not in scripts:
+    raise RuntimeError(f"No FID-A simulation for pulse sequence {pulse_sequence} and source {source}")
+  script = scripts[(pulse_sequence, source)]
 
   matlab_command = "addpath(genpath(fullfile('"+Cfg.val['path_root']+"','mrsnet','simulators','fida')));"
   matlab_command += "mrsnet_omega="+str(omega)+";"

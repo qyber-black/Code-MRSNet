@@ -409,8 +409,12 @@ class Basis:
           if file.startswith(start) and file.endswith('.mat'):
             vals = file.split("_")
             try:
+              if self.pulse_sequence == 'press':
+                acq_ok = vals[3] == "PRESS"
+              else:
+                acq_ok = vals[3] == "EDITON" or vals[3] == "EDITOFF"
               if vals[2].lower() == self.pulse_sequence \
-                and (vals[3] == "EDITON" or vals[3] == "EDITOFF") \
+                and acq_ok \
                 and np.abs(float(vals[4]) - float(self.linewidth)) < 1e-2 \
                 and int(vals[5]) == self.sample_rate \
                 and int(vals[6]) == self.samples \
@@ -455,7 +459,7 @@ class Basis:
         from mrsnet.simulators.fida.fida_simulator import fida_spectra
         fida_spectra(to_simulate, omega=self.omega, linewidth=self.linewidth,
                      npts=self.samples, sample_rate=self.sample_rate,
-                     source=source,
+                     source=source, pulse_sequence=self.pulse_sequence,
                      save_dir=os.path.join(path_basis,'basis_files'))
         self._load_fida(path_basis, search_basis, source, second_call=True)
 
@@ -642,6 +646,13 @@ class Basis:
           if shift is not None and peak_val < val:
             b0_shift = shift
             peak_val = val
+    elif self.pulse_sequence == "press":
+      for pair in molecules.B0_CORRECTION:
+        if pair[0] in self.spectra:
+          shift, val = self.spectra[pair[0]]['unedited'].correct_b0()
+          if shift is not None and peak_val < val:
+            b0_shift = shift
+            peak_val = val
     else:
       raise RuntimeError(f"No B0 correction for {self.pulse_sequence}")
     if b0_shift is None:
@@ -717,9 +728,7 @@ class Basis:
     acqs = self.acquisitions
     num_m = len(self.spectra)
     num_a = len(acqs)
-    fig, axes = plt.subplots(num_m, num_a, sharex=True, sharey='row')
-    if len(axes.shape) == 1:
-      axes = np.reshape(axes, (1,num_a))
+    fig, axes = plt.subplots(num_m, num_a, sharex=True, sharey='row', squeeze=False)
 
     super_title = type.upper()+' Basis: ' + self.source + " (" + self.manufacturer + ") @ " + str(self.omega) + "Hz Linewidth: " + str(self.linewidth) + " - " + self.pulse_sequence.upper()
     plt.suptitle(super_title)
