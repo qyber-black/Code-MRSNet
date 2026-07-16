@@ -255,6 +255,8 @@ class Cfg:
       Cfg._su_bases = []
     if len(Cfg._su_bases) == 0:
       for path in [Cfg.val['path_basis'],*Cfg.val['search_basis']]:
+        if not os.path.isdir(path):
+          continue
         for fldr in next(os.walk(path))[1]:
           if fldr[0:3] == 'su-' and fldr not in Cfg._su_bases:
             Cfg._su_bases.append(fldr)

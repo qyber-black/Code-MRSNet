@@ -45,8 +45,9 @@ def _load_benchmark_series(b_id: str, variant: str, series_name: str, verbose: i
     This uses the same configuration paths as `mrsnet.benchmark`, but restricts
     loading to a specific series folder such as 'GABA03'.
     """
+    from mrsnet.benchmark_data import concentrations_for_series
     seq_path = os.path.join(_benchmark_root(), b_id, variant, series_name)
-    conc_path = os.path.join(_benchmark_root(), b_id, "concentrations.json")
+    conc_path = concentrations_for_series(_benchmark_root(), b_id)
     if not os.path.isdir(seq_path):
         raise SystemExit(f"Series folder not found: {seq_path}")
     bm = dataset.Dataset(f"{b_id}_{series_name}").load_dicoms(

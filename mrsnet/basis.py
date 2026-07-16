@@ -547,11 +547,11 @@ class Basis:
         RuntimeError: If manufacturer is not supported or pulse sequence is not MEGAPRESS
     """
     if self.manufacturer == 'siemens':
-      m_str = 'Siemens'
+      m_strs = ['Siemens']
     elif self.manufacturer == 'ge':
-      m_str = 'GE'
+      m_strs = ['GE']
     elif self.manufacturer == 'philips':
-      m_str = 'Philips'
+      m_strs = ['Philips', 'Phillips']
     else:
       raise RuntimeError('No LCModel basis set for ' + self.manufacturer + ' scanner')
     if self.pulse_sequence == 'megapress':
@@ -562,8 +562,17 @@ class Basis:
     for spath in [path_basis, *search_basis]:
       for a in acqs:
         diff_var_str = ("_"+Cfg.val['lcmodel_megapress_difference_variant']) if a == 'difference' else ''
-        basis_file = os.path.join(spath,'basis_files', p_str+"_"+a+"_"+m_str+"_3T"+diff_var_str+".basis")
-        if os.path.isfile(basis_file):
+        basis_file = None
+        for m_str in m_strs:
+          candidates = [
+            os.path.join(spath, 'basis_files', p_str+"_"+a+"_"+m_str+"_3T"+diff_var_str+".basis"),
+            os.path.join(spath, 'megapress', p_str+"_"+a+"_"+m_str+"_3T"+diff_var_str+".basis"),
+            os.path.join(spath, p_str+"_"+a+"_"+m_str+"_3T"+diff_var_str+".basis"),
+          ]
+          basis_file = next((candidate for candidate in candidates if os.path.isfile(candidate)), None)
+          if basis_file is not None:
+            break
+        if basis_file is not None:
           specs = Spectrum.load_lcm(basis_file, a, self.omega, self.metabolites)
           if self.path is not None and  self.path != spath:
             print(f"**WARNING - LCModel basis files in different directories: {self.path!s} and {spath!s}")

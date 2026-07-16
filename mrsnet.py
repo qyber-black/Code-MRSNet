@@ -409,14 +409,16 @@ def gen_basis(args):
       print(f"Basis {b!s}")
     if b.path is None:
       raise RuntimeError("Basis path is not set")
-    for f in glob.glob(b.path+"*.png"):
+    plot_path = os.path.join(Cfg.val['path_basis'], b.source)
+    os.makedirs(plot_path, exist_ok=True)
+    for f in glob.glob(os.path.join(plot_path, "*.png")):
       os.remove(f)
     for d in ['magnitude','phase','real','imaginary']:
       fig = b.plot(data=d, type='fft')
       if args.verbose > 0:
         print(f"Figure {b.name()}")
       for dpi in Cfg.val['image_dpi']:
-        filename = os.path.join(b.path,b.name()+"-"+d+"@"+str(dpi)+".png")
+        filename = os.path.join(plot_path,b.name()+"-"+d+"@"+str(dpi)+".png")
         if not os.path.exists(filename): # Do not overwrite (the files should be correct if no one messes with them or we have a broken simulator)
           plt.savefig(filename, dpi=dpi)
       if args.verbose > 1:
@@ -721,13 +723,8 @@ def compare(args):
   else:
     if args.verbose > 0:
       print(f"# Loading dicom data {args.dataset}")
-    concentrations = os.path.join(args.dataset,"concentrations.json")
-    if not os.path.isfile(concentrations):
-      concentrations = os.path.join(os.path.dirname(args.dataset),"concentrations.json")
-      if not os.path.isfile(concentrations):
-        concentrations = os.path.join(os.path.dirname(os.path.dirname(args.dataset)),"concentrations.json")
-        if not os.path.isfile(concentrations):
-          concentrations = None
+    from mrsnet.benchmark_data import concentration_source_for
+    concentrations = concentration_source_for(args.dataset)
     ds= dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                   concentrations=concentrations,
                                                   metabolites=args.metabolites,
@@ -1259,9 +1256,8 @@ def quantify(args):
   if ds is None:
     if args.verbose > 0:
       print(f"# Loading dicom data {args.dataset}")
-    concentrations = os.path.join(args.dataset,"concentrations.json")
-    if not os.path.isfile(concentrations):
-      concentrations = None
+    from mrsnet.benchmark_data import concentration_source_for
+    concentrations = concentration_source_for(args.dataset)
     ds = dataset.Dataset(args.dataset).load_dicoms(args.dataset,
                                                    concentrations=concentrations,
                                                    metabolites=quantifier.metabolites,
@@ -1472,6 +1468,7 @@ def benchmark(args):
   else:
     raise RuntimeError("Unknown model "+name)
   import json
+  from mrsnet.benchmark_data import concentrations_for_series
   with open(os.path.join(Cfg.val['path_benchmark'],"benchmark_sequences.json")) as f:
     benchmark_seqs = json.load(f)
   import mrsnet.dataset as dataset
@@ -1487,8 +1484,7 @@ def benchmark(args):
       if args.verbose > 0:
         print(f"# Loading Benchmark {b_id}")
       bm = dataset.Dataset(b_id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], b_id, variant),
-                                             concentrations=os.path.join(Cfg.val['path_benchmark'],
-                                                                         b_id, 'concentrations.json'),
+                                             concentrations=concentrations_for_series(Cfg.val['path_benchmark'], b_id),
                                              metabolites=quantifier.metabolites,
                                              verbose=args.verbose)
       if args.verbose >= 4:
@@ -1551,6 +1547,7 @@ def sim2real(args):
   """
   import json as _json
 
+  from mrsnet.benchmark_data import concentrations_for_series
   import mrsnet.basis as basis
   import mrsnet.dataset as dataset
   from mrsnet.compare import compare_basis
@@ -1594,7 +1591,7 @@ def sim2real(args):
       if args.verbose > 0:
         print(f"# Sim2Real: {b_id} / {variant}")
       bm = dataset.Dataset(b_id).load_dicoms(os.path.join(Cfg.val['path_benchmark'], b_id, variant),
-                                             concentrations=os.path.join(Cfg.val['path_benchmark'], b_id, 'concentrations.json'),
+                                             concentrations=concentrations_for_series(Cfg.val['path_benchmark'], b_id),
                                              metabolites=combined.metabolites,
                                              verbose=args.verbose)
 

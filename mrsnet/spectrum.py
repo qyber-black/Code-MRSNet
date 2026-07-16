@@ -21,6 +21,7 @@ from matplotlib.ticker import FuncFormatter
 from scipy.io import loadmat
 
 from mrsnet import molecules
+from mrsnet.benchmark_data import load_concentrations
 from mrsnet.cfg import Cfg
 
 npfft = getattr(
@@ -1371,8 +1372,8 @@ class Spectrum:
         cs = np.array([])
         if concentrations is not None:
             ids = file.split("/")
-            with open(concentrations) as f:
-                js = json.load(f)
+            js = load_concentrations(concentrations)
+            if js is not None:
                 if metabolites is None or len(metabolites) == 0:
                     metabolites = set()
                     for k in js.keys():
@@ -1546,8 +1547,8 @@ class Spectrum:
         cs = np.array([])
         if concentrations is not None:
             ids = file.split("/")
-            with open(concentrations) as f:
-                js = json.load(f)
+            js = load_concentrations(concentrations)
+            if js is not None:
                 if metabolites is None or len(metabolites) == 0:
                     metabolites = set()
                     for k in js.keys():

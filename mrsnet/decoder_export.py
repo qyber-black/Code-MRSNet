@@ -233,6 +233,7 @@ def export_decoder(args) -> None:
 
   with open(os.path.join(Cfg.val["path_benchmark"], "benchmark_sequences.json")) as f:
     benchmark_seqs = json.load(f)
+  from mrsnet.benchmark_data import concentrations_for_series
 
   all_original = []
   all_decoded = []
@@ -247,7 +248,7 @@ def export_decoder(args) -> None:
       label = f"{b_id}_{variant}"
       bm = dataset_mod.Dataset(b_id).load_dicoms(
           os.path.join(Cfg.val["path_benchmark"], b_id, variant),
-          concentrations=os.path.join(Cfg.val["path_benchmark"], b_id, "concentrations.json"),
+          concentrations=concentrations_for_series(Cfg.val["path_benchmark"], b_id),
           metabolites=quantifier.metabolites,
           verbose=args.verbose,
       )
