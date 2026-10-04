@@ -19,6 +19,32 @@ Quantification from Edited Magnetic Resonance Spectra With Convolutional Neural
 Network**. Preprint, 2019. [arXiv:1909.03836](https://arxiv.org/abs/1909.03836)
 <https://langbein.org/mrsnet-paper/>
 
+## Normalisation and distributed models
+
+Spectral amplitudes share one scaling factor across acquisitions: the maximum
+absolute OFF amplitude when OFF is present, otherwise the maximum across all
+requested acquisitions. OFF and ON are not independently rescaled.
+
+Model targets retain the configured none, sum or max normalisation. Evaluation
+normalisation is separate and configurable. For the phantom study, use max:
+divide truth and predictions independently by their own maximum across Cr,
+GABA, Gln, Glu and NAA. Finite negative predictions are retained; non-finite
+values and non-positive normalisation denominators raise errors. Overall MAE
+includes all five metabolites and gives equal weight to every spectrum.
+These errors measure relative composition, not concentrations in mM.
+
+The current 13 distributed model instances and their run-local evaluations
+are indexed in `data/model-dist/paper-model-registry/model_registry.json`.
+Checkpoints follow the standard model/configuration/dataset/trainer paths.
+Both QNet variants and all five fixed/augmented pairs are included.
+
+For spectral comparisons, `mrsnet.magnitude.magnitude_descriptors` measures
+paired magnitude arrays using supplied ppm coordinates, metabolite windows
+and baseline exclusions. It preserves shared OFF scaling across acquisitions
+and does not use phase. `mrsnet.linewidth.fit_basis_linewidth` fits effective
+linewidth and frequency shift to a fixed-composition FID and observed
+magnitude. Both functions are usable without paper-repository imports.
+
 ## Getting Started
 
 ### Prerequisites
@@ -161,11 +187,11 @@ publications, etc. that you can also use for your own analysis:
   path to the model search path in `cfg.json` or `mrsnet.json`. Note that this is a very
   large repository. It contains the complete analysis data for the YAE models for model selection.
 * [Results - MRSNet - Extra Models](https://qyber.black/mrs/results-mrsnet-models-extra):
-  KFold-5 evaluation results (metrics and plots) for the additional literature models
-  (EncDec, fCNN, QMRS, QNet, QNetBasis). Results-only; no trained weights. Clone into
-  `data/model-extra`. Add `model-extra` to the model search path in `cfg.json` or
-  `mrsnet.json` if you want to run benchmarks against these result folders. You can clone
-  this into `data/models-extra`.
+  Non-selected external-model checkpoints and exploratory evaluation results for
+  EncDec, FCNN, QMRS, QNet and QNet-basis. Selected final models belong in
+  `data/model-dist`. Clone this repository into `data/model-extra` and add that
+  directory to the model search path in `cfg.json` or `mrsnet.json` to load its
+  retained checkpoints. Metric-only fold folders are not runnable models.
 * [Data - MRSNet - Simulated Spectra - MEGAPRESS](https://qyber.black/mrs/data-mrsnet-simulated-spectra-megapress):
   contains a range of simulated MEGAPRESS spectra with our simulators using the basis datasets in
   `data/basis-dist`. These datasets have been used in the papers for training and testing the
@@ -333,7 +359,7 @@ Usage (in addition to estimation flags):
 Outputs and plots:
 
 * Writes `<series>_<variant>_metrics_lw_mc.json` with per-trial summaries (mean/std across trials)
-* Adds error bars to per-series and overall plots via `data/sim2gap/visualize_sim2real.py`
+* Per-trial summaries are available for downstream plotting
 * Appends folder tags `_lwMC<trials>-S<scale>-<dist>` to separate runs
 
 Notes:
@@ -393,6 +419,10 @@ After you have training/validation and benchmark outputs, you can aggregate resu
 
 This writes `PATH_TO_MODEL_ROOT/aggregate/all_results.csv` (overwriting if it exists).
 
+Run-local `evaluation*/phantom/metrics.json` summaries take precedence over
+older standalone benchmark files. Missing uncertainty summaries remain empty;
+training-target normalisation does not determine evaluation normalisation.
+
 The aggregation script:
 
 * Combines training/validation results with benchmark results
@@ -425,11 +455,14 @@ Released versions:
 * v2.0 - update to python3 and tensorflow 2; code, api and ui cleanups; updates to
   spectra processing; extended dataset generation, model training, model selection,
   and quantification.
-* v2.1 - current version with TensorFlow 2.20, Python 3.13 support, and enhanced
+* v2.1 - TensorFlow 2.20, Python 3.13 support, and enhanced
   model architectures including autoencoders, autoencoder-quantifiers, and four extra
   deep learning models: EncDec, FoundationalCNN (fCNN), QMRS, and QNet (with both basic
   and full basis set LLS variants). Includes sim2real analysis, linewidth estimation,
   and JSON-based execution via run.py.
+* v2.1.1 - checkpoint restoration, input-channel and basis-solver fixes,
+  separate evaluation normalisation, robust basis-linewidth fitting and
+  updated distributed models and results.
 
 ## Locations
 
@@ -460,6 +493,13 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1. Software, 2026.
+Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1.1. Software, 2026.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)
+
+Machine-readable release metadata is provided in `CITATION.cff` for GitHub
+and `.zenodo.json` for Zenodo. Both describe version 2.1.1; Zenodo uses
+`.zenodo.json` when both files are present. When the release DOI and date
+are assigned, add `doi` and `date-released` to `CITATION.cff`, add `doi`
+and `publication_date` to `.zenodo.json`, and update this citation with
+the version-specific DOI. Do not reuse an earlier release's DOI.

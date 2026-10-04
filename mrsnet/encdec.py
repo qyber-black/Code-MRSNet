@@ -25,7 +25,7 @@ MODIFICATIONS FOR MRSNET INTEGRATION:
 
 2. ARCHITECTURAL SIMPLIFICATIONS (MEMORY CONSTRAINTS):
    - Paper: 128 filters in WaveNet blocks, 32 echoes
-   - Default: Paper parameters (2 acquisitions, 128 filters)
+   - Default: MRSNet parameters (2 acquisitions, 64 filters)
    - Configurable: 'encdec_[ACQUISITIONS]_[FILTERS]' for custom configurations
 
 3. IMPLEMENTATION DETAILS:
@@ -184,7 +184,8 @@ class ContextConverter(keras.layers.Layer):
         n_freqs = tf.shape(inputs)[2]
 
         # Reshape to (batch, acquisitions, freqs, datatypes)
-        spectra_context = tf.reshape(inputs, [batch_size, self.n_acquisitions, n_freqs, self.n_datatypes])
+        spectra_context = tf.reshape(inputs, [batch_size, self.n_acquisitions, self.n_datatypes, n_freqs])
+        spectra_context = tf.transpose(spectra_context, [0, 1, 3, 2])
 
         return spectra_context
 
@@ -286,7 +287,7 @@ class EncDecModel(Model):
             n_freqs (int): Number of frequency points per acquisition
             n_metabolites (int): Number of metabolites to quantify
             n_datatypes (int): Number of datatypes per acquisition
-            filters (int): Number of filters for WaveNet blocks (default: 64)
+            filters (int, optional): Explicit override; otherwise use the model string, defaulting to 64
             name (str, optional): Model name
         """
         super().__init__(name=name, **kwargs)
@@ -416,7 +417,7 @@ class EncDec:
         encdec_arch (keras.Model): The actual EncDec model
     """
 
-    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm, filters=64):
+    def __init__(self, model, metabolites, pulse_sequence, acquisitions, datatype, norm, filters=None):
         """Initialize an EncDec model.
 
         Parameters
@@ -511,17 +512,19 @@ class EncDec:
 
         # Parse model parameters
         if len(vals) == 1 or (len(vals) == 2 and vals[1] == 'default'):
-            # Default EncDec configuration - paper parameters
+            # Default MRSNet EncDec configuration
             n_acquisitions = 2   # MEGA-PRESS has edit_off and difference
-            filters = 128  # Paper filters
+            filters = 64  # MRSNet default
         else:
             # Custom EncDec configuration: encdec_[ACQUISITIONS]_[FILTERS]
             n_acquisitions = int(vals[1]) if len(vals) > 1 else 2
             filters = int(vals[2]) if len(vals) > 2 else 16
 
         # Override with instance filters if provided
-        if hasattr(self, 'filters') and self.filters != 16:
+        if self.filters is not None:
             filters = self.filters
+        if filters <= 0:
+            raise ValueError("EncDec filters must be positive")
 
         return n_acquisitions, filters
 
@@ -839,7 +842,8 @@ class EncDec:
             # Reshape to (batch, acquisitions, freqs, datatypes)
             n_acquisitions = len(self.acquisitions)
             n_datatypes = len(self.datatype)
-            spectra_context = tf.reshape(spectra, [batch_size, n_acquisitions, n_freqs, n_datatypes])
+            spectra_context = tf.reshape(spectra, [batch_size, n_acquisitions, n_datatypes, n_freqs])
+            spectra_context = tf.transpose(spectra_context, [0, 1, 3, 2])
 
         return spectra_context
 
@@ -950,6 +954,7 @@ class EncDec:
                 'acquisitions': self.acquisitions,
                 'datatype': self.datatype,
                 'norm': self.norm,
+                'input_layout_version': 2,
                 'train_dataset_name': self.train_dataset_name,
                 'output': self.output,
                 'seed': getattr(self, 'seed', None),
@@ -974,6 +979,8 @@ class EncDec:
         """
         with open(os.path.join(path, "mrsnet.json")) as f:
             data = json.load(f)
+        if len(data['datatype']) > 1 and data.get('input_layout_version') != 2:
+            raise ValueError("Old multi-datatype EncDec checkpoints require retraining with input_layout_version=2")
         model = EncDec(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                       data['datatype'], data['norm'])
         model.train_dataset_name = data['train_dataset_name']
@@ -984,6 +991,21 @@ class EncDec:
                                           "AttentionGRU": AttentionGRU
                                       },
                                       safe_mode=False)
+        # Build lazy child layers before restoring their saved variables.
+        architecture = model.encdec_arch
+        model.filters = architecture.filters
+        architecture(
+            tf.zeros(
+                (
+                    1,
+                    architecture.n_acquisitions,
+                    architecture.n_freqs,
+                    architecture.n_datatypes,
+                )
+            ),
+            training=False,
+        )
+        architecture.load_weights(os.path.join(path, "model.keras"))
         return model
 
     def _create_architecture_plots(self, folder, image_dpi, verbose):

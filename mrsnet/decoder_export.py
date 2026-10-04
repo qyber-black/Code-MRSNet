@@ -1,3 +1,8 @@
+# mrsnet/decoder_export.py - MRSNet - Export decoder spectra
+#
+# SPDX-FileCopyrightText: Copyright (C) 2026 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Export decoder spectra from trained autoencoder-quantifier models."""
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from mrsnet.cfg import Cfg
+from mrsnet.normalisation import normalise_spectra
 
 
 def _path_parts(path: str) -> list[str]:
@@ -102,11 +108,7 @@ def _norm_factors(dataset, acquisitions, high_ppm, low_ppm, n_fft_pts, normalise
     for acq in acquisitions:
       values, _ = spectra[acq].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
       fft.append(values)
-    arr = np.asarray(fft)
-    if "edit_off" in acquisitions:
-      factors[idx] = float(np.max(np.abs(arr[acquisitions.index("edit_off"), :])))
-    else:
-      factors[idx] = float(np.max(np.abs(arr)))
+    _, factors[idx], _ = normalise_spectra(fft, acquisitions)
   return factors
 
 

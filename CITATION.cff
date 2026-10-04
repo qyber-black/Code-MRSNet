@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 Frank C Langbein, Cardiff University
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Add the version-specific DOI and date-released once assigned for v2.1.1.
+cff-version: 1.2.0
+message: "If you use MRSNet, please cite this software release."
+type: software
+title: "Code - MRSNet"
+version: "2.1.1"
+authors:
+  - family-names: "Ma"
+    given-names: "Zien"
+    affiliation: "Cardiff University"
+  - family-names: "Chandler"
+    given-names: "Max"
+    affiliation: "Cardiff University"
+  - family-names: "Shermer"
+    given-names: "Sophie M"
+    affiliation: "Swansea University"
+  - family-names: "Langbein"
+    given-names: "Frank C"
+    affiliation: "Cardiff University"
+abstract: >-
+  MRSNet provides neural-network quantification of magnetic resonance spectra,
+  with a focus on MEGA-PRESS, together with basis simulation, dataset generation,
+  model training, model selection and spectral analysis.
+keywords:
+  - magnetic resonance spectroscopy
+  - MEGA-PRESS
+  - metabolite quantification
+  - neural networks
+license: AGPL-3.0-or-later
+url: "https://qyber.black/mrs/code-mrsnet"
+repository-code: "https://github.com/qyber-black/code-mrsnet"

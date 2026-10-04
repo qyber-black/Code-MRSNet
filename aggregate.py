@@ -388,6 +388,24 @@ def _normalize_benchmark_name(name: str) -> str:
 
 def _collect_benchmarks(trainer_dir: Path) -> dict[str, dict[str, float | None]]:
   res: dict[str, dict[str, float | None]] = {}
+  canonical = sorted(trainer_dir.glob("evaluation*/phantom/metrics.json"))
+  if canonical:
+    if len(canonical) != 1:
+      raise ValueError(f"Ambiguous canonical phantom evaluations: {trainer_dir}")
+    summary = _load_json(canonical[0])
+    if not summary or summary.get("norm") not in {"none", "sum", "max"}:
+      raise ValueError(f"Invalid canonical evaluation metadata: {canonical[0]}")
+    value = _safe_float(summary.get("overall_mae"))
+    if value is None or not math.isfinite(value) or value < 0:
+      raise ValueError(f"Invalid canonical evaluation MAE: {canonical[0]}")
+    return {
+      "benchmark_all": {
+        "mae": value,
+        "mae_std": _safe_float(summary.get("overall_sd")),
+        "mae_min": _safe_float(summary.get("overall_min")),
+        "mae_max": _safe_float(summary.get("overall_max")),
+      }
+    }
   # Process concentration benchmarks first (if present)
   for file_path in sorted(trainer_dir.glob("*_concentration_errors.json")):
     fn = file_path.name

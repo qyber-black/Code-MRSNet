@@ -1140,7 +1140,7 @@ def quantify(args):
   idl = get_std_name(args.model)
   name = []
   for k in range(0,len(idl)):
-    if idl[k][0:4] == 'cnn_' or idl[k][0:3] == 'ae_' or idl[k][0:4] == 'aeq_' or idl[k][0:4] == 'caeq':
+    if idl[k].startswith(('cnn_', 'ae_', 'aeq_', 'caeq_', 'qnet', 'fcnn', 'qmrs', 'encdec')):
       name = os.path.join(*idl[k:k+6])
       batchsize = idl[k+6]
       epochs = idl[k+7]
@@ -1475,10 +1475,9 @@ def benchmark(args):
   # Accumulate all sequences for an aggregated analysis run
   all_inp = []
   all_out = []
+  all_predictions = []
   all_ids = []
-  dest_folder = os.path.join(Cfg.val['path_model'], name,
-                             batchsize, epochs,
-                             train_model, trainer, rest)
+  dest_folder = folder
   for b_id in benchmark_seqs.keys():
     for variant in benchmark_seqs[b_id]:
       if args.verbose > 0:
@@ -1503,14 +1502,17 @@ def benchmark(args):
       if args.norm == "default":
         args.norm = quantifier.norm
       # Per-sequence analysis
+      predictions = quantifier.predict(d_inp, verbose=args.verbose)
       analyse_model(quantifier, d_inp, d_out, dest_folder,
                     id=[s[id_ref].id for s in bm.spectra],
                     show_conc=True, save_conc=True,
                     verbose=args.verbose, prefix=b_id+"_"+variant+"_"+args.norm, image_dpi=Cfg.val['image_dpi'],
-                    screen_dpi=Cfg.val['screen_dpi'],norm=args.norm)
+                    screen_dpi=Cfg.val['screen_dpi'],norm=args.norm,
+                    predictions=predictions)
       # Accumulate for aggregated analysis
       all_inp.append(d_inp)
       all_out.append(d_out)
+      all_predictions.append(predictions)
       all_ids.extend([s[id_ref].id for s in bm.spectra])
 
   # Run aggregated analysis across all sequences to compute total error
@@ -1524,7 +1526,8 @@ def benchmark(args):
                   id=all_ids,
                   show_conc=True, save_conc=True,
                   verbose=args.verbose, prefix="benchmark_all_"+args.norm,
-                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'], norm=args.norm)
+                  image_dpi=Cfg.val['image_dpi'], screen_dpi=Cfg.val['screen_dpi'], norm=args.norm,
+                  predictions=np.concatenate(all_predictions, axis=0))
 
 def export_decoder(args):
   """Export decoder spectra from a trained CAEQ/YAE model.
@@ -1936,7 +1939,9 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
     estimates = []
     for meth in methods_to_try:
       try:
-        v = spectrum.estimate_linewidth(method=meth, verbose=max(0, verbose-1))
+        v = spectrum.estimate_linewidth(method=meth, verbose=max(0, verbose-1),
+                                       min_snr=getattr(args, 'linewidth_min_snr', 3.0),
+                                       max_peaks=getattr(args, 'linewidth_max_peaks', 3))
         if v is not None:
           estimates.append(float(v))
       except Exception:
@@ -1953,17 +1958,17 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
     mad = float(_np.median(_np.abs(estimates - estimated_lw))) if len(estimates) > 1 else 0.0
     robust_sigma = 1.4826 * mad
 
-    if estimated_lw is None:
+    if not _np.isfinite(estimated_lw):
       if verbose > 1:
         print(f"# Linewidth estimation failed for {spectrum.acquisition} spectrum")
-    return None, None
+      return None, None
 
     # Validate range
     min_lw, max_lw = args.linewidth_range
     if estimated_lw < min_lw or estimated_lw > max_lw:
       if verbose > 1:
         print(f"# Estimated linewidth {estimated_lw:.2f} Hz outside valid range [{min_lw}, {max_lw}] for {spectrum.acquisition}")
-    return None, None
+      return None, None
 
     # Round to nearest step
     rounded_lw = round(estimated_lw / args.linewidth_step) * args.linewidth_step
@@ -1984,7 +1989,9 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
         v_pref = None
         if preferred in methods_to_try:
           # Recompute preferred only to capture exact value if present
-          v_pref = spectrum.estimate_linewidth(method=preferred, verbose=0)
+          v_pref = spectrum.estimate_linewidth(method=preferred, verbose=0,
+                                               min_snr=getattr(args, 'linewidth_min_snr', 3.0),
+                                               max_peaks=getattr(args, 'linewidth_max_peaks', 3))
         if v_pref is not None:
           v_pref = float(v_pref)
           thresh = args.linewidth_prefer_mad_thresh if args.linewidth_prefer_mad_thresh is not None else (2.0 * args.linewidth_step)
@@ -2005,6 +2012,8 @@ def estimate_linewidth_for_spectrum(spectrum_dict, args, verbose=0):
         pass
     # Clamp and floor sigma
     min_lw, max_lw = args.linewidth_range
+    if not min_lw <= rounded_lw <= max_lw:
+      return None, None
     sigma_est = max(args.linewidth_step, min(sigma_est, (max_lw - min_lw) / 4.0))
 
     return rounded_lw, sigma_est

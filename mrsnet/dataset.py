@@ -23,6 +23,7 @@ import sobol_seq
 from tqdm import tqdm
 
 from mrsnet.cfg import Cfg
+from mrsnet.normalisation import normalise_concentrations, normalise_spectra
 from mrsnet.spectrum import Spectrum
 
 
@@ -434,17 +435,8 @@ class Dataset:
         axes = np.asarray([axes])
       norm_str = "" if norm == 'none' else f"({norm} normalised) "
       plt.suptitle(f"Concentrations {norm_str}of {self.name}; {len(self.spectra)} spectra")
-      cs = np.ndarray((n_spec,n_hst),dtype=np.float64)
-      k = 0
-      for c in self.concentrations:
-        cr = np.array([c[m] for m in self.metabolites], dtype=np.float64)
-        if norm == 'sum':
-          cs[k,:] = cr / np.sum(cr)
-        elif norm == 'max':
-          cs[k,:] = cr / np.max(cr)
-        else:
-          cs[k,:] = cr
-        k += 1
+      raw = [[c[m] for m in self.metabolites] for c in self.concentrations]
+      cs, _ = normalise_concentrations(raw, norm, role="target")
       for m in range(0,n_hst):
         axes[m].hist(cs[:,m], bins=int(np.max([25, np.ceil(n_spec/100)])))
         axes[m].set_title(self.metabolites[m])
@@ -558,23 +550,13 @@ class Dataset:
         nl="\n"
         fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
         a_idx = 0
-        a_norm = None
         for a in acquisitions:
-          if a == "edit_off":
-            a_norm = a_idx
           fft[a_idx,:], _ = self.spectra[s][a].rescale_fft(high_ppm=high_ppm,
                                                            low_ppm=low_ppm,
                                                            npts=n_fft_pts)
           a_idx += 1
         if normalise:
-          m = np.abs(fft)
-          p = np.angle(fft)
-          if a_norm is None:
-            no = np.max(m)
-          else:
-            no = np.max(m[a_norm,:])
-          m /= no
-          new_fft = np.multiply(m, np.exp(1j*p))
+          new_fft, no, _ = normalise_spectra(fft, acquisitions)
           diff = np.max(np.abs(np.abs(new_fft)*no - np.abs(fft)))
           if diff > 1e-4: # Magnitude errors can be in the 1e-5 range
             print(f"{nl}- Max. FFT center/normalise magnitude error: {diff}")
@@ -628,12 +610,9 @@ class Dataset:
       res = True
       for c in range(len(self.concentrations)):
         print(f"## Concentration tensor export test: {c: 10d}", end='\r', flush=True)
-        if norm == 'max':
-          nf = np.max([self.concentrations[c][m] for m in metabolites])
-        elif norm == 'sum':
-          nf = np.sum([self.concentrations[c][m] for m in metabolites])
-        else:
-          nf = 1.0
+        raw = [self.concentrations[c][m] for m in metabolites]
+        _, factors = normalise_concentrations(raw, norm, role="target")
+        nf = factors[0]
         diff = np.max(np.abs([ self.concentrations[c][metabolites[m]] - d_out[c,m]*nf \
                                for m in range(len(metabolites)) ]))
         if diff > 1e-10:
@@ -665,20 +644,11 @@ class Dataset:
     inp = np.ndarray((len(acquisitions),len(datatypes),n_fft_pts), dtype=np.float64)
     fft = np.ndarray((len(acquisitions),n_fft_pts),dtype=np.complex64)
     a_idx = 0
-    a_norm = None
     for a in acquisitions:
-      if a == "edit_off":
-        a_norm = a_idx
       fft[a_idx,:], _ = s[a].rescale_fft(high_ppm=high_ppm, low_ppm=low_ppm, npts=n_fft_pts)
       a_idx += 1
     if normalise:
-      m = np.abs(fft)
-      p = np.angle(fft)
-      if a_norm is None:
-        m /= np.max(m)
-      else:
-        m /= np.max(m[a_norm,:])
-      fft = np.multiply(m, np.exp(1j*p))
+      fft, _, _ = normalise_spectra(fft, acquisitions)
     for a_idx in range(0,fft.shape[0]):
       d_idx = 0
       for d in datatypes:
@@ -711,11 +681,5 @@ class Dataset:
     -------
         numpy.ndarray: Exported concentration tensor
     """
-    out = np.array([c[m] for m in metabolites], dtype=np.float64)
-    if norm == 'max':
-      out /= np.max(out)
-    elif norm == 'sum':
-      out /= np.sum(out)
-    elif norm != 'none':
-      raise RuntimeError(f"Unknown norm {norm}")
+    out, _ = normalise_concentrations([c[m] for m in metabolites], norm, role="target")
     return out

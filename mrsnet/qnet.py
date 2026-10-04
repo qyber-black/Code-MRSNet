@@ -1249,8 +1249,15 @@ class QNet:
                                                  "IFConcatenator": IFConcatenator
                                              },
                                              safe_mode=False)
-            # Reconstruct the QNet architecture
-            model._construct(model.training_model.input_shape[1:], model.training_model.output_shape[1:])
+            # Retain the restored network; reconstruction would replace its weights.
+            architectures = [
+                layer
+                for layer in model.training_model.layers
+                if isinstance(layer, QNetModel)
+            ]
+            if len(architectures) != 1:
+                raise ValueError("Checkpoint must contain exactly one QNetModel")
+            model.qnet_arch = architectures[0]
             return model
         except Exception as e:
             print(f"QNet load error: {e}")
@@ -1826,6 +1833,10 @@ class QNetBasis(QNet):
             n_freqs=int(self.qnet_arch.n_freqs),  # Convert to int to avoid reference
             sample_rate=2000,
             samples=int(self.samples),  # Convert to int to avoid reference
+            solver_version=2,
+            high_ppm=float(self.high_ppm),
+            low_ppm=float(self.low_ppm),
+            target_norm=self.norm,
             name='basis_lls'
         )
 

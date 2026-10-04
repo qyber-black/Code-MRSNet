@@ -6,6 +6,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 *.pyc
 .*
+!/.zenodo.json
+!/.zenodo.json.license
 /.cursor/**
 /.idea
 /data/basis*
@@ -18,6 +20,7 @@
 /data/sim-spectra*
 /data/sim2real*
 /data/sim_fit*
+/local/
 /local/**
 /mrsnet/simulators/pygamma/gamma/
 /mrsnet/simulators/spinach/

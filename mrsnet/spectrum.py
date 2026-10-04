@@ -476,7 +476,7 @@ class Spectrum:
                 f"Requested ppm rescale range out of range [{nu[0]},{nu[len(nu)-1]}]"
             )
         freq_step = (low_ppm - high_ppm) / npts
-        bw = self.sample_rate / 2.0 / self.omega
+        bw = np.asarray(self.sample_rate / 2.0 / self.omega).item()
         t_samples = int(2.0 * bw / freq_step)
         rnu = np.linspace(-1, 1, t_samples) * bw + self.center_ppm + self.b0_shift_ppm
         index = (rnu >= high_ppm) & (rnu <= low_ppm)
@@ -1641,6 +1641,11 @@ class Spectrum:
         # Get frequency domain data
         fft_data, nu = self.get_f()
         magnitude = np.abs(fft_data)
+
+        # Peak windows use positive chemical shifts; MRSNet exports signed negative ppm.
+        nu = -np.asarray(nu)
+        order = np.argsort(nu)
+        nu, magnitude = nu[order], magnitude[order]
 
         if method == "water_peak":
             return self._estimate_linewidth_water_peak_robust(

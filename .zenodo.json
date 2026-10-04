@@ -1,0 +1,27 @@
+{
+  "title": "Code - MRSNet",
+  "version": "2.1.1",
+  "upload_type": "software",
+  "description": "MRSNet provides neural-network quantification of magnetic resonance spectra, with a focus on MEGA-PRESS, together with basis simulation, dataset generation, model training, model selection and spectral analysis.",
+  "creators": [
+    {"name": "Ma, Zien", "affiliation": "Cardiff University"},
+    {"name": "Chandler, Max", "affiliation": "Cardiff University"},
+    {"name": "Shermer, Sophie M", "affiliation": "Swansea University"},
+    {"name": "Langbein, Frank C", "affiliation": "Cardiff University"}
+  ],
+  "access_right": "open",
+  "license": "agpl-3.0-or-later",
+  "keywords": [
+    "magnetic resonance spectroscopy",
+    "MEGA-PRESS",
+    "metabolite quantification",
+    "neural networks"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://qyber.black/mrs/code-mrsnet",
+      "relation": "isDerivedFrom",
+      "resource_type": "software"
+    }
+  ]
+}

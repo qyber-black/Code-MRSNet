@@ -525,6 +525,8 @@ class Select:
           train_data = json.load(f)
         with open(os.path.join(model_path, f"validation_{self.error_type}_errors.json")) as f:
           val_data = json.load(f)
+        self._check_evaluation_norm(train_data)
+        self._check_evaluation_norm(val_data)
 
         # Extract comprehensive metrics
         train_p = [train_data['total']['abserror']['mean']]  # total MAE
@@ -543,6 +545,8 @@ class Select:
             train_data = json.load(f)
           with open(os.path.join(model_path,"fold-"+str(f_cnt),f"validation_{self.error_type}_errors.json")) as f:
             val_data = json.load(f)
+          self._check_evaluation_norm(train_data)
+          self._check_evaluation_norm(val_data)
 
           train_p.append(train_data['total']['abserror']['mean'])  # total MAE
           val_p.append(val_data['total']['abserror']['mean'])      # total MAE
@@ -554,6 +558,13 @@ class Select:
         print(e)
       return None, None
     return val_p, train_p
+
+  def _check_evaluation_norm(self, data):
+    if self.error_type != 'concentration':
+      return
+    evaluation_norm = data.get('normalisation', {}).get('evaluation', data.get('norm'))
+    if evaluation_norm != 'max':
+      raise RuntimeError(f"Selection concentration objective requires max normalisation, got {evaluation_norm}")
 
   def _load_mrsnet_json(self, folder):
     """Load mrsnet.json from a model folder, supporting legacy tf_model layout.

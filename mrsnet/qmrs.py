@@ -19,7 +19,7 @@ MODIFICATIONS FOR MRSNET INTEGRATION:
    - Original: Designed for single acquisition input (281 frequency points)
    - MRSNet: Adapted for arbitrary acquisition contexts (multiple acquisitions + datatypes)
    - Input format: (batch, freqs, channels) where channels = acquisitions x datatypes
-   - Channel handling: Maps arbitrary acquisitions to 2-channel format (edit_off, difference)
+   - Channel handling: Preserves acquisitions and datatypes; pads a single channel to two
    - Context validation: Ensures compatibility with supported datatypes (magnitude, phase, real, imaginary)
    - Flexible processing: Handles any number of acquisitions and datatypes
 
@@ -724,8 +724,7 @@ class QMRS:
         d_out = tf.convert_to_tensor(d_data[1], dtype=tf.float32)
         d_inp = reshape_spectra_data(d_inp, add_channel_dim=False)
 
-        # Convert to 2-channel input (edit-OFF and DIFF spectra)
-        # Input shape: (batch, acquisitions*datatypes, freqs) -> (batch, freqs, 2)
+        # Preserve every requested acquisition/datatype as a frequency-major channel.
         d_inp = self._convert_to_2channel(d_inp)
 
         train_data = tf.data.Dataset.from_tensor_slices((d_inp, d_out))
@@ -867,7 +866,7 @@ class QMRS:
         return d_res, v_res
 
     def _convert_to_2channel(self, spectra):
-        """Convert spectra to 2-channel format (edit-OFF and DIFF).
+        """Convert spectra to frequency-major channels without dropping inputs.
 
         Parameters
         ----------
@@ -875,11 +874,11 @@ class QMRS:
 
         Returns
         -------
-            tensor: 2-channel spectra tensor
+            tensor: Frequency-major spectra; a single channel is padded to two
         """
         # Input shape: (batch, acquisitions*datatypes, freqs)
-        # Output shape: (batch, freqs, 2)
-        # For MEGA-PRESS: edit_off (channel 0) and difference (channel 1)
+        # Output shape: (batch, freqs, max(2, acquisitions*datatypes))
+        # Preserve the acquisition/datatype order supplied by dataset export.
 
         batch_size = tf.shape(spectra)[0]
         n_channels = tf.shape(spectra)[1]  # acquisitions*datatypes
@@ -891,20 +890,10 @@ class QMRS:
         # Handle different channel configurations
         if n_channels == 1:
             # Single channel: pad with zeros
-            padding = tf.zeros((batch_size, n_freqs, 1))
+            padding = tf.zeros((batch_size, n_freqs, 1), dtype=spectra.dtype)
             spectra_2channel = tf.concat([spectra_reshaped, padding], axis=-1)
-        elif n_channels == 2:
-            # Exactly 2 channels: use as-is
-            spectra_2channel = spectra_reshaped
-        elif n_channels == 4:
-            # 4 channels (2 acquisitions * 2 datatypes): preserve real and imaginary
-            # Channel 0: edit_off_real, Channel 1: edit_off_imaginary
-            # Channel 2: edit_on_real, Channel 3: edit_on_imaginary
-            # Keep all 4 channels to preserve phase information
-            spectra_2channel = spectra_reshaped
         else:
-            # More than 4 channels or other configurations: take first 2 channels
-            spectra_2channel = spectra_reshaped[:, :, :2]
+            spectra_2channel = spectra_reshaped
 
         return spectra_2channel
 
@@ -1020,6 +1009,7 @@ class QMRS:
                 'acquisitions': self.acquisitions,
                 'datatype': self.datatype,
                 'norm': self.norm,
+                'input_channel_version': 2,
                 'train_dataset_name': self.train_dataset_name,
                 'seed': getattr(self, 'seed', None),
                 'shuffle_seed': getattr(self, 'shuffle_seed', None),
@@ -1043,6 +1033,9 @@ class QMRS:
         """
         with open(os.path.join(path, "mrsnet.json")) as f:
             data = json.load(f)
+        n_channels = len(data['acquisitions']) * len(data['datatype'])
+        if n_channels not in (1, 2, 4) and data.get('input_channel_version') != 2:
+            raise ValueError("Old channel-truncated QMRS checkpoints require retraining with input_channel_version=2")
         model = QMRS(data['model'], data['metabolites'], data['pulse_sequence'], data['acquisitions'],
                      data['datatype'], data['norm'])
         model.train_dataset_name = data['train_dataset_name']

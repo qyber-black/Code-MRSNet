@@ -1,11 +1,11 @@
 # mrsnet/basis_lls.py - MRSNet - Basis Set LLS Module
 #
-# SPDX-FileCopyrightText: Copyright (C) 2025 Frank C Langbein <frank@langbein.org>, Cardiff University
+# SPDX-FileCopyrightText: Copyright (C) 2025-2026 Frank C Langbein <frank@langbein.org>, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """Basis Set Linear Least Squares (LLS) Module for QNet.
 
-This module implements the full basis set LLS as described in the original QNet paper:
+This module provides an adapted physical-basis readout for QNet, motivated by:
 "Quantification of Magnetic Resonance Spectroscopy Data Using Deep Learning"
 by Chen, D., et al. IEEE Trans Biomed Eng, 2024 Jun;71(6):1841-1852.
 
@@ -16,78 +16,84 @@ The BasisLLSModule provides:
 4. TensorFlow integration for differentiable training
 """
 
+import mrsnet.basis as basis
 import numpy as np
 import tensorflow as tf
+from mrsnet.cfg import Cfg
 from tensorflow import keras
 from tensorflow.keras.utils import register_keras_serializable
-
-import mrsnet.basis as basis
-from mrsnet.cfg import Cfg
 
 
 @register_keras_serializable(package="mrsnet", name="BasisLLSModule")
 class BasisLLSModule(keras.layers.Layer):
-    """
-    Full basis set LLS module for QNet metabolite quantification.
+    """Fit real spectra with physically modulated, frequency-aligned bases.
 
-    This module implements the complete LLS approach from the original QNet paper,
-    including basis set matrix construction, imperfection factor modulation,
-    and analytical concentration estimation.
-
-    Parameters
-    ----------
-    metabolites : list
-        List of metabolite names
-    basis_source : str
-        Basis source (e.g., 'lcmodel', 'fid-a', 'pygamma')
-    manufacturer : str
-        Scanner manufacturer
-    omega : float
-        Larmor frequency in Hz
-    linewidth : float
-        Linewidth parameter
-    pulse_sequence : str
-        Pulse sequence type
-    acquisitions : list
-        List of acquisition types
-    n_freqs : int
-        Number of frequency points
-    sample_rate : float
-        Sample rate in Hz
-    name : str, optional
-        Layer name
+    Phase is in radians, frequency shift is in signed MRSNet ppm, and the
+    absolute third factor is additional Lorentzian FWHM in Hz. Model target
+    normalisation is separate from downstream evaluation normalisation.
     """
 
-    def __init__(self, metabolites, basis_source, manufacturer, omega, linewidth,
-                 pulse_sequence, acquisitions, n_freqs, sample_rate=2000,
-                 samples=None, name=None, **kwargs):
+    def __init__(
+        self,
+        metabolites,
+        basis_source,
+        manufacturer,
+        omega,
+        linewidth,
+        pulse_sequence,
+        acquisitions,
+        n_freqs,
+        sample_rate=2000,
+        samples=None,
+        name=None,
+        solver_version=None,
+        high_ppm=-4.5,
+        low_ppm=-1.0,
+        target_norm="none",
+        **kwargs,
+    ):
+        if solver_version != 2:
+            raise ValueError(
+                "QNet-basis solver changed: old checkpoints require fresh training "
+                "and cannot be loaded as corrected models"
+            )
         super().__init__(name=name, **kwargs)
-
         self.metabolites = sorted(metabolites)
         self.basis_source = basis_source
         self.manufacturer = manufacturer
-        self.omega = omega
+        self.omega = float(np.asarray(omega).item())
         self.linewidth = linewidth
         self.pulse_sequence = pulse_sequence
-        self.acquisitions = acquisitions
-        self.n_freqs = n_freqs
-        self.sample_rate = sample_rate
+        self.acquisitions = list(acquisitions)
+        self.n_freqs = int(n_freqs)
+        self.sample_rate = float(np.asarray(sample_rate).item())
         self.samples = samples
-
-        # Basis set matrices (one per acquisition)
+        self.high_ppm = float(high_ppm)
+        self.low_ppm = float(low_ppm)
+        self.target_norm = "none" if target_norm is None else target_norm
+        self.solver_version = solver_version
+        if self.target_norm not in {"none", "sum", "max"}:
+            raise ValueError("Unknown model target normalisation")
+        if (
+            not self.metabolites
+            or not self.acquisitions
+            or self.n_freqs < 2
+            or not np.isfinite([self.omega, self.sample_rate, self.high_ppm, self.low_ppm]).all()
+            or self.omega <= 0
+            or self.sample_rate <= 0
+            or self.high_ppm >= self.low_ppm
+        ):
+            raise ValueError("Invalid basis spectrum configuration")
         self.basis_matrices = {}
-
-        # Frequency axis for imperfection factor modulation
-        self.freq_axis = None
+        self.basis_fids = {}
+        self.crop_indices = None
+        self.ppm_grid = None
+        self.time_axis = None
+        self.basis_is_real = False
 
     def build(self, input_shape):
-        """Build the basis set matrices and frequency axis."""
-        super().build(input_shape)
-
-        # Load basis set from MRSNet
+        """Require a real basis and match the input export's FFT crop."""
         try:
-            # Try to load basis set with original samples (from basis files)
-            # We'll resize the matrices to match n_freqs later
             basis_obj = basis.Basis(
                 metabolites=self.metabolites,
                 source=self.basis_source,
@@ -96,221 +102,142 @@ class BasisLLSModule(keras.layers.Layer):
                 linewidth=self.linewidth,
                 pulse_sequence=self.pulse_sequence,
                 sample_rate=self.sample_rate,
-                samples=self.samples  # Use samples from dataset path
-            ).setup(Cfg.val['path_basis'], search_basis=Cfg.val['search_basis'])
-
-            # Construct basis matrices for each acquisition
-            for acq in self.acquisitions:
-                basis_matrix = self._construct_basis_matrix(basis_obj, acq)
-                self.basis_matrices[acq] = tf.constant(basis_matrix, dtype=tf.complex64)
-
-        except Exception as e:
-            print(f"Warning: Could not load basis set ({e}), using dummy basis matrices")
-            # Create dummy basis matrices for testing
-            for acq in self.acquisitions:
-                real_part = np.random.normal(0, 0.1, (self.n_freqs, len(self.metabolites)))
-                imag_part = np.random.normal(0, 0.1, (self.n_freqs, len(self.metabolites)))
-                dummy_matrix = real_part.astype(np.complex64) + imag_part.astype(np.complex64) * 1j
-                self.basis_matrices[acq] = tf.constant(dummy_matrix, dtype=tf.complex64)
-
-        # Create frequency axis for imperfection factor modulation
-        self.freq_axis = tf.constant(
-            np.linspace(-self.sample_rate/2, self.sample_rate/2, self.n_freqs),
-            dtype=tf.float32
-        )
-
-    def _construct_basis_matrix(self, basis_obj, acquisition):
-        """
-        Construct basis set matrix for a specific acquisition.
-
-        Parameters
-        ----------
-        basis_obj : Basis
-            MRSNet Basis object
-        acquisition : str
-            Acquisition type (e.g., 'edit_off', 'difference')
-
-        Returns
-        -------
-        numpy.ndarray
-            Complex basis matrix of shape (n_freqs, n_metabolites)
-        """
-        basis_matrix = np.zeros((self.n_freqs, len(self.metabolites)), dtype=complex)
-
-        for i, metabolite in enumerate(self.metabolites):
-            if metabolite in basis_obj.spectra and acquisition in basis_obj.spectra[metabolite]:
+                samples=self.samples,
+            ).setup(Cfg.val["path_basis"], search_basis=Cfg.val["search_basis"])
+        except Exception as error:
+            if Cfg.val.get("basis_lls_require_real", False):
+                raise RuntimeError("Real basis loading failed; dummy fallback is forbidden") from error
+            # Preserve the generic diagnostic fallback, forbidden by paper protocols.
+            self.crop_indices = tf.range(self.n_freqs, dtype=tf.int32)
+            self.time_axis = tf.constant(np.arange(self.n_freqs) / self.sample_rate, dtype=tf.float32)
+            self.ppm_grid = np.linspace(self.high_ppm, self.low_ppm, self.n_freqs)
+            for acquisition in self.acquisitions:
+                shape = (self.n_freqs, len(self.metabolites))
+                matrix = np.random.normal(0, 0.1, shape) + 1j * np.random.normal(0, 0.1, shape)
+                self.basis_matrices[acquisition] = tf.constant(matrix, dtype=tf.complex64)
+                fid = np.fft.ifft(np.fft.ifftshift(matrix.T, axes=-1), axis=-1)
+                self.basis_fids[acquisition] = tf.constant(fid, dtype=tf.complex64)
+            super().build(input_shape)
+            return
+        for acquisition in self.acquisitions:
+            fids = []
+            for metabolite in self.metabolites:
                 spectrum = basis_obj.spectra[metabolite][acquisition]
-                fft_data, _ = spectrum.get_f()
+                fid, grid, indices = self._resampled_fid(spectrum)
+                if self.ppm_grid is None:
+                    self.ppm_grid = grid
+                    self.crop_indices = tf.constant(indices, dtype=tf.int32)
+                    self.time_axis = tf.constant(np.arange(len(fid)) / self.sample_rate, dtype=tf.float32)
+                elif len(fid) != len(self.time_axis) or not np.array_equal(grid, self.ppm_grid):
+                    raise ValueError("Basis spectra do not share one exported ppm grid")
+                fids.append(fid)
+            fids = np.asarray(fids, dtype=np.complex64)
+            self.basis_fids[acquisition] = tf.constant(fids)
+            fft = np.fft.fftshift(np.fft.fft(fids, axis=-1), axes=-1)
+            self.basis_matrices[acquisition] = tf.constant(fft[:, indices].T, dtype=tf.complex64)
+        self.basis_is_real = True
+        super().build(input_shape)
 
-                # Resize to match training data size (n_freqs)
-                if len(fft_data) != self.n_freqs:
-                    if len(fft_data) > self.n_freqs:
-                        # Downsample: take the first n_freqs points (basis files are typically 4096, training data is 2048)
-                        fft_data = fft_data[:self.n_freqs]
-                    else:
-                        # Upsample: pad with zeros
-                        padded = np.zeros(self.n_freqs, dtype=complex)
-                        padded[:len(fft_data)] = fft_data
-                        fft_data = padded
+    def _resampled_fid(self, spectrum):
+        """Keep basis scaling while reproducing Spectrum.rescale_fft bins."""
+        sample_rate = float(np.asarray(spectrum.sample_rate).item())
+        omega = float(np.asarray(spectrum.omega).item())
+        if not (
+            np.isclose(sample_rate, self.sample_rate, rtol=1e-12, atol=0)
+            and np.isclose(omega, self.omega, rtol=1e-12, atol=0)
+        ):
+            raise ValueError("Basis sample rate or Larmor frequency differs from the model")
+        fft, native_grid = spectrum.get_f()
+        fft = np.asarray(fft)
+        if (
+            fft.ndim != 1
+            or not np.isfinite(fft).all()
+            or not np.isfinite(native_grid).all()
+            or (self.samples is not None and len(fft) != int(self.samples))
+            or np.min(native_grid) > self.high_ppm
+            or np.max(native_grid) < self.low_ppm
+        ):
+            raise ValueError("Basis does not cover the requested frequency grid")
+        bandwidth = sample_rate / (2.0 * omega)
+        length = int(2.0 * bandwidth / ((self.low_ppm - self.high_ppm) / self.n_freqs))
+        centre = float(np.asarray(spectrum.center_ppm + spectrum.b0_shift_ppm).item())
+        for _ in range(Cfg.val["spectrum_rescale_fft_max_repeats"] + 1):
+            full_grid = np.linspace(-1, 1, length) * bandwidth + centre
+            indices = np.flatnonzero((full_grid >= self.high_ppm) & (full_grid <= self.low_ppm))
+            if len(indices) == self.n_freqs:
+                break
+            length += 1
+        else:
+            raise ValueError("Cannot construct the requested basis frequency grid")
+        fid = np.fft.ifft(np.fft.ifftshift(fft))
+        fid = np.pad(fid, (0, max(0, length - len(fid))))[:length]
+        return fid, full_grid[indices], indices
 
-                basis_matrix[:, i] = fft_data
-            else:
-                # Zero spectrum if metabolite/acquisition not found
-                basis_matrix[:, i] = np.zeros(self.n_freqs, dtype=complex)
-
-        return basis_matrix
-
-    def _apply_imperfection_factors(self, basis_matrix, if_factors):
-        """
-        Apply imperfection factors to basis set matrix.
-
-        Parameters
-        ----------
-        basis_matrix : tensor
-            Basis set matrix of shape (n_freqs, n_metabolites)
-        if_factors : tensor
-            Imperfection factors of shape (batch, n_metabolites, 3)
-            where last dimension is [phase_shift, freq_shift, linewidth_dev]
-
-        Returns
-        -------
-        tensor
-            Modulated basis matrix of shape (batch, n_freqs, n_metabolites)
-        """
-        batch_size = tf.shape(if_factors)[0]
-        n_metabolites = tf.shape(if_factors)[1]
-
-        # Extract imperfection factors
-        phase_shifts = if_factors[:, :, 0]  # (batch, n_metabolites)
-        freq_shifts = if_factors[:, :, 1]  # (batch, n_metabolites)
-        linewidth_devs = if_factors[:, :, 2]  # (batch, n_metabolites)
-
-        # Expand dimensions for broadcasting
-        freq_axis = tf.expand_dims(tf.expand_dims(self.freq_axis, 0), 2)  # (1, n_freqs, 1)
-        phase_shifts = tf.expand_dims(phase_shifts, 1)  # (batch, 1, n_metabolites)
-        freq_shifts = tf.expand_dims(freq_shifts, 1)  # (batch, 1, n_metabolites)
-        linewidth_devs = tf.expand_dims(linewidth_devs, 1)  # (batch, 1, n_metabolites)
-
-        # Apply imperfection factors with consistent dtypes for complex operations
-        # Cast inputs to float32 to ensure dtype consistency when mixed precision is enabled
-        if Cfg.val.get('mixed_precision', False):
-            phase_shifts = tf.cast(phase_shifts, tf.float32)
-            freq_shifts = tf.cast(freq_shifts, tf.float32)
-            linewidth_devs = tf.cast(linewidth_devs, tf.float32)
-            freq_axis = tf.cast(freq_axis, tf.float32)
-
-        # Apply phase shift: multiply by exp(i * phase_shift)
-        phase_modulation = tf.exp(tf.complex(0.0, phase_shifts))
-
-        # Apply frequency shift: multiply by exp(i * 2π * freq_shift * t)
-        # Convert frequency shift from ppm to Hz
-        freq_shift_hz = freq_shifts * self.omega  # ppm to Hz
-        freq_modulation = tf.exp(tf.complex(0.0, 2 * np.pi * freq_shift_hz * freq_axis / self.sample_rate))
-
-        # Apply linewidth deviation: multiply by exp(-linewidth_dev * |freq|)
-        # This is a simplified model - in practice, linewidth affects the time domain
-        linewidth_modulation = tf.exp(tf.complex(-tf.abs(linewidth_devs) * tf.abs(freq_axis) / self.sample_rate, 0.0))
-
-        # Combine all modulations
-        total_modulation = phase_modulation * freq_modulation * linewidth_modulation
-
-        # Apply modulation to basis matrix
-        # basis_matrix: (n_freqs, n_metabolites)
-        # total_modulation: (batch, n_freqs, n_metabolites)
-        basis_matrix_expanded = tf.expand_dims(basis_matrix, 0)  # (1, n_freqs, n_metabolites)
-        modulated_basis = basis_matrix_expanded * total_modulation
-
-        return modulated_basis
+    def _modulated_basis(self, if_factors, acquisition):
+        """Apply physical imperfection factors before the FFT and crop."""
+        factors = tf.cast(if_factors, tf.float32)
+        factors = tf.ensure_shape(factors, (None, len(self.metabolites), 3))
+        tf.debugging.assert_all_finite(factors, "Non-finite imperfection factors")
+        time = self.time_axis[None, None, :]
+        phase = factors[:, :, 0, None]
+        shift_hz = factors[:, :, 1, None] * self.omega
+        width_hz = tf.abs(factors[:, :, 2, None])
+        exponent = tf.complex(-np.pi * width_hz * time, phase + 2.0 * np.pi * shift_hz * time)
+        fid = self.basis_fids[acquisition][None, :, :] * tf.exp(exponent)
+        fft = tf.signal.fftshift(tf.signal.fft(fid), axes=-1)
+        return tf.transpose(tf.gather(fft, self.crop_indices, axis=-1), (0, 2, 1))
 
     def call(self, if_factors, observed_spectrum, acquisition):
-        """
-        Apply LLS to estimate metabolite concentrations.
-
-        Parameters
-        ----------
-        if_factors : tensor
-            Imperfection factors tensor of shape (batch, n_metabolites, 3)
-        observed_spectrum : tensor
-            Observed spectrum tensor of shape (batch, n_freqs)
-        acquisition : str
-            Acquisition type string
-
-        Returns
-        -------
-        tensor
-            Estimated metabolite concentrations of shape (batch, n_metabolites)
-        """
-        # Get basis matrix for this acquisition
-        basis_matrix = self.basis_matrices[acquisition]
-
-        # Apply imperfection factors
-        modulated_basis = self._apply_imperfection_factors(basis_matrix, if_factors)
-
-        # Convert to real-valued problem for LLS
-        # Take real part of both basis and observed spectrum
-        real_basis = tf.math.real(modulated_basis)  # (batch, n_freqs, n_metabolites)
-        real_observed = tf.math.real(observed_spectrum)  # (batch, n_freqs)
-
-        # Ensure consistent dtypes for matrix operations when mixed precision is enabled
-        if Cfg.val.get('mixed_precision', False):
-            real_observed = tf.cast(real_observed, real_basis.dtype)
-
-        # Solve LLS: min ||M'c - y||²
-        # Solution: c = (M'^T M')^(-1) M'^T y
-
-        # Compute M'^T M' for each batch element
-        MtM = tf.matmul(real_basis, real_basis, transpose_a=True)  # (batch, n_metabolites, n_metabolites)
-
-        # Tikhonov regularization to ensure numerical stability
-        epsilon = tf.constant(1e-8, dtype=real_basis.dtype)
-        batch_size = tf.shape(MtM)[0]
-        n_met = tf.shape(MtM)[-1]
-        identity = tf.eye(n_met, batch_shape=[batch_size], dtype=MtM.dtype)
-        MtM_reg = MtM + epsilon * identity
-
-        # Compute M'^T y for each batch element
-        Mty = tf.matmul(real_basis, tf.expand_dims(real_observed, -1), transpose_a=True)  # (batch, n_metabolites, 1)
-
-        # Solve linear system: (MtM + eps I) * c = Mty
-        concentrations = tf.linalg.solve(MtM_reg, Mty)  # (batch, n_metabolites, 1)
-
-        # Squeeze the last dimension to get (batch, n_metabolites)
-        concentrations = tf.squeeze(concentrations, -1)
-
+        """Solve a real-valued fit and apply the configured target scale."""
+        observed = tf.cast(tf.math.real(observed_spectrum), tf.float32)
+        observed = tf.ensure_shape(observed, (None, self.n_freqs))
+        tf.debugging.assert_all_finite(observed, "Non-finite observed spectrum")
+        tf.debugging.assert_equal(tf.shape(observed)[0], tf.shape(if_factors)[0])
+        matrix = tf.math.real(self._modulated_basis(if_factors, acquisition))
+        normal = tf.matmul(matrix, matrix, transpose_a=True)
+        rhs = tf.matmul(matrix, observed[:, :, None], transpose_a=True)
+        ridge = tf.eye(len(self.metabolites), dtype=tf.float32) * 1e-8
+        concentrations = tf.squeeze(tf.linalg.solve(normal + ridge, rhs), -1)
+        concentrations = tf.debugging.check_numerics(concentrations, "Non-finite basis fit")
+        if self.target_norm != "none":
+            denominator = (
+                tf.reduce_sum(concentrations, axis=-1, keepdims=True)
+                if self.target_norm == "sum"
+                else tf.reduce_max(concentrations, axis=-1, keepdims=True)
+            )
+            denominator = tf.debugging.check_numerics(denominator, "Non-finite model target denominator")
+            tf.debugging.assert_positive(
+                denominator, message="Model target normalisation requires a positive denominator"
+            )
+            concentrations = concentrations / denominator
+        # Finite negative coefficients are retained; no prediction clipping.
         return concentrations
 
     def compute_output_shape(self, input_shape):
-        """Compute the output shape for the layer."""
-        # Input: if_factors (batch, n_metabolites, 3), observed_spectrum (batch, n_freqs)
-        # Output: concentrations (batch, n_metabolites)
-        if input_shape is None:
-            return (None, len(self.metabolites))
-
-        # Handle both single input and multiple inputs
-        if isinstance(input_shape, (list, tuple)) and len(input_shape) >= 2:
-            # Multiple inputs: if_factors and observed_spectrum
-            batch_size = input_shape[0][0] if input_shape[0] is not None else None
-        else:
-            # Single input case
-            batch_size = input_shape[0] if input_shape is not None else None
-
-        return (batch_size, len(self.metabolites))
+        """Return one coefficient per metabolite and input sample."""
+        return (input_shape[0], len(self.metabolites))
 
     def get_config(self):
-        """Get configuration for serialization."""
+        """Record solver semantics so old checkpoints cannot be reinterpreted."""
         config = super().get_config()
-        config.update({
-            'metabolites': self.metabolites,
-            'basis_source': self.basis_source,
-            'manufacturer': self.manufacturer,
-            'omega': self.omega,
-            'linewidth': self.linewidth,
-            'pulse_sequence': self.pulse_sequence,
-            'acquisitions': self.acquisitions,
-            'n_freqs': self.n_freqs,
-            'sample_rate': self.sample_rate,
-            'samples': self.samples
-        })
+        config.update(
+            {
+                "metabolites": self.metabolites,
+                "basis_source": self.basis_source,
+                "manufacturer": self.manufacturer,
+                "omega": self.omega,
+                "linewidth": self.linewidth,
+                "pulse_sequence": self.pulse_sequence,
+                "acquisitions": self.acquisitions,
+                "n_freqs": self.n_freqs,
+                "sample_rate": self.sample_rate,
+                "samples": self.samples,
+                "solver_version": self.solver_version,
+                "high_ppm": self.high_ppm,
+                "low_ppm": self.low_ppm,
+                "target_norm": self.target_norm,
+            }
+        )
         return config
 
 
@@ -347,7 +274,7 @@ def extract_basis_params_from_dataset_path(dataset_path):
     # Find the dataset name part (contains source, sample_rate, samples)
     dataset_name = None
     for part in path_parts:
-        if '_' in part and any(char.isdigit() for char in part):
+        if "_" in part and any(char.isdigit() for char in part):
             dataset_name = part
             break
 
@@ -355,11 +282,11 @@ def extract_basis_params_from_dataset_path(dataset_path):
         raise ValueError(f"Could not extract dataset name from path: {dataset_path}")
 
     # Parse dataset name: source_sample_rate_samples
-    name_parts = dataset_name.split('_')
+    name_parts = dataset_name.split("_")
     if len(name_parts) < 3:
         raise ValueError(f"Invalid dataset name format: {dataset_name}")
 
-    source = '_'.join(name_parts[:-2])  # Everything except last two parts
+    source = "_".join(name_parts[:-2])  # Everything except last two parts
     sample_rate = int(name_parts[-2])
     samples = int(name_parts[-1])
 
@@ -371,46 +298,59 @@ def extract_basis_params_from_dataset_path(dataset_path):
     pulse_sequence = None
 
     for i, part in enumerate(path_parts):
-        if part in ['siemens', 'ge', 'philips']:
+        if part in ["siemens", "ge", "philips"]:
             manufacturer = part
-        elif part.replace('.', '').isdigit() and manufacturer is not None:
+        elif part.replace(".", "").isdigit() and manufacturer is not None:
             if omega is None:
                 omega = float(part)
             elif linewidth is None:
                 linewidth = float(part)
-        elif '-' in part and any(char.isupper() for char in part):
-            metabolites = part.split('-')
-        elif part in ['megapress', 'press', 'steam']:
+        elif "-" in part and any(char.isupper() for char in part):
+            metabolites = part.split("-")
+        elif part in ["megapress", "press", "steam"]:
             pulse_sequence = part
 
     # Set defaults if not found
     if manufacturer is None:
-        manufacturer = 'siemens'
+        manufacturer = "siemens"
     if omega is None:
         omega = 123.23
     if linewidth is None:
         linewidth = 2.0
     if metabolites is None:
-        metabolites = ['Cr', 'GABA', 'Glu', 'Gln', 'NAA']
+        metabolites = ["Cr", "GABA", "Glu", "Gln", "NAA"]
     if pulse_sequence is None:
-        pulse_sequence = 'megapress'
+        pulse_sequence = "megapress"
 
     return {
-        'source': source,
-        'manufacturer': manufacturer,
-        'omega': omega,
-        'linewidth': linewidth,
-        'metabolites': metabolites,
-        'pulse_sequence': pulse_sequence,
-        'sample_rate': sample_rate,
-        'samples': samples
+        "source": source,
+        "manufacturer": manufacturer,
+        "omega": omega,
+        "linewidth": linewidth,
+        "metabolites": metabolites,
+        "pulse_sequence": pulse_sequence,
+        "sample_rate": sample_rate,
+        "samples": samples,
     }
 
 
-def create_basis_lls_module(metabolites, basis_source='lcmodel', manufacturer='siemens',
-                           omega=123.23, linewidth=2.0, pulse_sequence='megapress',
-                           acquisitions=['edit_off', 'difference'], n_freqs=2048,
-                           sample_rate=2000, samples=None, name='basis_lls'):
+def create_basis_lls_module(
+    metabolites,
+    basis_source="lcmodel",
+    manufacturer="siemens",
+    omega=123.23,
+    linewidth=2.0,
+    pulse_sequence="megapress",
+    acquisitions=["edit_off", "difference"],
+    n_freqs=2048,
+    sample_rate=2000,
+    samples=None,
+    name="basis_lls",
+    solver_version=2,
+    high_ppm=-4.5,
+    low_ppm=-1.0,
+    target_norm="none",
+):
     """
     Create a BasisLLSModule with default parameters.
 
@@ -423,7 +363,7 @@ def create_basis_lls_module(metabolites, basis_source='lcmodel', manufacturer='s
     manufacturer : str, optional
         Scanner manufacturer. Defaults to 'siemens'
     omega : float, optional
-        Larmor frequency in Hz. Defaults to 123.23
+        Larmor frequency in MHz. Defaults to 123.23
     linewidth : float, optional
         Linewidth parameter. Defaults to 2.0
     pulse_sequence : str, optional
@@ -455,5 +395,9 @@ def create_basis_lls_module(metabolites, basis_source='lcmodel', manufacturer='s
         n_freqs=n_freqs,
         sample_rate=sample_rate,
         samples=samples,
-        name=name
+        name=name,
+        solver_version=solver_version,
+        high_ppm=high_ppm,
+        low_ppm=low_ppm,
+        target_norm=target_norm,
     )

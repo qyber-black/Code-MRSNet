@@ -23,6 +23,7 @@ import seaborn as sns
 from scipy.stats import linregress
 
 from mrsnet.cfg import Cfg
+from mrsnet.normalisation import normalise_concentrations
 
 
 def _sns_histplot_safe(ax, data, kde=False, bins='auto', color=None):
@@ -63,7 +64,8 @@ def _sns_histplot_safe(ax, data, kde=False, bins='auto', color=None):
 
 
 def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, show_conc=False, norm=None,
-                  verbose=0, image_dpi=[300], screen_dpi=96, create_plots=True, clean_spectra=None):
+                  verbose=0, image_dpi=[300], screen_dpi=96, create_plots=True, clean_spectra=None,
+                  predictions=None):
   """Analyze model performance and generate reports.
 
   Performs comprehensive analysis of model performance including error metrics,
@@ -85,6 +87,7 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
       screen_dpi (int, optional): DPI for screen display. Defaults to 96
       create_plots (bool, optional): Whether to create and save plots. Defaults to True
       clean_spectra (numpy.ndarray, optional): Clean spectra ground truth for dual-output analysis. Defaults to None
+      predictions (numpy.ndarray, optional): Saved raw model outputs to analyse without a new forward pass.
 
   Returns
   -------
@@ -98,7 +101,11 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   # Analyse data (assumed to be exported from dataset in format as used by model for train call)
   if not os.path.exists(folder):
     os.makedirs(folder)
-  pre = model.predict(inp,verbose=verbose)
+  pre = model.predict(inp,verbose=verbose) if predictions is None else np.asarray(predictions)
+  if len(pre) != len(inp):
+    raise ValueError("Prediction and input sample counts differ")
+  if model.output == "concentrations" and (pre.ndim != 2 or pre.shape[1] != len(model.metabolites)):
+    raise ValueError("Prediction metabolite count differs from model metadata")
 
   if model.output == "spectra":
     # Analyse output spectra and errors, if possible, as we have a pure autoencoder
@@ -108,30 +115,28 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   if model.output != "concentrations":
     raise RuntimeError(f"Unknown output from model: {model.output} - cannot analyse")
 
-  if norm == 'max':
-    for i in range(pre.shape[0]):
-      dpre = np.max(pre[i, :])
-      if dpre != 0:
-        pre[i] /= dpre
-      if len(out) > 0:
-        dout = np.max(out[i, :])
-        if dout != 0:
-          out[i] /= dout
-  elif norm == 'sum':
-    for i in range(pre.shape[0]):
-      dpre = np.sum(pre[i, :])
-      if dpre != 0:
-        pre[i] /= dpre
-      if len(out) > 0:
-        dout = np.sum(out[i, :])
-        if dout != 0:
-          out[i] /= dout
-  elif norm != 'none' and norm is not None:
-    raise RuntimeError(f"Unknown norm {norm}")
+  evaluation_norm = "none" if norm is None else norm
+  pre, prediction_scale = normalise_concentrations(pre, evaluation_norm, role="prediction")
+  truth_scale = None
+  if len(out) > 0:
+    out, truth_scale = normalise_concentrations(out, evaluation_norm, role="target")
+  normalisation = {
+      "schema": 1,
+      "training_target": getattr(model, "norm", None),
+      "evaluation": evaluation_norm,
+      "metabolites": list(model.metabolites),
+      "clipping": False,
+      "invalid_policy": "error",
+      "negative_prediction_rows": int(np.sum(np.any(pre < 0, axis=1))),
+      "prediction_source": "model.predict" if predictions is None else "provided_raw_outputs",
+      "prediction_scale": prediction_scale.tolist(),
+      "truth_scale": None if truth_scale is None else truth_scale.tolist(),
+    }
 
   # Analyse if we have concentrations
   if len(out) > 0:
-    info, error = _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi, create_plots)
+    info, error = _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi,
+                                       screen_dpi, create_plots, normalisation)
   else:
     info = None
     error = None
@@ -206,7 +211,8 @@ def analyse_model(model, inp, out, folder, prefix, id=None, save_conc=False, sho
   return pre, info, error
 
 
-def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi, create_plots=True):
+def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_dpi, screen_dpi,
+                         create_plots=True, normalisation=None):
   """Analyze model prediction errors.
 
   Parameters
@@ -233,6 +239,8 @@ def _analyse_model_error(model, pre, out, folder, prefix, norm, verbose, image_d
   abserror_min = np.min(abserror,axis=0)
   abserror_max = np.max(abserror,axis=0)
   info = { 'prefix': prefix, 'norm': norm }
+  if normalisation is not None:
+    info['normalisation'] = normalisation
 
   # Per metabolite plots/data
   if create_plots:
