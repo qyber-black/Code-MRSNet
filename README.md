@@ -25,25 +25,26 @@ Spectral amplitudes share one scaling factor across acquisitions: the maximum
 absolute OFF amplitude when OFF is present, otherwise the maximum across all
 requested acquisitions. OFF and ON are not independently rescaled.
 
-Model targets retain the configured none, sum or max normalisation. Evaluation
-normalisation is separate and configurable. For the phantom study, use max:
-divide truth and predictions independently by their own maximum across Cr,
-GABA, Gln, Glu and NAA. Finite negative predictions are retained; non-finite
-values and non-positive normalisation denominators raise errors. Overall MAE
-includes all five metabolites and gives equal weight to every spectrum.
-These errors measure relative composition, not concentrations in mM.
+Model targets use the configured none, sum or max normalisation. Evaluation
+normalisation is separate and configurable; with max normalisation, truth and
+predictions are each divided by their own maximum over the quantified
+metabolites. Finite negative predictions are retained; non-finite values and
+non-positive normalisation denominators raise errors. Such errors measure
+relative composition, not concentrations in mM.
 
-The current 13 distributed model instances and their run-local evaluations
-are indexed in `data/model-dist/paper-model-registry/model_registry.json`.
-Checkpoints follow the standard model/configuration/dataset/trainer paths.
-Both QNet variants and all five fixed/augmented pairs are included.
+The distributed models in `data/model-dist` are indexed in
+`data/model-dist/paper-model-registry/model_registry.json`. Checkpoints follow
+the standard model/configuration/dataset/trainer paths.
 
-For spectral comparisons, `mrsnet.magnitude.magnitude_descriptors` measures
-paired magnitude arrays using supplied ppm coordinates, metabolite windows
-and baseline exclusions. It preserves shared OFF scaling across acquisitions
-and does not use phase. `mrsnet.linewidth.fit_basis_linewidth` fits effective
-linewidth and frequency shift to a fixed-composition FID and observed
-magnitude. Both functions are usable without paper-repository imports.
+## Analysis modules
+
+These library modules can be used without the command-line interface:
+
+* `mrsnet.magnitude.magnitude_descriptors` measures paired magnitude arrays
+  using supplied ppm coordinates, metabolite windows and baseline exclusions.
+  It preserves shared OFF scaling across acquisitions and does not use phase.
+* `mrsnet.linewidth.fit_basis_linewidth` fits an effective linewidth and
+  frequency shift to a fixed-composition FID and an observed magnitude.
 
 ## Getting Started
 
@@ -168,7 +169,7 @@ The additional git submodules containing the data are
 
 * [Data - MRS - MEGAPRESS Spectra](https://qyber.black/mrs/data-megapress-spectra) -
   Swansea benchmark phantom datasets collected at Swansea University's 3T Siemens scanner (in `data/benchmark`);
-* [Data - MRSNet - Models - Dist](https://qyber.black/mrs/results-mrsnet-models-dist) -
+* [Results - MRSNet - Models](https://qyber.black/mrs/results-mrsnet-models) -
   Best performing trained models for MRSNet (in `data/model-dist`);
 * [Data - MRSNet - Basis Spectra - Dist](https://qyber.black/mrs/data-mrsnet-basis) -
   Standard basis sets used for MEGAPRESS simulation (in `data/basis-dist`).
@@ -463,6 +464,8 @@ Released versions:
 * v2.1.1 - checkpoint restoration, input-channel and basis-solver fixes,
   separate evaluation normalisation, robust basis-linewidth fitting and
   updated distributed models and results.
+* v2.1.2 - scripts in `etc/` reproducing the result data of the GABA phantom
+  benchmark paper from the distributed models and basis.
 
 ## Locations
 
@@ -493,12 +496,12 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1.1. Software, 2026.
+Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1.2. Software, 2026.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)
 
 Machine-readable release metadata is provided in `CITATION.cff` for GitHub
-and `.zenodo.json` for Zenodo. Both describe version 2.1.1; Zenodo uses
+and `.zenodo.json` for Zenodo. Both describe version 2.1.2; Zenodo uses
 `.zenodo.json` when both files are present. When the release DOI and date
 are assigned, add `doi` and `date-released` to `CITATION.cff`, add `doi`
 and `publication_date` to `.zenodo.json`, and update this citation with
