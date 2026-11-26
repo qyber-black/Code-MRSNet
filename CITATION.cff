@@ -1,11 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 Frank C Langbein, Cardiff University
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Add the version-specific DOI and date-released once assigned for v2.1.2.
+# Update version, doi and date-released for each release (the DOI is assigned by Zenodo).
 cff-version: 1.2.0
 message: "If you use MRSNet, please cite this software release."
 type: software
 title: "Code - MRSNet"
 version: "2.1.2"
+doi: "10.5281/zenodo.24564476"
+date-released: "2026-11-26"
 authors:
   - family-names: "Ma"
     given-names: "Zien"

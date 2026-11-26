@@ -499,10 +499,11 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1.2. Software, 2026.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)
+[[DOI:10.5281/zenodo.24564476]](https://doi.org/10.5281/zenodo.24564476)
 
 Machine-readable release metadata is provided in `CITATION.cff` for GitHub
-and `.zenodo.json` for Zenodo. Both describe version 2.1.2; Zenodo uses
-`.zenodo.json` when both files are present. When the release DOI and date
-are assigned, add `doi` and `date-released` to `CITATION.cff`, add `doi`
-and `publication_date` to `.zenodo.json`, and update this citation with
-the version-specific DOI. Do not reuse an earlier release's DOI.
+and `.zenodo.json` for Zenodo. Zenodo uses `.zenodo.json` when both files are
+present and assigns a new DOI to every release, so `.zenodo.json` carries no
+DOI. Before a release, update the version in both files; once Zenodo has
+assigned the DOI, add it and the release date to `CITATION.cff` and to this
+citation. Do not reuse an earlier release's DOI.
