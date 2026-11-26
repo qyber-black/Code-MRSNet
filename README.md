@@ -466,6 +466,8 @@ Released versions:
   updated distributed models and results.
 * v2.1.2 - scripts in `etc/` reproducing the result data of the GABA phantom
   benchmark paper from the distributed models and basis.
+* v2.1.3 - composition-matched gap decomposition (`etc/composition_matched_decomposition.py`)
+  and its stage in the paper data generator.
 
 ## Locations
 
@@ -496,14 +498,13 @@ For any general enquiries relating to this project, [send an e-mail](mailto:gitl
 
 ## Citation
 
-Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1.2. Software, 2026.
+Z Ma, M Chandler, SM Shermer, FC Langbein. **Code - MRSNet**. Version 2.1.3. Software, 2026.
 [[DEV:https://qyber.black/mrs/code-mrsnet]](https://qyber.black/mrs/code-mrsnet)
 [[MIRROR:https://github.com/qyber-black/code-mrsnet]](https://github.com/qyber-black/code-mrsnet)
-[[DOI:10.5281/zenodo.24564476]](https://doi.org/10.5281/zenodo.24564476)
 
 Machine-readable release metadata is provided in `CITATION.cff` for GitHub
 and `.zenodo.json` for Zenodo. Zenodo uses `.zenodo.json` when both files are
-present and assigns a new DOI to every release, so `.zenodo.json` carries no
-DOI. Before a release, update the version in both files; once Zenodo has
-assigned the DOI, add it and the release date to `CITATION.cff` and to this
-citation. Do not reuse an earlier release's DOI.
+present and assigns a new DOI to every release after it is tagged, so neither
+file carries a DOI; the DOI of each release is listed on Zenodo. Before a
+release, update the version in both files and the release date in
+`CITATION.cff`.

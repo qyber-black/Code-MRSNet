@@ -7,8 +7,7 @@
 
 r"""Rerun or verify the composition-matched simulation control of the GABA phantom paper.
 
-Z Ma, SM Shermer, O Karakus, FC Langbein. A GABA Phantom Benchmark for
-Simulation-Trained MRS Quantification at 3 T (MELBA submission, 2026); the
+Z Ma, SM Shermer, O Karakus, FC Langbein (MELBA submission, 2026); the
 control is its Table "tab:transfer_mae" and the fold ranges in its abstract.
 
 The control simulates the 144 phantom preparation compositions with the

@@ -1,6 +1,6 @@
 {
   "title": "Code - MRSNet",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "upload_type": "software",
   "description": "MRSNet provides neural-network quantification of magnetic resonance spectra, with a focus on MEGA-PRESS, together with basis simulation, dataset generation, model training, model selection and spectral analysis.",
   "creators": [

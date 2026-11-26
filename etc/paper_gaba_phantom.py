@@ -7,8 +7,7 @@
 
 r"""Generate the result data of the GABA phantom paper from the released data repositories.
 
-Z Ma, SM Shermer, O Karakus, FC Langbein. A GABA Phantom Benchmark for
-Simulation-Trained MRS Quantification at 3 T (MELBA submission, 2026).
+Z Ma, SM Shermer, O Karakus, FC Langbein (MELBA submission, 2026).
 
 The paper repository renders its tables, LaTeX macros and figures from these
 files (its scripts/model_mae_analysis/*.py, driven by its Makefile). This script
@@ -16,7 +15,12 @@ only produces data: it renders no table, macro or figure, loads no model and run
 no inference in its default path. It does not import the paper repository and
 needs only NumPy (it does not import the mrsnet library). The composition-matched
 control, which needs inference, is the separate script etc/composition_matched.py;
-its finished result folder is packaged by the stage composition below.
+its finished result folder is packaged by the stage composition below. Its
+linewidth/noise decomposition, likewise inference, is the separate script
+etc/composition_matched_decomposition.py; its result folder is verified and
+packaged by the stage decomposition below. The per-metabolite signal-gain fit
+is the separate script etc/metabolite_gain_fit.py (mrsnet library, SciPy, no
+TensorFlow); the stage gains below reruns it and packages its result folder.
 
 Inputs (all released; paths below the MRSNet checkout --code-root, default: the
 checkout containing this script):
@@ -32,6 +36,11 @@ checkout containing this script):
 * data/model-extra          results-mrsnet-models-extra (searched for folds)
 * MANIFEST_CURATED below    curated identity and dependency policy (stage manifest)
 * optionally a finished ``etc/composition_matched.py --outdir DIR`` result folder
+* a finished ``etc/composition_matched_decomposition.py`` result folder (default:
+  the released data/sim2real/paper-gaba-phantom/composition-decomposition)
+* the released data/sim2real/paper-gaba-phantom/metabolite-gains folder, if present,
+  and an interpreter with the mrsnet dependencies for etc/metabolite_gain_fit.py
+  (--gains-python, --gains-python-path)
 
 Outputs (below --outdir, default data/sim2real/paper-gaba-phantom, i.e. the
 results-mrsnet-sim2real repository). The paper consumer of each file is named in
@@ -45,6 +54,8 @@ the docstring of the stage that writes it:
                       descriptive_input_sha256.json}             stage descriptive
   cnn-selection/simple_grid_ranked.csv                           stage cnn
   composition-matched/*                                          stage composition
+  composition-decomposition/*                                    stage decomposition
+  metabolite-gains/*                                             stage gains
   provenance.json        script and input hashes of the last run of each stage
 
 The spectral measurements (data/sim2real/magnitude-residuals, linewidth) and the
@@ -56,6 +67,8 @@ Usage, from the repository root::
   etc/paper_gaba_phantom.py                            # all non-inference stages
   etc/paper_gaba_phantom.py --stage selected           # one stage (repeatable)
   etc/paper_gaba_phantom.py --composition-matched DIR  # also package DIR
+  etc/paper_gaba_phantom.py --decomposition DIR        # verify and package another decomposition
+  etc/paper_gaba_phantom.py --gains-python PY --gains-python-path DIRS  # interpreter for stage gains
 
 Every stage checks its inputs (registry checkpoint and result pins, saved summaries
 against raw arrays, benchmark metadata against saved truth) and fails rather than
@@ -181,6 +194,81 @@ MATCHED_FILES = (
   *(m + ".npz" for m in MATCHED_MODELS),
   *(m + "-phantom-runtime-control.npz" for m in MATCHED_MODELS),
 )
+# Files of an etc/composition_matched_decomposition.py result folder that the paper renders from.
+DECOMPOSITION = "data/sim2real/paper-gaba-phantom/composition-decomposition"
+DECOMPOSITION_VARIANTS = ("A-baseline", "B-linewidth", "C-noise", "D-linewidth-noise")
+DECOMPOSITION_FILES = ("protocol.json", "metrics.csv", *(v + ".npz" for v in DECOMPOSITION_VARIANTS))
+# Inputs whose SHA-256 a decomposition protocol must record (besides the registry
+# checkpoints and metadata, the YAE phantom inputs and the basis files of every
+# linewidth used, which are derived below), whatever its own list says.
+DECOMPOSITION_REFERENCE = "data/sim2real/paper-gaba-phantom/composition-matched"
+DECOMPOSITION_LINEWIDTHS = "data/sim2real/linewidth/basis-mixture-off/linewidth_per_spectrum.csv"
+DECOMPOSITION_SOURCES = (
+  "etc/composition_matched_decomposition.py",
+  "etc/composition_matched.py",
+  REGISTRY,
+  DECOMPOSITION_LINEWIDTHS,
+  *(DECOMPOSITION_REFERENCE + "/" + n for n in ("metrics.csv", *(m + ".npz" for m in MATCHED_MODELS))),
+  *(
+    "mrsnet/" + n
+    for n in (
+      "basis.py",
+      "dataset.py",
+      "spectrum.py",
+      "molecules.py",
+      "benchmark_data.py",
+      "normalisation.py",
+      "cfg.py",
+      "getfolder.py",
+      "cnn.py",
+      "ae_quantifier.py",
+      "fcnn.py",
+      "qnet.py",
+      "basis_lls.py",
+      "train.py",
+    )
+  ),
+)
+BASIS_DIR = "data/basis-dist/fid-a-2d/basis_files/"
+BASIS_FILE = re.compile(r"FIDA2D_([A-Za-z0-9]+)_MEGAPRESS_EDIT(ON|OFF)_(\d+\.\d\d)_2000_4096_123\.23\.mat")
+# Thread settings under which the decomposition is run and recorded.
+DECOMPOSITION_THREADS = {"TF_NUM_INTRAOP_THREADS": "4", "TF_NUM_INTEROP_THREADS": "2", "OPENBLAS_NUM_THREADS": "2"}
+# Result folder of etc/metabolite_gain_fit.py, its files, and the files a rerun must reproduce byte for byte.
+GAINS = "data/sim2real/paper-gaba-phantom/metabolite-gains"
+GAINS_FILES = ("series_gains.csv", "per_spectrum.csv", "recovery.csv", "gate1.json", "README.md", "protocol.json")
+GAINS_REPRODUCED = GAINS_FILES[:-1]
+# Inputs whose SHA-256 a gains protocol must record (besides the ten 1.0 Hz basis files).
+GAINS_SOURCES = (
+  "etc/metabolite_gain_fit.py",
+  "data/sim2real/paper-gaba-phantom/benchmark_manifest.json",
+  "data/benchmark/benchmark_sequences.json",
+  DECOMPOSITION_LINEWIDTHS,
+  DECOMPOSITION + "/protocol.json",
+  *(
+    "data/model-dist/qnet_default/Cr-GABA-Gln-Glu-NAA/megapress/edit_off-edit_on/real/sum/16/2000/"
+    "fid-a-2d_2000_4096_siemens_123.23_2.0_Cr-GABA-Gln-Glu-NAA_megapress_sobol_1.0-adc_normal-0.0-0.03_100000-1/"
+    "NoValidation-1/evaluation/phantom/" + n
+    for n in ("report.json", "inputs.npz")
+  ),
+  *(
+    "mrsnet/" + n
+    for n in (
+      "basis.py",
+      "benchmark_data.py",
+      "cfg.py",
+      "dataset.py",
+      "linewidth.py",
+      "molecules.py",
+      "normalisation.py",
+      "robust_linewidth.py",
+      "spectrum.py",
+    )
+  ),
+)
+# Thread settings under which the gain fit is run and recorded.
+GAINS_THREADS = {"OPENBLAS_NUM_THREADS": "2", "OMP_NUM_THREADS": "2"}
+# Stages in the order they run.
+STAGES = ("manifest", "selected", "audit", "descriptive", "cnn", "composition", "decomposition", "gains")
 
 
 # ------------------------------------------------------------------ helpers
@@ -962,6 +1050,370 @@ def stage_composition(code, out, source, run, python):
   }
 
 
+# ------------------------------------------------------------------ stage: decomposition
+def decomposition_linewidths(code, protocol):
+  """Recompute the linewidth mapping of a decomposition protocol and return its basis linewidths.
+
+  The complete basis linewidths (all ten ON/OFF files present) are listed from
+  the checkout and must equal the protocol's grid; each spectrum's fitted
+  linewidth in DECOMPOSITION_LINEWIDTHS is mapped to the nearest of them (ties
+  to the smaller) and must give the protocol's mapping exactly.
+  """
+  record = protocol["linewidth"]
+  need = {(m, a) for m in METABOLITES for a in ("ON", "OFF")}
+  found = {}
+  for path in child(code, BASIS_DIR).iterdir():
+    match = BASIS_FILE.fullmatch(path.name)
+    if match:
+      found.setdefault(float(match[3]), set()).add((match[1], match[2]))
+  grid = np.asarray(sorted(lw for lw, have in found.items() if need <= have))
+  if grid.tolist() != record["available_complete_basis_linewidths_hz"]:
+    raise ValueError("decomposition basis grid differs from the checkout")
+  with child(code, DECOMPOSITION_LINEWIDTHS).open(newline="") as stream:
+    rows = list(csv.DictReader(stream))
+  fitted = np.asarray([float(r["linewidth_hz"]) for r in rows])
+  if len(rows) != 144 or not np.isfinite(fitted).all():
+    raise ValueError("unexpected fitted linewidth table")
+  distance = np.abs(grid[None, :] - fitted[:, None])
+  nearest = grid[np.argmax(distance <= distance.min(axis=1, keepdims=True) + 1e-9, axis=1)]
+  expected = {
+    r["spectrum_id"]: [f, float(b), float(b) - f, r["accepted"] == "True", r["rejection_reasons"]]
+    for r, f, b in zip(rows, fitted.tolist(), nearest, strict=True)
+  }
+  saved = {
+    r["spectrum_id"]: [
+      r["fitted_linewidth_hz"],
+      r["basis_linewidth_hz"],
+      r["difference_hz"],
+      r["fit_accepted"],
+      r["fit_flags"],
+    ]
+    for r in record["mapping"]
+  }
+  if saved != expected or len(record["mapping"]) != 144:
+    raise ValueError("decomposition linewidth mapping differs from its recomputation")
+  if record["basis_linewidths_used"] != sorted(set(nearest.tolist())):
+    raise ValueError("decomposition basis linewidths used differ from the mapping")
+  return {sid: v[1] for sid, v in expected.items()}
+
+
+def verify_decomposition(code, source):
+  """Check a decomposition result folder against its pinned inputs and the control.
+
+  Requires a complete protocol whose recorded SHA-256 keys are exactly the fixed
+  set DECOMPOSITION_SOURCES plus the five registry checkpoints and metadata, the
+  YAE phantom inputs and the ten basis files of every linewidth loaded (2 Hz and
+  the recomputed mapping), each matching the checkout; the linewidth mapping
+  recomputed from DECOMPOSITION_LINEWIDTHS and the checkout's basis grid
+  (decomposition_linewidths); the A-baseline predictions and input hashes to
+  equal the released control's; the fixed-sigma noise to have passed its mirror
+  check against Dataset.add_noise over the calibrated sigma range; the
+  per-spectrum basis linewidths and sigmas of the arrays to equal the protocol's,
+  and the protocol's sigma summaries and counts to equal their recomputation;
+  and every MAE, baseline MAE, phantom MAE and gap fraction of metrics.csv to
+  equal the values recomputed from the raw arrays (1e-12). Returns the hashes of
+  the control files that the check read.
+
+  The B, C and D predictions themselves cannot be verified without inference:
+  this check covers their inputs' provenance and the consistency of metrics.csv
+  with the saved predictions, not that the models produce those predictions.
+  Only a rerun (--run-decomposition) does that.
+  """
+  protocol = json.loads((source / "protocol.json").read_text())
+  if (
+    protocol.get("status") != "complete"
+    or protocol.get("models") != list(MATCHED_MODELS)
+    or list(protocol.get("variants", {})) != list(DECOMPOSITION_VARIANTS)
+    or protocol.get("spectra") != 144
+    or protocol.get("reference") != DECOMPOSITION_REFERENCE
+  ):
+    raise ValueError("incomplete composition-decomposition protocol")
+  if protocol["runtime"]["threads"] != DECOMPOSITION_THREADS:
+    raise ValueError("decomposition not run with the recorded thread settings")
+  linewidth = decomposition_linewidths(code, protocol)
+  entries = {
+    e["paper_name"]: e
+    for e in json.loads(child(code, REGISTRY).read_text())["instances"]
+    if e["regime"] == "fixed" and e["paper_name"] in MATCHED_MODELS
+  }
+  if set(entries) != set(MATCHED_MODELS):
+    raise ValueError("principal fixed models missing from the registry")
+  required = set(DECOMPOSITION_SOURCES)
+  for entry in entries.values():
+    required |= {str(child(code, entry[k + "_path"]).relative_to(code)) for k in ("checkpoint", "metadata")}
+  phantom = child(code, entries["YAE"]["phantom_result"].removeprefix("code/")) / "inputs.npz"
+  required.add(str(phantom.relative_to(code)))
+  loaded = sorted({2.0, *linewidth.values()})
+  required |= {
+    f"{BASIS_DIR}FIDA2D_{m}_MEGAPRESS_EDIT{a}_{lw:.2f}_2000_4096_123.23.mat"
+    for lw in loaded
+    for m in METABOLITES
+    for a in ("OFF", "ON")
+  }
+  if set(protocol["source_sha256"]) != required:
+    raise ValueError("decomposition source hashes are not the required set")
+  for name, digest in protocol["source_sha256"].items():
+    if sha256(child(code, name)) != digest:
+      raise ValueError("decomposition input changed: " + name)
+  gate = protocol["baseline_gate"]
+  if set(gate) != set(MATCHED_MODELS) or not all(
+    g["ids_equal"] and g["input_hashes_equal"] and g["max_abs_mae_difference"] <= 1e-12 for g in gate.values()
+  ):
+    raise ValueError("decomposition baseline gate failed")
+  reference = child(code, DECOMPOSITION_REFERENCE)
+  control = json.loads((reference / "protocol.json").read_text())
+  seeds = protocol["noise_seeds"]
+  if seeds != control["noise_seeds"] or protocol["noise_repeats"] != len(seeds):
+    raise ValueError("decomposition noise seeds differ from the control")
+  noise_record = protocol["noise"]
+  mirror = {(c["basis"], c["sigma_draw"][1]): c for c in noise_record["fixed_noise_mirror_check"]}
+  if set(mirror) != {(b, m) for b in ("2Hz", "matched") for m in (0.03, 0.2)} or not all(
+    c["exports_identical"] is True and c["seeds"] == seeds and c["realisations"] == 144 * len(seeds)
+    for c in mirror.values()
+  ):
+    raise ValueError("decomposition fixed-sigma noise not mirror-checked")
+  sigmas = {}
+  for variant, basis in (("C-noise", "2Hz"), ("D-linewidth-noise", "matched")):
+    values = np.asarray([r[variant + "_sigma"] for r in noise_record["per_spectrum"]])
+    record = noise_record[variant]
+    summary = [values.min(), np.median(values), values.mean(), values.max()]
+    if (
+      len(values) != 144
+      or not np.isfinite(values).all()
+      or (values < 0).any()
+      or not np.allclose(summary, [record["sigma"][k] for k in ("min", "median", "mean", "max")], rtol=0, atol=1e-15)
+      or int(np.sum(values > 0.03)) != record["sigma_above_training_max_0.03"]
+      or int(np.sum(values == 0)) != record["sigma_zero_noiseless_level_exceeds_phantom"]
+      or values.max() > mirror[basis, 0.2]["drawn_sigma_max"]
+    ):
+      raise ValueError("decomposition sigma record inconsistent: " + variant)
+    sigmas[variant] = dict(zip([r["spectrum_id"] for r in noise_record["per_spectrum"]], values.tolist(), strict=True))
+  inputs = {}
+  for name in ("protocol.json", "metrics.csv", *(m + ".npz" for m in MATCHED_MODELS)):
+    inputs[str((reference / name).relative_to(code))] = sha256(reference / name)
+  with (reference / "metrics.csv").open(newline="") as stream:
+    released = {(r["model"], r["domain"], r["metabolite"]): float(r["mae"]) for r in csv.DictReader(stream)}
+  arrays = {}
+  for variant in DECOMPOSITION_VARIANTS:
+    with np.load(source / (variant + ".npz"), allow_pickle=False) as saved:
+      arrays[variant] = {k: saved[k] for k in saved.files}
+  computed = {}
+  for model in MATCHED_MODELS:
+    with np.load(reference / (model + ".npz"), allow_pickle=False) as saved:
+      ref = {k: saved[k] for k in ("id", "truth", "prediction_raw", "input_sha256")}
+    ids = ref["id"].tolist()
+    noisy_truth = np.tile(ref["truth"], (len(seeds), 1))
+    for variant in DECOMPOSITION_VARIANTS:
+      saved = arrays[variant]
+      prediction = saved["prediction_raw_" + model]
+      matched = variant in ("B-linewidth", "D-linewidth-noise")
+      if (
+        saved["id"].tolist() != ids
+        or not np.array_equal(saved["truth"], ref["truth"])
+        or saved["noise_seeds"].tolist() != seeds
+        or prediction.shape != (len(seeds) + 1, 144, 5)
+        or saved["basis_linewidth_hz"].tolist() != [linewidth[i] if matched else 2.0 for i in ids]
+      ):
+        raise ValueError(f"decomposition arrays differ from protocol or control: {variant}/{model}")
+      if variant in ("C-noise", "D-linewidth-noise"):
+        sigma = [sigmas[variant][i] for i in ids]
+        if saved["noise_sigma"].tolist() != sigma or not np.isnan(prediction[0]).all():
+          raise ValueError("decomposition noise record differs: " + variant)
+        domains = {}
+      else:
+        domains = {"noiseless": metrics(prediction[0], ref["truth"])[1]}
+      domains["matched-noisy"] = metrics(prediction[1:].reshape(-1, 5), noisy_truth)[1]
+      if variant == "A-baseline" and not (
+        np.array_equal(prediction, ref["prediction_raw"])
+        and saved["input_sha256_" + model].tolist() == ref["input_sha256"].tolist()
+      ):
+        raise ValueError("A-baseline differs from the released control: " + model)
+      for domain, values in domains.items():
+        for m, value in zip(OUTCOMES, values, strict=True):
+          computed[model, variant, domain, m] = value
+          if variant == "A-baseline" and abs(value - released[model, domain, m]) > 1e-12:
+            raise ValueError(f"A-baseline MAE differs from the control: {model}/{domain}/{m}")
+  with (source / "metrics.csv").open(newline="") as stream:
+    rows = list(csv.DictReader(stream))
+  keys = [(r["model"], r["variant"], r["domain"], r["metabolite"]) for r in rows]
+  if len(keys) != len(computed) or set(keys) != set(computed):
+    raise ValueError("decomposition metrics.csv rows differ from the raw arrays")
+  for key, row in zip(keys, rows, strict=True):
+    base = computed[key[0], "A-baseline", "matched-noisy", key[3]]
+    phantom = released[key[0], "phantom-cpu", key[3]]
+    expected = [computed[key], base, phantom]
+    values = [float(row[k]) for k in ("mae", "mae_baseline_matched_noisy", "mae_phantom_cpu")]
+    if key[2] == "matched-noisy":
+      expected.append((computed[key] - base) / (phantom - base))
+      values.append(float(row["gap_fraction_closed"]))
+    elif row["gap_fraction_closed"] != "":
+      raise ValueError("gap fraction given for a noiseless row")
+    if not np.allclose(values, expected, rtol=0, atol=1e-12):
+      raise ValueError("decomposition metric differs from the raw arrays: " + "/".join(key))
+  return inputs
+
+
+def compare_decomposition_metrics(released, rerun):
+  """Print how a rerun's metrics.csv differs from the released one, per variant and row."""
+  tables = []
+  for path in (released, rerun):
+    with path.open(newline="") as stream:
+      tables.append({(r["model"], r["variant"], r["domain"], r["metabolite"]): r for r in csv.DictReader(stream)})
+  old, new = tables
+  if set(old) != set(new):
+    print("decomposition rerun: metrics.csv rows differ from the released ones")
+  columns = ("mae", "gap_fraction_closed")
+  for variant in DECOMPOSITION_VARIANTS:
+    keys = sorted(k for k in set(old) & set(new) if k[1] == variant)
+    changed = [k for k in keys if any(old[k][c] != new[k][c] for c in columns)]
+    largest = max(
+      (abs(float(new[k][c]) - float(old[k][c])) for k in keys for c in columns if old[k][c] != ""), default=0.0
+    )
+    print(f"decomposition rerun {variant}: {len(changed)} of {len(keys)} rows differ, max abs difference {largest:.3g}")
+    for k in changed:
+      print("  " + "/".join(k), *(f"{c} {old[k][c]} -> {new[k][c]}" for c in columns if old[k][c] != new[k][c]))
+
+
+def stage_decomposition(code, out, source, run, python):
+  """Package composition-decomposition/*: linewidth and noise parts of the composition-matched gap.
+
+  Paper consumer: render_composition_decomposition.py
+  (tables/composition_decomposition_rows.tex,
+  constants/composition_decomposition_macros.tex), which renders the gap fractions
+  closed of metrics.csv and counts from protocol.json.
+
+  The decomposition needs TensorFlow inference and is produced by the code-mrsnet
+  script etc/composition_matched_decomposition.py. This stage verifies a finished
+  result folder (--decomposition DIR; default: the released DECOMPOSITION folder of
+  the checkout, so a rerun into the default --outdir leaves it unchanged) with
+  verify_decomposition (NumPy only) and copies its files byte for byte, or, with
+  --run-decomposition, first runs the script on the CPU (with --python and the
+  thread settings DECOMPOSITION_THREADS) into a temporary folder (about 6 min on
+  64 cores), verifies it, and prints how its metrics differ from the released
+  DECOMPOSITION folder before the files replace those below --outdir. Nothing is
+  recomputed into the output. The B, C and D predictions are not checked without
+  such a rerun (see verify_decomposition).
+  """
+  folder = out / "composition-decomposition"
+  env = dict(os.environ)
+  env["PYTHONPATH"] = os.pathsep.join([str(code), *filter(None, [env.get("PYTHONPATH")])])
+  env.update(DECOMPOSITION_THREADS)
+  env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+  env.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+  env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+  env.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
+  with tempfile.TemporaryDirectory(prefix="composition-decomposition-") as tmp:
+    if run:
+      source = Path(tmp) / "result"
+      subprocess.run(  # noqa: S603
+        [
+          python,
+          str(code / "etc/composition_matched_decomposition.py"),
+          "--code-root",
+          str(code),
+          "--outdir",
+          str(source),
+        ],
+        check=True,
+        cwd=tmp,
+        env=env,
+      )
+    source = Path(source or code / DECOMPOSITION).resolve()
+    missing = [n for n in DECOMPOSITION_FILES if not (source / n).is_file()]
+    if missing:
+      raise ValueError("incomplete composition-decomposition result: " + ", ".join(missing))
+    inputs = verify_decomposition(code, source)
+    released = code / DECOMPOSITION / "metrics.csv"
+    if run and released.is_file():
+      compare_decomposition_metrics(released, source / "metrics.csv")
+    folder.mkdir(parents=True, exist_ok=True)
+    names = sorted(p.name for p in source.iterdir() if p.is_file())
+    if source != folder.resolve():
+      for name in names:
+        shutil.copyfile(source / name, folder / name)
+  inputs["etc/composition_matched_decomposition.py"] = sha256(code / "etc/composition_matched_decomposition.py")
+  return ["composition-decomposition/" + n for n in names], inputs
+
+
+# ------------------------------------------------------------------ stage: gains
+def verify_gains(code, folder):
+  """Check a metabolite-gains result folder against its protocol and the checkout.
+
+  Requires all GAINS_FILES, a complete protocol for the 144 spectra whose gate 1
+  passed and whose recorded thread settings are GAINS_THREADS, output hashes equal
+  to the files, and recorded source hashes that are exactly GAINS_SOURCES plus the
+  ten 1.0 Hz basis files, each equal to the checkout. Returns the source hashes.
+  """
+  missing = [n for n in GAINS_FILES if not (folder / n).is_file()]
+  if missing:
+    raise ValueError("incomplete metabolite-gains result: " + ", ".join(missing))
+  protocol = json.loads((folder / "protocol.json").read_text())
+  if protocol.get("status") != "complete" or protocol.get("spectra") != 144 or not protocol["gate1"]["passed"]:
+    raise ValueError("incomplete metabolite-gains protocol")
+  if protocol["runtime"]["threads"] != GAINS_THREADS:
+    raise ValueError("gain fit not run with the recorded thread settings")
+  if protocol["output_sha256"] != {n: sha256(folder / n) for n in GAINS_REPRODUCED}:
+    raise ValueError("metabolite-gains files differ from their protocol")
+  required = set(GAINS_SOURCES) | {
+    f"{BASIS_DIR}FIDA2D_{m}_MEGAPRESS_EDIT{a}_1.00_2000_4096_123.23.mat" for m in METABOLITES for a in ("OFF", "ON")
+  }
+  if set(protocol["source_sha256"]) != required:
+    raise ValueError("metabolite-gains source hashes are not the required set")
+  for name, digest in protocol["source_sha256"].items():
+    if sha256(child(code, name)) != digest:
+      raise ValueError("metabolite-gains input changed: " + name)
+  return dict(protocol["source_sha256"])
+
+
+def stage_gains(code, out, python, python_path):
+  """Rerun etc/metabolite_gain_fit.py and package metabolite-gains/*: per-metabolite signal gains.
+
+  Paper consumer: render_metabolite_gains.py (tables/metabolite_gains_rows.tex,
+  constants/metabolite_gains_macros.tex), which renders the OFF Cr, GABA and Glu gains
+  that gate 2 recovers and checks that recovery.
+
+  The fit needs the mrsnet library (DICOM loading, basis) and SciPy, not
+  TensorFlow. This stage always reruns it into a temporary folder with
+  --gains-python (default --python) and PYTHONPATH = the checkout plus
+  --gains-python-path, under GAINS_THREADS, and checks the rerun with
+  verify_gains. If the released GAINS folder exists it is verified the same way
+  and every file but protocol.json (which records the runtime) must be byte
+  identical to the rerun's; the released files are then copied unchanged below
+  --outdir. Without a released folder the rerun's files are copied.
+  """
+  folder = out / "metabolite-gains"
+  released = code / GAINS
+  env = dict(os.environ)
+  env["PYTHONPATH"] = os.pathsep.join([str(code), *filter(None, [python_path, env.get("PYTHONPATH")])])
+  env.update(GAINS_THREADS)
+  env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+  env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+  with tempfile.TemporaryDirectory(prefix="metabolite-gains-") as tmp:
+    rerun = Path(tmp) / "result"
+    subprocess.run(  # noqa: S603
+      [python, str(code / "etc/metabolite_gain_fit.py"), "--code-root", str(code), "--outdir", str(rerun)],
+      check=True,
+      cwd=tmp,
+      env=env,
+      stdout=subprocess.DEVNULL,
+    )
+    inputs = verify_gains(code, rerun)
+    source = rerun
+    if released.is_dir():
+      if verify_gains(code, released) != inputs:
+        raise ValueError("released metabolite-gains sources differ from the rerun's")
+      differ = [n for n in GAINS_REPRODUCED if (released / n).read_bytes() != (rerun / n).read_bytes()]
+      if differ:
+        raise ValueError("metabolite-gains rerun differs from the released files: " + ", ".join(differ))
+      source = released.resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    names = sorted(p.name for p in source.iterdir() if p.is_file())
+    if source != folder.resolve():
+      for name in names:
+        shutil.copyfile(source / name, folder / name)
+  return ["metabolite-gains/" + n for n in names], inputs
+
+
 # ------------------------------------------------------------------ stage: cnn
 def stage_cnn(code, out):
   """Write cnn-selection/simple_grid_ranked.csv: the ranked simple-CNN grid search.
@@ -1031,23 +1483,54 @@ def main():
   parser.add_argument(
     "--stage",
     action="append",
-    choices=("manifest", "selected", "audit", "descriptive", "cnn", "composition"),
-    help="stage to run (repeatable); default: all, with composition only if a source is given",
+    choices=STAGES,
+    help="stage to run (repeatable); default: all, with composition only if a source is given and "
+    "decomposition only if its source exists (gains always runs: it reruns etc/metabolite_gain_fit.py)",
   )
   parser.add_argument("--composition-matched", type=Path, help="finished etc/composition_matched.py result folder")
   parser.add_argument(
     "--run-composition-matched", action="store_true", help="run etc/composition_matched.py inference (CPU, slow)"
   )
-  parser.add_argument("--python", default=sys.executable, help="interpreter with TensorFlow for the composition stage")
+  parser.add_argument(
+    "--decomposition",
+    type=Path,
+    help="finished etc/composition_matched_decomposition.py result folder (default: CODE_ROOT/" + DECOMPOSITION + ")",
+  )
+  parser.add_argument(
+    "--run-decomposition",
+    action="store_true",
+    help="run etc/composition_matched_decomposition.py inference (CPU, slow)",
+  )
+  parser.add_argument(
+    "--python", default=sys.executable, help="interpreter with TensorFlow for the composition and decomposition stages"
+  )
+  parser.add_argument(
+    "--gains-python", help="interpreter with the mrsnet dependencies for stage gains (default --python)"
+  )
+  parser.add_argument(
+    "--gains-python-path", help="extra PYTHONPATH entries (after the checkout) for --gains-python in stage gains"
+  )
   args = parser.parse_args()
   code = args.code_root.resolve()
   out = (args.outdir or code / "data/sim2real/paper-gaba-phantom").resolve()
   if not (code / REGISTRY).is_file():
     raise SystemExit("not an MRSNet checkout with data/model-dist: " + str(code))
   matched = args.composition_matched is not None or args.run_composition_matched
-  stages = args.stage or ["manifest", "selected", "audit", "descriptive", "cnn", *(["composition"] if matched else [])]
+  decomposed = args.run_decomposition or (args.decomposition or code / DECOMPOSITION).is_dir()
+  stages = args.stage or [
+    "manifest",
+    "selected",
+    "audit",
+    "descriptive",
+    "cnn",
+    *(["composition"] if matched else []),
+    *(["decomposition"] if decomposed else []),
+    "gains",
+  ]
   if "composition" in stages and not matched:
     raise SystemExit("stage composition needs --composition-matched DIR or --run-composition-matched")
+  if "decomposition" in stages and not decomposed:
+    raise SystemExit("stage decomposition needs a result folder (--decomposition DIR) or --run-decomposition")
   out.mkdir(parents=True, exist_ok=True)
   record_path = out / "provenance.json"
   record = json.loads(record_path.read_text()) if record_path.is_file() else {}
@@ -1066,9 +1549,11 @@ def main():
     "composition": lambda: stage_composition(
       code, out, args.composition_matched, args.run_composition_matched, args.python
     ),
+    "decomposition": lambda: stage_decomposition(code, out, args.decomposition, args.run_decomposition, args.python),
+    "gains": lambda: stage_gains(code, out, args.gains_python or args.python, args.gains_python_path),
   }
   repositories = ("benchmark", "model-dist", "model-yae", "model-cnn", "model-extra")
-  for stage in ("manifest", "selected", "audit", "descriptive", "cnn", "composition"):
+  for stage in STAGES:
     if stage not in stages:
       continue
     outputs, inputs = runners[stage]()
